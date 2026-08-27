@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
-import { authOptions } from "../../../lib/auth";
+import { authOptions } from "../auth/[...nextauth]/route";
 import { supabase } from "../../utils/supabase/client";
 
 export async function POST(req: NextRequest) {
@@ -17,7 +17,7 @@ export async function POST(req: NextRequest) {
     const { data: employee, error: empError } = await supabase
       .from("employees")
       .select("employee_code")
-      .eq("username", session.user.username)
+      .eq("employee_code", session.user.username)
       .single();
 
     if (empError || !employee) {

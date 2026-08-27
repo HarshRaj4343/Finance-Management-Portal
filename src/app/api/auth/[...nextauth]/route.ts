@@ -12,11 +12,7 @@ const ldapConfig = {
 
   baseDN:process.env.BaseDN,
   
-<<<<<<< HEAD
   ou: process.env.OU ? JSON.parse(process.env.OU) : ["students_ug", "Faculty", "Staff"],
-=======
-  ou: process.env.OU ? JSON.parse(process.env.OU) : ["students_ug", "Faculty", "Staff"],
->>>>>>> 89ce632 (Update finance app)
 };
 
 // ---------------- LDAP Authentication ----------------

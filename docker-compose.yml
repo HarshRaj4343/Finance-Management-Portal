@@ -3,9 +3,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # Compiled into the browser bundle at build time -- see Dockerfile.
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
 
+    image: iitmandi-finance-portal:latest
     container_name: my_next_app
 
+    # Server-side secrets (LDAP, SMTP, service-role key, NextAuth) are read
+    # at runtime, so .env is enough for these.
     env_file:
       - .env
 
@@ -14,7 +21,5 @@ services:
 
     environment:
       - NODE_ENV=production
-      # This line can be removed, since it's already in .env:
-      # - NEXTAUTH_SECRET=${AUTH_SECRET}
 
     restart: unless-stopped

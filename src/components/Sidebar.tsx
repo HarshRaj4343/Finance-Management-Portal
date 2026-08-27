@@ -94,7 +94,7 @@ export default function SidebarLayout({
       const { data, error } = await supabase
         .from("employees")
         .select("*")
-        .eq("username", session.user.username)
+        .eq("employee_code", session.user.username)
         .single();
 
       if (data && !error) {

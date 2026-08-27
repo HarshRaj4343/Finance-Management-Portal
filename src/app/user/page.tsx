@@ -93,7 +93,7 @@ export default function UserPage() {
         const { data: employeeData } = await supabase
           .from("employees")
           .select("*")
-          .eq("username", username)
+          .eq("employee_code", username)
           .single();
         if (employeeData) setEmployee(employeeData);
 

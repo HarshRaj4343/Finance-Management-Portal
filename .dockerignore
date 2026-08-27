@@ -1,18 +1,29 @@
-# D:\New folder (6)\.dockerignore
-
 # Dependencies
 node_modules
 
 # Build output
 .next
+out
+build
+
+# Env files -- secrets must never be baked into the image.
+# NEXT_PUBLIC_* values are passed via --build-arg instead.
+.env
+.env.*
 
 # Docker
 .dockerignore
 Dockerfile
 docker-compose.yml
 
-# Other
+# VCS / docs / local tooling
 .git
 .gitignore
-npm-debug.log*
 README.md
+DECISIONS.md
+architecture.jpeg
+data_base.sql
+.vercel
+npm-debug.log*
+*.tsbuildinfo
+.DS_Store
