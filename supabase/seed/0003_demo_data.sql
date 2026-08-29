@@ -383,6 +383,7 @@ where employee_code in ('User','E001','E002','E003','E004','E005','E006','E007',
 do $$
 declare v_codes text[] := array['E001','E002','E003','User'];
         v_id uuid; v_bill jsonb; c text; i integer;
+        v_stage text; v_actor text; v_actor_nm text;
 begin
     perform setseed(0.9);
     foreach c in array v_codes loop
@@ -408,14 +409,35 @@ begin
             v_id := (v_bill->>'id')::uuid;
 
             -- leave #1 where it lands, approve #2 all the way, reject #3
+            -- Each desk is worked by somebody who actually holds that role,
+            -- so the demo timeline reads the way a real one would.
             if i = 2 then
-                while (select status from public.bills where id = v_id) not in ('Accepted','Rejected') loop
-                    perform public.fn_bill_action(v_id, 'ADM030', 'Rakesh Verma',
-                        (select status from public.bills where id = v_id), 'Approved', 'Cleared.');
+                loop
+                    select status into v_stage from public.bills where id = v_id;
+                    exit when v_stage in ('Accepted', 'Rejected');
+
+                    select employee_code, employee_name into v_actor, v_actor_nm
+                      from public.employees
+                     where employee_type = v_stage and employee_code like 'ADM%'
+                     order by employee_code limit 1;
+
+                    perform public.fn_bill_action(v_id, v_actor, v_actor_nm, v_stage,
+                        'Approved',
+                        case v_stage
+                          when 'Student Purchase' then 'Verified against the indent and the store record.'
+                          when 'Audit'            then 'Rates and sanction verified. In order.'
+                          else                         'Passed for payment.'
+                        end);
                 end loop;
+
             elsif i = 3 then
-                perform public.fn_bill_action(v_id, 'ADM030', 'Rakesh Verma',
-                    (select status from public.bills where id = v_id), 'Rejected',
+                select status into v_stage from public.bills where id = v_id;
+                select employee_code, employee_name into v_actor, v_actor_nm
+                  from public.employees
+                 where employee_type = v_stage and employee_code like 'ADM%'
+                 order by employee_code limit 1;
+
+                perform public.fn_bill_action(v_id, v_actor, v_actor_nm, v_stage, 'Rejected',
                     'Three comparative quotations are required above this value.');
             end if;
         end loop;
