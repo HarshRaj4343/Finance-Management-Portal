@@ -1,9 +1,20 @@
 "use client";
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { getSession, signIn } from "next-auth/react";
 import { homeFor } from "@/lib/roles";
 
-export default function LoginPage() {
+/**
+ * useSearchParams needs a Suspense boundary above it, so the form is a
+ * separate component and the exported page wraps it.
+ */
+function LoginForm() {
+  // Where to go after signing in. /bill/[id] sends people here when they
+  // scan a QR code without a session, and they should land back on the
+  // bill rather than on their own desk.
+  const searchParams = useSearchParams();
+  const callbackUrl = searchParams.get("callbackUrl");
+
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
@@ -46,7 +57,14 @@ export default function LoginPage() {
         // The role comes from the database, resolved during sign-in.
         // homeFor understands the older spellings that are still in the
         // data, so nobody lands on a route that does not exist.
-        window.location.href = homeFor(session.user.employee_type);
+        // Only follow a same-origin path, so the parameter cannot be used
+        // to bounce somebody to another site after they sign in.
+        const safe =
+          callbackUrl && callbackUrl.startsWith("/") && !callbackUrl.startsWith("//")
+            ? callbackUrl
+            : null;
+
+        window.location.href = safe ?? homeFor(session.user.employee_type);
         return;
       } catch {
         setError(
@@ -252,3 +270,17 @@ export default function LoginPage() {
 //     </div>
 //   );
 // } // This closing brace was missing
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen flex items-center justify-center bg-[#217093]">
+          <p className="text-white/80 text-sm">Loading…</p>
+        </div>
+      }
+    >
+      <LoginForm />
+    </Suspense>
+  );
+}
