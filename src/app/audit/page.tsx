@@ -1,8 +1,9 @@
 "use client";
-import { sendBillRemarkNotification } from "@/helpers/emailService";
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "../utils/supabase/client";
+import { api, money } from "@/lib/api";
+import Notice, { NoticeState } from "@/components/Notice";
+import { normaliseRole } from "@/lib/roles";
 import { signOut, useSession } from "next-auth/react";
 import {
   IconArrowLeft,
@@ -26,34 +27,7 @@ import { cn } from "@/lib/utils";
 import BillCard from "@/components/BillCard";
 
 /* ---------- Interfaces ---------- */
-interface Bill {
-  id: string;
-  employee_id: string;
-  employee_name: string;
-  po_details: string;
-  po_value: number;
-  supplier_name: string;
-  supplier_address: string;
-  item_category: string;
-  item_description: string;
-  qty: number;
-  bill_details: string;
-  indenter_name: string;
-  qty_issued: number;
-  source_of_fund: string;
-  stock_entry: string;
-  location: string;
-  remarks: string;    // Finance Admin remark
-  remarks1: string;   // SNP remark
-  remarks2: string;   // Audit remark (this department)
-  remarks3: string;   // Additional remark
-  remarks4: string;   // Additional remark
-  created_at: string;
-  status: string;
-  snp: string;
-  audit: string;
-  finance_admin: string;
-}
+import type { Bill } from "@/types/database";
 
 export default function AuditDashboard() {
   const { data: session, status } = useSession();
@@ -69,6 +43,8 @@ export default function AuditDashboard() {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedBillDetails, setSelectedBillDetails] = useState<Bill | null>(null);
   
+  const [notice, setNotice] = useState<NoticeState>(null);
+
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
@@ -88,40 +64,36 @@ export default function AuditDashboard() {
       return;
     }
 
-    if (session && (session as any).user?.employee_type !== "Audit") {
-      alert("You have no access to this page.");
-      signOut({ callbackUrl: "/login" });
+    if (session && normaliseRole((session as any).user?.employee_type) !== "Audit") {
+      // Not this desk. Send them back to the portal rather than signing
+      // them out, which used to lose their session for a mis-click.
+      window.location.href = "/";
     }
   }, [status, session]);
 
-  // Fetch bills - only show bills where audit is not NULL and status is Audit
-  // Audit Dashboard fetch logic - MODIFIED
-useEffect(() => {
-  // Only fetch when authenticated and user is Audit
-  if (status !== "authenticated" || (session as any)?.user?.employee_type !== "Audit") {
-    return;
-  }
-  const fetchBills = async () => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from("bills")
-        .select("*")
-        .not("audit", "is", null) // Fetch all bills where Audit has recorded an action/status
-        .order("created_at", { ascending: false });
+  // Every bill that has ever reached the audit desk, whether it is still
+  // here, has been sent on, or was rejected. The server decides what this
+  // role may see; the browser no longer asks for the whole table.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    if (normaliseRole((session as any)?.user?.employee_type) !== "Audit") return;
 
-      if (error) throw error;
-      setBills(data || []);
-      setFilteredBills(data || []);
-    } catch (err) {
-      console.error("Error fetching bills:", err);
-    } finally {
+    const fetchBills = async () => {
+      setLoading(true);
+      const { data, error } = await api.get<{ bills: Bill[] }>("/api/bills?limit=500");
       setLoading(false);
-    }
-  };
-
-  fetchBills();
-}, [status, session]); // Fetch when authorized
+      if (error) {
+        setNotice({ kind: "bad", text: error });
+        return;
+      }
+      // Bills the audit desk has a stake in: sitting here now, or carrying
+      // a recorded audit decision from earlier.
+      const mine = data!.bills.filter((b) => b.status === "Audit" || b.audit !== null);
+      setBills(mine);
+      setFilteredBills(mine);
+    };
+    fetchBills();
+  }, [status, session]);
 
   // Apply filters whenever search criteria change
   useEffect(() => {
@@ -181,136 +153,54 @@ useEffect(() => {
     setFilteredBills(filtered);
   }, [bills, activeFilter, searchQuery, categoryFilter, amountFilter, dateFilter, locationFilter]);
 
-  // approve handler - moves to Finance Admin
-  const handleApprove = async (bill: Bill) => {
-    try {
-      const { error } = await (supabase as any)
-        .from("bills")
-        .update({
-          status: "Finance Admin",
-          finance_admin: "Pending",
-          audit: "Approved",
-        })
-        .eq("id", bill.id);
+  /**
+   * All three decisions take the same route: /api/bills/:id/action, which
+   * calls fn_bill_action. The database checks that this bill is actually
+   * at the audit desk, moves it, releases or holds the money, and writes
+   * the event log -- as one transaction. The email goes from the server
+   * afterwards, so a mail failure cannot undo a recorded decision.
+   */
+  const [busy, setBusy] = useState<string | null>(null);
 
-      if (error) throw error;
-
-      setBills((prev) =>
-        prev.map((b) =>
-          b.id === bill.id
-            ? { ...b, status: "Finance Admin", finance_admin: "Pending", audit: "Approved" }
-            : b
-        )
-      );
-      
-      alert("Bill approved and sent to Finance Admin!");
-    } catch (err) {
-      console.error("Error approving bill:", err);
-      alert("Error approving bill");
-    }
-  };
-
-  // reject handler - sets Audit status to Reject with remark and sends email
-  const handleReject = async (bill: Bill) => {
-    if (!remarks[bill.id] || remarks[bill.id].trim() === "") {
-      alert("Please provide a remark before rejecting.");
+  const act = async (bill: Bill, action: "Approved" | "Rejected" | "Hold") => {
+    const remark = (remarks[bill.id] ?? "").trim();
+    if (action !== "Approved" && !remark) {
+      setNotice({
+        kind: "bad",
+        text: `Write a remark before you ${action === "Rejected" ? "reject" : "hold"} this bill.`,
+      });
       return;
     }
 
-    try {
-      const remarkWithUser = `${remarks[bill.id]} (By: ${session?.user?.name || 'Audit'} at ${new Date().toLocaleString()})`;
-      const { error } = await (supabase as any)
-        .from("bills")
-        .update({
-          audit: "Reject",
-          remarks2: remarkWithUser, // Audit department uses remarks2
-        })
-        .eq("id", bill.id);
+    setBusy(bill.id);
+    setNotice(null);
+    const { data, error } = await api.post<{ bill: Bill }>(
+      `/api/bills/${bill.id}/action`,
+      { action, remark: remark || undefined }
+    );
+    setBusy(null);
 
-      if (error) throw error;
-
-      setBills((prev) =>
-        prev.map((b) =>
-          b.id === bill.id 
-            ? { ...b, audit: "Reject", remarks2: remarkWithUser } 
-            : b
-        )
-      );
-
-      // Log before sending email
-      console.log('Audit email notification called for bill:', bill.id);
-      // Send email notification
-      try {
-        if (typeof sendBillRemarkNotification === 'function') {
-          await sendBillRemarkNotification({
-            billId: bill.id,
-            department: 'Audit',
-            remark: remarks[bill.id],
-            action: 'Reject',
-            timestamp: new Date().toLocaleString()
-          });
-        }
-        alert("Bill rejected! Email notification sent to employee.");
-      } catch (emailError) {
-        console.error("Email notification failed:", emailError);
-        alert("Bill rejected! However, email notification failed to send.");
-      }
-    } catch (err) {
-      console.error("Error rejecting bill:", err);
-      alert("Error rejecting bill");
-    }
-  };
-
-  // hold handler - sets Audit status to Hold with remark and sends email
-  const handleHold = async (bill: Bill) => {
-    if (!remarks[bill.id] || remarks[bill.id].trim() === "") {
-      alert("Please enter a remark before putting the bill on Hold.");
+    if (error) {
+      setNotice({ kind: "bad", text: error });
       return;
     }
 
-    try {
-      const remarkWithUser = `${remarks[bill.id]} (By: ${session?.user?.name || 'Audit'} at ${new Date().toLocaleString()})`;
-      const { error } = await (supabase as any)
-        .from("bills")
-        .update({
-          audit: "Hold",
-          remarks2: remarkWithUser, // Audit department uses remarks2
-        })
-        .eq("id", bill.id);
-
-      if (error) throw error;
-
-      setBills((prev) =>
-        prev.map((b) =>
-          b.id === bill.id 
-            ? { ...b, audit: "Hold", remarks2: remarkWithUser } 
-            : b
-        )
-      );
-
-      // Log before sending email
-      console.log('Audit email notification called for bill:', bill.id);
-      // Send email notification
-      try {
-        if (typeof sendBillRemarkNotification === 'function') {
-          await sendBillRemarkNotification({
-            billId: bill.id,
-            department: 'Audit',
-            remark: remarks[bill.id],
-            action: 'Hold',
-            timestamp: new Date().toLocaleString()
-          });
-        }
-        alert("Bill put on hold! Email notification sent to employee.");
-      } catch (emailError) {
-        console.error("Email notification failed:", emailError);
-        alert("Bill put on hold! However, email notification failed to send.");
-      }
-    } catch (err) {
-      console.error("Error holding bill:", err);
-      alert("Error holding bill");
-    }
+    setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, ...data!.bill } : b)));
+    setRemarks((r) => ({ ...r, [bill.id]: "" }));
+    setNotice({
+      kind: "ok",
+      text:
+        action === "Approved"
+          ? `Approved and sent to ${data!.bill.status}.`
+          : action === "Rejected"
+          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and they have been emailed.`
+          : "Bill put on hold. The applicant has been emailed.",
+    });
   };
+
+  const handleApprove = (bill: Bill) => act(bill, "Approved");
+  const handleReject = (bill: Bill) => act(bill, "Rejected");
+  const handleHold = (bill: Bill) => act(bill, "Hold");
 
   // Clear all filters
   const clearFilters = () => {
@@ -399,6 +289,7 @@ useEffect(() => {
 
   return (
     <div className="flex w-full h-screen bg-white shadow-lg">
+      <Notice notice={notice} onDismiss={() => setNotice(null)} />
       {/* Sidebar */}
       <Sidebar open={open} setOpen={setOpen}>
         <SidebarBody className="flex flex-col justify-between h-full">
@@ -894,7 +785,7 @@ useEffect(() => {
 }
 
 /* ------------------------- Sidebar Logos ------------------------- */
-export const Logo = () => (
+const Logo = () => (
   <a
     href="#"
     className="relative z-20 flex items-center space-x-2 py-1 text-base font-semibold text-black"
@@ -910,7 +801,7 @@ export const Logo = () => (
   </a>
 );
 
-export const LogoIcon = () => (
+const LogoIcon = () => (
   <a
     href="#"
     className="relative z-20 flex items-center py-1 text-sm font-semibold text-black"

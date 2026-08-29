@@ -627,3 +627,279 @@ Recorded here so they are visible rather than discovered:
 | 7 | Per-page guards should consolidate into middleware | §3.3 |
 | 8 | Unresolved merge-conflict markers remain in the auth route | §2.1 |
 | 9 | `data_base.sql` snapshot should become versioned migrations | §8.6 |
+
+---
+
+## 10. The `revamp/backend-v2` Rebuild
+
+Everything above §10 describes the prototype. This section records what
+changed when the backend was rebuilt, and why. The screens were left as
+they were on purpose — the problems were never in the markup.
+
+Nine of the nine items in §9 are addressed here; the tenth, row-level
+security, is still deliberately off (§10.11).
+
+### 10.1 The workflow moved into the database
+
+**Decision.** Every state change to a bill goes through one of four
+PL/pgSQL functions: `fn_submit_bill`, `fn_bill_action`, `fn_amend_bill`,
+`fn_set_pda_allocation`. Nothing in the browser writes to `bills`,
+`pda_balances`, `bill_approvals` or `purchase_register` any more.
+
+**Why.** The prototype filed a bill in two separate statements from the
+browser: insert the bill, then debit the PDA. If the second failed, the
+bill existed and had not been paid for, and nothing recorded the fact. The
+same pattern appeared in four more places. Wrapping each of them in a
+single database function makes the bill, the money, the event log and the
+register impossible to disagree — they are written together or not at all.
+
+**Trade-off.** Business rules now live in SQL, which is less familiar to
+most contributors than TypeScript and harder to unit test. `routeAfter` in
+`src/lib/roles.ts` mirrors `fn_route_after` so the UI can show a filer
+where their bill is headed, and `tests/workflow.test.ts` pins that mirror
+in place — but the database is the authority, and if the two drift the
+database wins.
+
+**Where.** `supabase/migrations/0002_functions.sql`
+
+### 10.2 Closes §9.3 — the money is reserved, not spent
+
+**Decision.** `pda_balances` gained three columns, holding one identity
+enforced by a `CHECK` constraint:
+
+```
+allocated = balance + committed + spent
+```
+
+Money is **reserved** when a bill is filed, **released** when it is
+rejected, and **settled** when it is finally approved.
+
+**Why.** Two bugs, both about money. A rejected bill never gave the amount
+back — the PDA stayed debited forever, and a manual "note this bill"
+button existed to credit it by hand. And an in-flight bill was
+indistinguishable from a paid one, so nobody could tell how much of a
+depleted balance was actually gone.
+
+**Trade-off.** Four columns to keep straight instead of one. The `CHECK`
+constraint means a bug that breaks the identity fails loudly on the write
+rather than quietly losing money, which is the point.
+
+**Where.** `0001_schema.sql`, and `fn_submit_bill` / `fn_bill_action`
+
+### 10.3 Rejection is terminal, in the database
+
+**Decision.** `bills.status` gained `'Rejected'`. `fn_bill_action` refuses
+to touch any bill in a terminal state.
+
+**Why.** Rejection used to be a per-desk flag with no effect on the bill's
+overall status, so a rejected bill sat in the queue looking live. Making it
+a status the constraint knows about means "already rejected" is enforced
+rather than remembered.
+
+**Where.** `bills_status_check`, `fn_bill_action`
+
+### 10.4 Closes §9.5 — `bill_approvals`, the workflow event log
+
+**Decision.** A new append-only table records one row every time anything
+happens to a bill: who, what, when, from which desk, with what remark,
+and the status it moved from and to.
+
+**Why.** `remarks1`–`remarks4` held one string per desk, overwritten each
+time, with the actor's name and a timestamp glued on in the browser. There
+was no way to answer "when did this reach Audit" or "who put it on hold in
+March". The architecture diagram's QR code promises exactly that history.
+
+`remarks1`–`remarks4` were **kept**, holding the latest remark per desk, so
+that the existing pages keep rendering. They are now a denormalised
+convenience written by the same function that writes the log, not the
+record itself.
+
+**Trade-off.** The same remark is stored twice. Deleting the old columns is
+a UI change, and this branch deliberately did not make UI changes.
+
+**Where.** `bill_approvals`, `fn_log_event`
+
+### 10.5 `purchase_register` — the departmental register
+
+**Decision.** A second append-only table: one row per finally approved
+purchase, given a running serial number per department per financial year
+(`SCEE/2026-27/0007`) at the moment of approval. Entries are cut by
+`fn_bill_action`; there is no endpoint that writes one by hand.
+
+**Why.** This is the register a finance office actually keeps — the thing
+somebody quotes when asked where a purchase is logged. It did not exist.
+The workflow ended at "Accepted" and nothing recorded the purchase as a
+purchase.
+
+**Trade-off.** One item per bill, so an invoice with five lines needs five
+bills. Multi-line items were considered and deferred: they touch the bill
+form and every page that displays a bill.
+
+**Where.** `purchase_register`, `fn_next_register_serial`
+
+### 10.6 Both ledgers refuse to be edited
+
+**Decision.** `BEFORE UPDATE OR DELETE` triggers on `bill_approvals` and
+`purchase_register` raise an exception.
+
+**Why.** A register whose entries can be quietly changed is not a register.
+This is enforced against the service-role key too, which is the only key
+that ever reaches these tables.
+
+**Trade-off.** The seed script has to lift the triggers to back-date its own
+data, and puts them straight back. That is the only place it is allowed.
+
+**Where.** `fn_block_mutation`
+
+### 10.7 Closes §9.4 and §9.7 — authorisation on the server
+
+**Decision.** Every page's data now comes from an API route under
+`/api/*`. Each route resolves the caller from the session, reads their role
+from `employees`, and scopes the query itself. A plain user gets their own
+bills whatever the query string says. `/bill/[id]` requires a session and
+checks ownership.
+
+**Why.** The browser held the anon key and queried tables directly, then
+filtered in React. That is not a filter — anybody with devtools open could
+read every bill in the institute, and write to them. `/bill/[id]` was
+readable by anyone who had a UUID.
+
+**Trade-off.** Per-page guards were consolidated into shared helpers
+(`requireActor`, `requireRole`, `requireApprover`) rather than middleware.
+Middleware would centralise the redirects too, and remains worth doing.
+
+**Where.** `src/server/session.ts`, `src/app/api/**`
+
+### 10.8 One definition of a role
+
+**Decision.** `src/lib/roles.ts` holds the eight roles, each one's landing
+page, and a `normaliseRole` that understands every older spelling.
+
+**Why.** Roles were spelled four ways across the login page, the sidebar,
+the database constraint and the demo login list: `pda-manager` and
+`pda manager`, `bill_employee_fill` and `Bill Employee`. `Finance Employee`
+was in the constraint and the login route map, but `/finance-employee`
+never existed — anyone holding it was redirected to a 404. It now
+normalises to `User`.
+
+**Trade-off.** An unrecognised role silently becomes `User` rather than
+failing. Failing closed is the right default when the alternative is
+granting access by accident.
+
+**Where.** `src/lib/roles.ts`, `tests/workflow.test.ts`
+
+### 10.9 The Dean of Finance assigns roles
+
+**Decision.** A new `/admin` page and a `Dean` role. It lists everyone,
+changes roles, adds people who have not signed in yet, deactivates people,
+and opens or tops up PDA accounts. Finance Admin keeps the employee
+directory it already had, but the API refuses a role change from anybody
+but the Dean.
+
+**Why.** The architecture diagram's "Check Employee Type" and "No Employee
+Type Matched" branches assume somebody decides who is what. Nothing in the
+portal did — roles were set by editing rows.
+
+Deactivation is not deletion: bills, approvals and register entries all
+name the person who filed or approved them.
+
+**Where.** `src/app/admin/page.tsx`, `src/app/api/admin/**`
+
+### 10.10 Closes §9.1 — demo logins, kept but gated
+
+**Decision.** The fixed demo accounts remain, behind
+`DEMO_LOGIN_ENABLED`. Each one now exists as a real row in `employees`, so
+the role comes from the database like everybody else's.
+
+**Why.** They are needed to demonstrate the portal away from the institute
+network. What was wrong was not their existence but that nine of the
+fifteen had no `employees` row at all, so they signed in and landed on
+pages with no data and no explanation.
+
+**Trade-off.** A single environment variable is all that separates the
+demo deployment from an authenticated one. `DEMO_LOGIN_ENABLED=false` is
+required for production, and is called out in `.env.example`.
+
+**Where.** `src/server/auth-options.ts`
+
+### 10.11 §9.6 stays open — row-level security is still off
+
+Every read and write goes through an API route holding the service-role
+key, and those routes check the caller's role first. The browser holds the
+anon key and only reads.
+
+That makes the API the only line of defence. RLS would be a second one, and
+is the most valuable single thing left to add. It is not done here because
+it is a substantial piece of work in its own right and this branch was
+already changing how every page gets its data.
+
+### 10.12 Closes §9.2 — type errors fail the build again
+
+**Decision.** `ignoreBuildErrors` is off. `src/types/database.ts` was
+rewritten to match the schema.
+
+**Why.** The types file described a schema that no longer existed, so
+Supabase resolved most tables to `never` and the pages worked around it
+with `as any`. With the types correct, the casts came out and the build
+type-checks clean.
+
+`ignoreDuringBuilds` for ESLint is deliberately left on — lint warnings are
+not worth failing a deployment over.
+
+**Where.** `next.config.ts`, `src/types/database.ts`
+
+### 10.13 Closes §9.8 and §9.9 — dead code and versioned migrations
+
+Removed: `src/lib/auth.ts` (a dummy `testuser`/`password123` provider that
+`/api/bills` was importing its `authOptions` from), `src/app/user1.tsx`,
+`src/app/utils/services/*`, `src/app/api/supabse.ts`, `src/types/session.ts`
+(a second, conflicting session type declaration), `src/helpers/emailService.ts`
+and `src/helpers/mailer.ts`, and a 625-line commented-out earlier draft of
+the PDA manager page.
+
+`data_base.sql` is superseded by `supabase/migrations/`. It is left in place
+as a record of the prototype's schema; `supabase/README.md` says not to run
+it.
+
+### 10.14 Notifications moved to the server
+
+**Decision.** Mail is sent from the API route after the decision is already
+committed, and never throws. `MAIL_REDIRECT_TO` diverts everything to one
+inbox while demonstrating, printing the intended recipient at the top.
+
+**Why.** It used to be sent from the browser, which meant the applicant's
+email address and the send itself depended on a client that might have
+navigated away. A mail failure must not be able to undo a recorded
+approval — so it cannot.
+
+**Where.** `src/server/notify.ts`
+
+### 10.15 What the workflow is tested against
+
+`scripts/test_workflow.sql` — 44 assertions against a real Postgres:
+routing at the ₹50,000 boundary in both directions, reservation and
+release, rejection being terminal, wrong-desk refusal, the append-only
+triggers, the allocation guard, financial-year arithmetic, bill-number
+uniqueness.
+
+`tests/workflow.test.ts` — 20 assertions pinning the TypeScript mirror of
+the routing rules and the role normalisation.
+
+`supabase/seed/0003_demo_data.sql` generates its 151 bills by calling the
+real functions rather than inserting rows, so the demo data is itself a
+run of the workflow: the balances, the event log and the register are all
+consequences rather than fabrications.
+
+### 10.16 Known debt after this branch
+
+| # | Item | Section |
+| --- | --- | --- |
+| 1 | No row-level security policies | §10.11 |
+| 2 | Demo login bypass still present, behind an env flag | §10.10 |
+| 3 | Page guards should consolidate into middleware | §10.7 |
+| 4 | `remarks1`–`remarks4` duplicate `bill_approvals` | §10.4 |
+| 5 | One item per bill; no multi-line invoices | §10.5 |
+| 6 | No file upload — bills carry no scanned invoice | — |
+| 7 | Serial number formats are placeholders | `fn_next_bill_number` |
+| 8 | Four `window.confirm` prompts remain for destructive actions | — |
+| 9 | No middleware; unauthenticated page loads redirect client-side | §10.7 |

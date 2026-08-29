@@ -1,9 +1,10 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { sendBillRemarkNotification } from "@/helpers/emailService";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "../utils/supabase/client";
+import { api, money } from "@/lib/api";
+import Notice, { NoticeState } from "@/components/Notice";
+import { normaliseRole } from "@/lib/roles";
 import { signOut, useSession } from "next-auth/react";
 import {
   IconArrowLeft,
@@ -27,22 +28,7 @@ import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
 /* ---------- Interfaces ---------- */
-interface Bill {
-  id: string;
-  po_details: string;
-  supplier_name: string;
-  po_value: number;
-  status: string;
-  snp: string;
-  audit: string;
-  finance_admin?: string;
-  created_at?: string;
-  employee_id: string;
-  item_description?: string;
-  item_category?: string;
-  qty?: number;
-  remarks?: string;
-}
+import type { Bill } from "@/types/database";
 
 export default function SnpDashboard() {
   const { data: session,status } = useSession();
@@ -88,31 +74,25 @@ export default function SnpDashboard() {
       return;
     }
 
-    if (session && (session as any).user?.employee_type !== "Student Purchase") {
-      alert("You have no access to this page.");
-      signOut({ callbackUrl: "/login" });
+    if (session && normaliseRole((session as any).user?.employee_type) !== "Student Purchase") {
+      // Not this desk. Send them back to the portal rather than signing
+      // them out, which used to lose their session for a mis-click.
+      window.location.href = "/";
     }
   }, [status, session]);
   // fetch bills
   useEffect(() => {
     const fetchBills = async () => {
       setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from("bills")
-          .select("*")
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setBills(data || []);
-        setFilteredBills(data || []);
-      } catch (err) {
-        console.error("Error fetching bills:", err);
-      } finally {
-        setLoading(false);
+      const { data, error } = await api.get<{ bills: Bill[] }>("/api/bills");
+      setLoading(false);
+      if (error) {
+        setNotice({ kind: "bad", text: error });
+        return;
       }
+      setBills(data!.bills);
+      setFilteredBills(data!.bills);
     };
-
     fetchBills();
   }, []);
 
@@ -142,152 +122,80 @@ export default function SnpDashboard() {
     }));
   };
 
-  // approve handler (new workflow)
+  /**
+   * Every decision goes to /api/bills/:id/action, which calls
+   * fn_bill_action. That one function checks this desk actually owns the
+   * bill, refuses a bill that has already been decided, moves the money,
+   * routes it onward and writes the event log -- in one transaction.
+   *
+   * The role is read from the session on the server, so nothing here can
+   * approve a bill this desk is not entitled to approve.
+   */
+  const [busy, setBusy] = useState<string | null>(null);
+  const [notice, setNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
+
+  const act = async (
+    bill: Bill,
+    action: "Approved" | "Rejected" | "Hold",
+    extra?: Record<string, unknown>
+  ) => {
+    const remark = (remarks[bill.id] ?? "").trim();
+    if (action !== "Approved" && !remark) {
+      setNotice({
+        kind: "bad",
+        text: `Write a remark before you ${action === "Rejected" ? "reject" : "hold"} this bill.`,
+      });
+      return;
+    }
+
+    setBusy(bill.id);
+    setNotice(null);
+    const { data, error } = await api.post<{ bill: Bill }>(
+      `/api/bills/${bill.id}/action`,
+      { action, remark: remark || undefined, extra }
+    );
+    setBusy(null);
+
+    if (error) {
+      setNotice({ kind: "bad", text: error });
+      return;
+    }
+
+    setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, ...data!.bill } : b)));
+    setRemarks((r) => ({ ...r, [bill.id]: "" }));
+
+    setNotice({
+      kind: "ok",
+      text:
+        action === "Approved"
+          ? `Bill ${data!.bill.bill_number ?? ""} approved and forwarded to ${data!.bill.status}.`
+          : action === "Rejected"
+          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and they have been emailed.`
+          : "Bill put on hold. The applicant has been emailed.",
+    });
+  };
+
   const handleApprove = async (bill: Bill) => {
-    try {
-      // Get bank guarantee data for this bill
-      const bgData = bankGuaranteeData[bill.id] || {
-        hasBankGuarantee: false,
-        bankGuaranteeDetails: '',
-        bankGuaranteeAmount: '',
-        dateOfInstallation: '',
-        dateOfDelivery: ''
-      };
-
-      // Major/Minor: SNP approves -> if <=50k go to Finance Admin, else go to Audit
-      const goToFinanceAdmin = bill.po_value <= 50000;
-
-      const updates: any = {
-        snp: "Approved",
-        has_bank_guarantee: bgData.hasBankGuarantee,
-        bank_guarantee_details: bgData.hasBankGuarantee ? bgData.bankGuaranteeDetails : null,
-        bank_guarantee_amount: bgData.hasBankGuarantee ? parseFloat(bgData.bankGuaranteeAmount) || null : null,
-        date_of_installation: bgData.dateOfInstallation || null,
-        date_of_delivery: bgData.dateOfDelivery || null
-      };
-
-      if (goToFinanceAdmin) {
-        updates.status = "Finance Admin";
-        updates.finance_admin = "Pending";
-        updates.audit = bill.audit || null;
-      } else {
-        updates.status = "Audit";
-        updates.audit = "Pending";
-      }
-
-      const { error } = await (supabase as any)
-        .from("bills")
-        .update(updates)
-        .eq("id", bill.id);
-
-      if (error) throw error;
-
-      setBills((prev) =>
-        prev.map((b) =>
-          b.id === bill.id
-            ? { ...b, ...updates }
-            : b
-        )
-      );
-
-      alert("Bill approved successfully with bank guarantee details!");
-    } catch (err) {
-      console.error("Error approving bill:", err);
-      alert("Error approving bill. Please try again.");
-    }
+    // Bank guarantee details are collected here, at the Student Purchase
+    // desk. architecture.jpeg: "Enter Bank Guarantee".
+    const bg = bankGuaranteeData[bill.id];
+    await act(bill, "Approved", {
+      has_bank_guarantee: bg?.hasBankGuarantee ?? false,
+      bank_guarantee_details: bg?.hasBankGuarantee ? bg.bankGuaranteeDetails : null,
+      bank_guarantee_amount: bg?.hasBankGuarantee ? bg.bankGuaranteeAmount : null,
+      date_of_installation: bg?.dateOfInstallation || null,
+      date_of_delivery: bg?.dateOfDelivery || null,
+    });
   };
 
-  // reject handler
-  const handleReject = async (bill: Bill) => {
-    if (!remarks[bill.id] || remarks[bill.id].trim() === "") {
-      alert("Please enter a remark before rejecting the bill.");
-      return;
-    }
-    try {
-      const remarkWithUser = `${remarks[bill.id]} (By: ${session?.user?.name || 'Student Purchase'} at ${new Date().toLocaleString()})`;
-      const { error } = await (supabase as any)
-        .from("bills")
-        .update({
-          snp: "Reject",
-          remarks1: remarkWithUser, // SNP department uses remarks1
-        })
-        .eq("id", bill.id);
-
-      if (error) throw error;
-
-      setBills((prev) =>
-        prev.map((b) =>
-          b.id === bill.id ? { ...b, snp: "Reject", remarks1: remarkWithUser } : b
-        )
-      );
-
-      // Send email notification for Reject
-      try {
-        await sendBillRemarkNotification({
-          billId: bill.id,
-          department: "Student Purchase",
-          remark: remarks[bill.id],
-          action: "Reject",
-          timestamp: new Date().toLocaleString(),
-        });
-        alert(`Bill rejected! Email notification sent to employee.`);
-      } catch (emailError) {
-        console.error("Email notification failed:", emailError);
-        alert("Bill rejected! However, email notification failed to send.");
-      }
-    } catch (err) {
-      console.error("Error rejecting bill:", err);
-    }
-  };
-
-  // hold handler
-  const handleHold = async (bill: Bill) => {
-    if (!remarks[bill.id] || remarks[bill.id].trim() === "") {
-      alert("Please enter a remark before putting the bill on Hold.");
-      return;
-    }
-
-    try {
-      const remarkWithUser = `${remarks[bill.id]} (By: ${session?.user?.name || 'Student Purchase'} at ${new Date().toLocaleString()})`;
-      const { error } = await (supabase as any)
-        .from("bills")
-        .update({
-          snp: "Hold",
-          remarks1: remarkWithUser, // SNP department uses remarks1
-        })
-        .eq("id", bill.id);
-
-      if (error) throw error;
-
-      setBills((prev) =>
-        prev.map((b) =>
-          b.id === bill.id ? { ...b, snp: "Hold", remarks1: remarkWithUser } : b
-        )
-      );
-
-      // Send email notification for Hold
-      try {
-        await sendBillRemarkNotification({
-          billId: bill.id,
-          department: "Student Purchase",
-          remark: remarks[bill.id],
-          action: "Hold",
-          timestamp: new Date().toLocaleString(),
-        });
-        alert(`Bill put on hold! Email notification sent to employee.`);
-      } catch (emailError) {
-        console.error("Email notification failed:", emailError);
-        alert("Bill put on hold! However, email notification failed to send.");
-      }
-    } catch (err) {
-      console.error("Error holding bill:", err);
-    }
-  };
+  const handleReject = (bill: Bill) => act(bill, "Rejected");
+  const handleHold = (bill: Bill) => act(bill, "Hold");
 
   // Apply filters whenever search criteria change
   useEffect(() => {
     const allowedSnpStatuses = ["Pending", "Hold", "Reject", "Approved"]; // include approved for cards and filters
-    let filtered = bills.filter((b) => allowedSnpStatuses.includes(b.snp));
+    // A Consumables bill never comes to this desk, so its snp is null.
+    let filtered = bills.filter((b) => b.snp !== null && allowedSnpStatuses.includes(b.snp));
 
     // Status filter within SNP
     if (activeFilter !== "All") {
@@ -373,6 +281,7 @@ export default function SnpDashboard() {
 
   return (
     <div className="flex w-full h-screen bg-white shadow-lg">
+      <Notice notice={notice} onDismiss={() => setNotice(null)} />
       {/* Sidebar */}
       <Sidebar open={open} setOpen={setOpen}>
         <SidebarBody className="flex flex-col justify-between h-full">
@@ -911,7 +820,7 @@ export default function SnpDashboard() {
 }
 
 /* ------------------------- Sidebar Logos ------------------------- */
-export const Logo = () => (
+const Logo = () => (
   <a
     href="#"
     className="relative z-20 flex items-center space-x-2 py-1 text-base font-semibold text-black"
@@ -927,7 +836,7 @@ export const Logo = () => (
   </a>
 );
 
-export const LogoIcon = () => (
+const LogoIcon = () => (
   <a
     href="#"
     className="relative z-20 flex items-center py-1 text-sm font-semibold text-black"

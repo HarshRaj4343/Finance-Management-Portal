@@ -1,311 +1,177 @@
 // UploadBill.tsx
-import React, { useState, useEffect } from "react";
+"use client";
+
+import React, { useState, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
-import { supabase } from "../utils/supabase/client";
 import { BillFormData } from "./types";
-import type { Employee, PDABalance, BillInsert } from "@/types/database";
+import { api, money } from "@/lib/api";
+import { routeAfter, AUDIT_THRESHOLD } from "@/lib/roles";
+import type { EmployeeRow, PdaBalanceRow, BillRow } from "@/types/database";
 
 interface UploadBillProps {
   onBillSubmitted: () => void;
   department?: string | null;
 }
-interface PDABalance {
-  id?: string;
-  employee_id: string | null;
-  balance: number | null;
-  updated_at?: string | null;
-  department: string | null;
-  email: string;
-}
+
+type LookupResult = {
+  found: boolean;
+  employee?: EmployeeRow;
+  pda?: PdaBalanceRow | null;
+  message?: string | null;
+};
+
+const EMPTY: BillFormData = {
+  employee_id: "",
+  employee_name: "",
+  po_details: "",
+  po_value: "",
+  supplier_name: "",
+  supplier_address: "",
+  item_category: "Minor",
+  item_description: "",
+  qty: "",
+  bill_details: "",
+  indenter_name: "",
+  qty_issued: "",
+  source_of_fund: "",
+  stock_entry: "",
+  location: "",
+};
 
 const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) => {
-  const [balance, setBalance] = useState<number | null>(null);
-  const [formData, setFormData] = useState<BillFormData>({
-    employee_id: "",
-    employee_name: "",
-    po_details: "",
-    po_value: "",
-    supplier_name: "",
-    supplier_address: "",
-    item_category: "Minor",
-    item_description: "",
-    qty: "",
-    bill_details: "",
-    indenter_name: "",
-    qty_issued: "",
-    source_of_fund: "",
-    stock_entry: "",
-    location: "",
-  });
-  const [applicantDepartment, setApplicantDepartment] = useState<string | null>(null);
+  const [formData, setFormData] = useState<BillFormData>(EMPTY);
+  const [lookup, setLookup] = useState<LookupResult | null>(null);
+  const [looking, setLooking] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState<string | null>(null);
 
-  // Helpers for sanitization
-  const normalizeText = (val: string) => val.replace(/\s+/g, " ").trim();
-  const normalizeEmployeeId = (val: string) => val.replace(/\s+/g, "").trim(); // Remove ALL whitespace including newlines
+  const balance = lookup?.pda ? Number(lookup.pda.balance) : null;
+  const applicantDepartment = lookup?.employee?.department ?? null;
 
-  // DEBUG: Log normalized employee id and current formData
-  useEffect(() => {
-    if (formData.employee_id) {
-      console.log('[DEBUG] Employee ID (form):', formData.employee_id);
-      console.log('[DEBUG] Normalized Employee ID:', normalizeEmployeeId(formData.employee_id));
+  /**
+   * Look the employee up as the ID is typed. One exact match against the
+   * server, debounced -- the prototype tried four `like` patterns from the
+   * browser on every keystroke because employee codes had stray whitespace
+   * in them. A CHECK constraint now keeps them clean.
+   */
+  const runLookup = useCallback(async (code: string) => {
+    const id = code.trim();
+    if (!id) {
+      setLookup(null);
+      return;
     }
-    console.log('[DEBUG] formData:', formData);
-  }, [formData]);
-
-  // Robust PDA balance lookup (handles whitespace removal)
-  const fetchPdaBalanceById = async (rawId: string) => {
-    const id = normalizeEmployeeId(rawId);
-    // Case-sensitive exact match with whitespace removed
-    let { data, error }: { data: PDABalance | null; error: any } = await supabase
-      .from("pda_balances")
-      .select("employee_id,balance,department")
-      
-      .or(
-            [
-              `employee_id.eq.${id}`,
-              `employee_id.like.%${id}%`,
-              `employee_id.like.%${id}`,
-              `employee_id.like.${id}%`
-            ].join(",")
-        )
-        .limit(1)        // ✅ safer than .single()
-        .maybeSingle();
-    if (data && !error) return data.balance as number | null;
-    
-    // If exact match fails, try to find by comparing normalized values
-    const res2 = await supabase
-      .from("pda_balances")
-      .select("employee_id,balance,department")
-      .limit(10);
-    if (res2.data && res2.data.length > 0) {
-      const list = res2.data as PDABalance[];
-      const exact = list.find((r) => normalizeEmployeeId(r.employee_id || "") === id);
-      return (exact?.balance ?? null) as number | null;
+    setLooking(true);
+    const { data, error } = await api.get<LookupResult>(
+      `/api/lookup/employee?code=${encodeURIComponent(id)}`
+    );
+    setLooking(false);
+    if (error) {
+      setLookup({ found: false, message: error });
+      return;
     }
-    return null;
-  };
+    setLookup(data);
+    // Fill the name in for them once we know it.
+    if (data?.found && data.employee) {
+      setFormData((f) =>
+        f.employee_name.trim() === ""
+          ? { ...f, employee_name: data.employee!.employee_name }
+          : f
+      );
+    }
+  }, []);
 
-  // Fetch PDA balance when employee_id changes
   useEffect(() => {
-    const fetchBalance = async () => {
-      if (!formData.employee_id) return;
-      try {
-        const bal = await fetchPdaBalanceById(formData.employee_id);
-        if (bal == null) setBalance(null); else setBalance(Number(bal));
-      } catch (err) {
-        console.error(err);
-        setBalance(null);
-      }
-    };
-    fetchBalance();
-  }, [formData.employee_id]);
+    const t = setTimeout(() => runLookup(formData.employee_id), 350);
+    return () => clearTimeout(t);
+  }, [formData.employee_id, runLookup]);
 
-  // Fetch applicant's department based on entered employee_id
-  useEffect(() => {
-    const run = async () => {
-      const id = formData.employee_id?.trim();
-      if (!id) {
-        setApplicantDepartment(null);
-        return;
-      }
-      const normalizedId = normalizeEmployeeId(id);
-      console.log('[DEBUG] Applicant dept lookup (from pda_balances) start', { rawId: id, normalizedId });
-      try {
-        // Case-sensitive exact match with whitespace removed
-        const { data, error } = await supabase
-          .from("pda_balances")
-          .select("department, employee_id")
-          
-          .or(
-            [
-              `employee_id.eq.${normalizedId}`,
-              `employee_id.like.%${normalizedId}%`,
-              `employee_id.like.%${normalizedId}`,
-              `employee_id.like.${normalizedId}%`
-            ].join(",")
-          )
-          .maybeSingle();
-          
-        
-        if (data && !error) {
-          console.log('[DEBUG] Applicant dept lookup result (pda_balances, exact match)', data);
-          setApplicantDepartment((data as any)?.department ?? null);
-          return;
-        }
-        
-        // If exact match fails, try to find by comparing normalized values
-        // const res2 = await supabase
-        //   .from("pda_balances")
-        //   .select("employee_id, department")
-        //   .limit(10);
-        
-        // if (res2.data && res2.data.length > 0) {
-        //   console.log('[DEBUG] Sample pda_balances data:', res2.data);
-        //   const list = res2.data as Array<{employee_id: string | null, department: string | null}>;
-        //   const exact = list.find((r) => normalizeEmployeeId(r.employee_id || "") === normalizedId);
-        //   if (exact?.department) {
-        //     console.log('[DEBUG] Applicant dept lookup result (pda_balances, normalized match)', exact);
-        //     setApplicantDepartment(exact.department);
-        //     return;
-        //   }
-        // }
-        
-        // console.log('[DEBUG] Applicant dept lookup result (pda_balances) - no match found');
-        // setApplicantDepartment(null);
-      } catch (err) {
-        console.error('[DEBUG] Exception during applicant dept lookup (pda_balances)', err);
-        setApplicantDepartment(null);
-      }
-    };
-    run();
-  }, [formData.employee_id]);
+  const billValue = parseFloat(String(formData.po_value).replace(/,/g, ""));
+  const amountIsValid = Number.isFinite(billValue) && billValue > 0;
+
+  // Where this bill will go, so the filer can see it before submitting.
+  const firstStop = amountIsValid
+    ? routeAfter("Submit", formData.item_category, billValue)
+    : null;
+
+  const insufficient =
+    amountIsValid && balance !== null && billValue > balance;
+
+  const departmentConflict =
+    (department ?? "").trim() &&
+    (applicantDepartment ?? "").trim() &&
+    department!.trim() !== applicantDepartment!.trim();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    alert('[DEBUG] Submitting this bill data (JSON):\n' + JSON.stringify(formData, null, 2));
-    console.log('[DEBUG] Submit called with formData:', formData);
-    const billValue = parseFloat(String(formData.po_value).replace(/,/g, ""));
-    if (!formData.employee_id || !formData.employee_name) {
-      alert("Employee ID and Name are required.");
+    setError(null);
+    setDone(null);
+
+    if (!formData.employee_id.trim() || !formData.employee_name.trim()) {
+      setError("An employee ID and a name are both required.");
       return;
     }
-    if (isNaN(billValue) || billValue <= 0) {
-      alert("Enter a valid bill amount.");
+    if (!amountIsValid) {
+      setError("Enter a bill amount greater than zero.");
+      return;
+    }
+    if (!lookup?.found) {
+      setError(lookup?.message ?? "That employee ID could not be found.");
+      return;
+    }
+    if (departmentConflict) {
+      setError(
+        `This page is filing for ${department}, but ${formData.employee_id} belongs to ${applicantDepartment}.`
+      );
+      return;
+    }
+    if (insufficient) {
+      setError(
+        `Insufficient PDA balance. ${money(balance)} is available and this bill is ${money(billValue)}.`
+      );
       return;
     }
 
-    // Department consistency check: page department vs applicant's department
-    const headingDept = (department || '').trim();
-    const applicantDept = (applicantDepartment || '').trim();
-    if (headingDept && applicantDept && headingDept !== applicantDept) {
-      alert('Department conflict: Applicant department does not match your department.');
-      return;
-    }
-
-    const normalizedEmployeeId = normalizeEmployeeId(formData.employee_id);
-    const normalizedEmployeeName = normalizeText(formData.employee_name);
-    const foundBalance = await fetchPdaBalanceById(normalizedEmployeeId);
-    if (foundBalance == null) {
-      alert("Invalid Employee ID or no PDA balance found.");
-      return;
-    }
-    const currentBalance = parseFloat(String(foundBalance));
-    if (currentBalance < billValue) {
-      alert("Insufficient PDA balance. Cannot submit bill.");
-      return;
-    }
-    // Determine initial workflow per new rules
-    // Major/Minor: send to SNP first.
-    //   - If amount <= 50k, after SNP approval -> Finance Admin
-    //   - If amount > 50k, after SNP approval -> Audit (then Finance Admin)
-    // Consumables: do not send to SNP.
-    //   - If amount <= 50k -> Finance Admin directly
-    //   - If amount > 50k -> Audit (then Finance Admin)
-    let category = formData.item_category;
-    let snp: "Pending" | "Reject" | "Hold" | "Approved" | null = null;
-    let audit: "Pending" | "Reject" | "Hold" | "Approved" | null = null;
-    let status: string = "User";
-
-    if (category === "Consumables") {
-      // Skip SNP completely
-      snp = null;
-      if (billValue <= 50000) {
-        status = "Finance Admin";
-        audit = null;
-        // Ensure it appears in Finance Admin review
-        // by marking finance_admin as Pending
-        
-      } else {
-        status = "Audit";
-        audit = "Pending";
-      }
-    } else {
-      // Treat both Major and Minor the same for initial routing: go to SNP
-      snp = "Pending";
-      audit = null;
-      status = "Student Purchase";
-    }
-
-    // Prepare normalizedData (existing logic)
-    let normalizedData: any = {
+    setSubmitting(true);
+    // The balance check, the insert, the reservation against the PDA and
+    // the event log all happen inside one database transaction. If any of
+    // it fails, none of it happened.
+    const { data, error: err } = await api.post<{ bill: BillRow }>("/api/bills", {
       ...formData,
-      employee_id: normalizedEmployeeId,
-      employee_name: normalizedEmployeeName,
       po_value: billValue,
-      item_category: formData.item_category,
-      status,
-      snp,
-      audit,
-    };
-    // Remove empty string -> null for all fields
-    Object.keys(normalizedData).forEach((key) => {
-      if (normalizedData[key] === "") normalizedData[key] = null;
     });
-    // --- Use applicant department from pda_balances (already fetched above) ---
-    if (!applicantDepartment) {
-      alert('[ERROR] Could not find department for this employee in PDA balances.');
+    setSubmitting(false);
+
+    if (err) {
+      setError(err);
       return;
     }
-    normalizedData.employee_department = applicantDepartment;
-    console.log('[DEBUG] Using applicant department from pda_balances:', applicantDepartment);
-    // Now insert as before
-    try {
-      console.log('[DEBUG] Inserting bill with normalizedData:', normalizedData);
-      const { error: insertErr } = await (supabase.from("bills") as any).insert([normalizedData]);
-    
-      if (insertErr) {
-        alert('[ERROR] Failed to upload bill!: ' + insertErr.message);
-        console.error('[DEBUG] Failed to upload bill:', insertErr.message);
-        return;
-      }
-    
-      // ✅ Deduct the bill amount from PDA balance
-      const newBalance = currentBalance - billValue;
-      const { error: updateErr } = await supabase
-        .from<PDABalance>("pda_balances")
-        .update({ balance: newBalance })
-        .eq("employee_id", normalizedEmployeeId);
-    
-      if (updateErr) {
-        alert('[WARNING] Bill saved but PDA balance update failed! Please contact admin.');
-        console.error('[DEBUG] PDA balance update error:', updateErr.message);
-      } else {
-        console.log(`[DEBUG] PDA balance updated successfully. New balance: ₹${newBalance.toFixed(2)}`);
-      }
-    
-      alert('✅ Bill submitted successfully!');
-      console.log('[DEBUG] Bill submitted successfully');
-    
-      // Reset form
-      setFormData({
-        employee_id: "",
-        employee_name: "",
-        po_details: "",
-        po_value: "",
-        supplier_name: "",
-        supplier_address: "",
-        item_category: "Minor",
-        item_description: "",
-        qty: "",
-        bill_details: "",
-        indenter_name: "",
-        qty_issued: "",
-        source_of_fund: "",
-        stock_entry: "",
-        location: "",
-      });
-      setBalance(null);
-      onBillSubmitted();
-    } catch (err: any) {
-      alert('[ERROR] Unexpected error during bill submission! ' + (err.message || err));
-      console.error('[DEBUG] Unexpected error:', err.message || err);
-    }
-    
+
+    setDone(
+      `Bill ${data!.bill.bill_number} filed. ${money(billValue)} is reserved against the PDA of ${formData.employee_id}, and it is now with ${data!.bill.status}.`
+    );
+    setFormData(EMPTY);
+    setLookup(null);
+    onBillSubmitted();
   };
 
   return (
     <div className="w-full max-w-3xl mx-auto relative">
-      <h1 className="text-2xl font-semibold mb-6">Upload Bill{department ? ` for ${department}` : ''}  </h1>
+      <h1 className="text-2xl font-semibold mb-6">
+        Upload Bill{department ? ` for ${department}` : ""}{" "}
+      </h1>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      )}
+      {done && (
+        <div className="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800">
+          {done}
+        </div>
+      )}
+
       <form
         onSubmit={handleSubmit}
         className="grid grid-cols-2 gap-4 bg-white shadow p-6 rounded-lg border"
@@ -318,10 +184,9 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
             {field === "item_category" ? (
               <select
                 value={formData[field]}
-                onChange={(e) => {
-                  const raw = e.target.value;
-                  setFormData({ ...formData, [field]: raw });
-                }}
+                onChange={(e) =>
+                  setFormData({ ...formData, [field]: e.target.value })
+                }
                 className="w-full border p-2 rounded"
               >
                 <option>Minor</option>
@@ -339,30 +204,83 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
                 onChange={(e) =>
                   setFormData({ ...formData, [field]: e.target.value })
                 }
-                onWheel={field.includes("value") ? (e) => (e.currentTarget as HTMLInputElement).blur() : undefined}
-                className="w-full border p-2 rounded"
-                required={
-                  field === "employee_id" || field === "employee_name"
+                onWheel={
+                  field.includes("value")
+                    ? (e) => (e.currentTarget as HTMLInputElement).blur()
+                    : undefined
                 }
+                className={`w-full border p-2 rounded ${
+                  field === "employee_id" && lookup && !lookup.found
+                    ? "border-red-400"
+                    : ""
+                }`}
+                required={field === "employee_id" || field === "employee_name"}
               />
+            )}
+
+            {/* what we know about the ID that was typed */}
+            {field === "employee_id" && (
+              <p className="mt-1 text-xs">
+                {looking && <span className="text-gray-400">Looking up…</span>}
+                {!looking && lookup && !lookup.found && (
+                  <span className="text-red-600">{lookup.message}</span>
+                )}
+                {!looking && lookup?.found && (
+                  <span className="text-gray-500">
+                    {lookup.employee?.employee_name} · {lookup.employee?.department}
+                  </span>
+                )}
+              </p>
+            )}
+
+            {field === "po_value" && amountIsValid && (
+              <p className="mt-1 text-xs text-gray-500">
+                {insufficient ? (
+                  <span className="text-red-600">
+                    Over the available balance by {money(billValue - (balance ?? 0))}.
+                  </span>
+                ) : (
+                  <>
+                    Goes to <strong>{firstStop}</strong> first
+                    {billValue > AUDIT_THRESHOLD
+                      ? " (above ₹50,000, so Audit will see it)"
+                      : ""}
+                    .
+                  </>
+                )}
+              </p>
             )}
           </div>
         ))}
+
         <div className="col-span-2">
           <motion.button
             type="submit"
             whileTap={{ scale: 0.95 }}
-            className="w-full bg-blue-600 text-white py-2 rounded-lg shadow"
+            disabled={submitting || Boolean(insufficient) || !lookup?.found}
+            className="w-full bg-blue-600 text-white py-2 rounded-lg shadow disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Submit Bill
+            {submitting ? "Submitting…" : "Submit Bill"}
           </motion.button>
         </div>
+
         {balance !== null && (
           <div className="col-span-2 flex justify-between items-center text-gray-600">
-            <span>Current PDA Balance:<br/> 
-              ₹ {balance.toFixed(2)}</span>
+            <span>
+              Current PDA Balance:
+              <br />
+              {money(balance)}
+              {lookup?.pda && Number(lookup.pda.committed) > 0 && (
+                <span className="block text-xs text-gray-400">
+                  {money(lookup.pda.committed)} already committed to bills in progress
+                </span>
+              )}
+            </span>
             {applicantDepartment && (
-              <span className="font-medium text-gray-800">Applicants department:<br/> {applicantDepartment}</span>
+              <span className="font-medium text-gray-800">
+                Applicants department:
+                <br /> {applicantDepartment}
+              </span>
             )}
           </div>
         )}

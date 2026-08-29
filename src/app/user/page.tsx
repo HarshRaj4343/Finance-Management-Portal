@@ -3,7 +3,8 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "../utils/supabase/client";
+import { api } from "@/lib/api";
+import Notice, { NoticeState } from "@/components/Notice";
 import { signOut, useSession } from "next-auth/react";
 import {
   IconReceipt2,
@@ -23,35 +24,9 @@ import {
 import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
-interface Bill {
-  id: string;
-  po_details: string;
-  supplier_name: string;
-  po_value: number;
-  status: string;
-  created_at?: string;
-  employee_id: string;
-  employee_name: string;
-  item_description?: string;
-  item_category?: string;
-  qty?: number;
-  remarks?: string;   // Finance Admin remark
-  remarks1?: string;  // SNP remark
-  remarks2?: string;  // Audit remark
-  remarks3?: string;  // Other remark
-  remarks4?: string;  // Additional remark
-  snp?: string;
-  audit?: string;
-  finance_admin?: string;
-}
+import type { Bill } from "@/types/database";
 
-interface Employee {
-  id: string;
-  employee_code: string;
-  name: string;
-  email?: string;
-  username: string;
-}
+import type { Employee } from "@/types/database";
 
 type PdaBalanceRow = { balance: number };
 
@@ -82,90 +57,89 @@ export default function UserPage() {
     onHold: 0,
   });
 
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  /**
+   * Everything on this page comes from two endpoints. /api/me knows who is
+   * asking and returns their PDA position; /api/bills returns only their
+   * own bills, because the server scopes it by role rather than trusting
+   * a filter sent up from the browser.
+   */
   useEffect(() => {
+    if (!session?.user?.username) return;
+
     const fetchData = async () => {
       setLoading(true);
-      try {
-        const username = session?.user?.username;
-        if (!username) return;
 
-        // Fetch employee data
-        const { data: employeeData } = await supabase
-          .from("employees")
-          .select("*")
-          .eq("employee_code", username)
-          .single();
-        if (employeeData) setEmployee(employeeData);
+      const [me, mine] = await Promise.all([
+        api.get<{
+          code: string;
+          name: string;
+          email: string | null;
+          department: string | null;
+          role: string;
+          provisioned: boolean;
+          pda: { allocated: number; balance: number; committed: number; spent: number } | null;
+        }>("/api/me"),
+        api.get<{ bills: Bill[] }>("/api/bills?limit=500"),
+      ]);
 
-        // Fetch PDA balance
-        const { data: balanceData, error } = await supabase
-          .from("pda_balances")
-          .select("balance")
-          .eq("employee_id", username)
-          .maybeSingle<PdaBalanceRow>();
+      setLoading(false);
 
-        if (error) {
-          console.error("Error fetching balance:", error.message);
-          setBalance(0);
-        } else {
-          setBalance(balanceData?.balance ?? 0);
-        }
-
-        // Fetch bills
-        const { data: billsData } = await supabase
-          .from("bills")
-          .select("*")
-          .eq("employee_id", username)
-          .or(
-            [
-              `employee_id.eq.${username}`,
-              `employee_id.like.%${username}%`,
-              `employee_id.like.%${username}`,
-              `employee_id.like.${username}%`
-            ].join(",")
-          )
-          .order("created_at", { ascending: false });
-
-        if (billsData) {
-          setBills(billsData);
-          
-          // Calculate stats
-          const stats: BillStats = {
-            total: billsData.length,
-            pending: 0,
-            approved: 0,
-            rejected: 0,
-            onHold: 0,
-          };
-
-          billsData.forEach((bill) => {
-            if (bill.status === "Accepted") {
-              stats.approved++;
-            } else if (
-              bill.audit === "Reject" ||
-              bill.finance_admin === "Reject" ||
-              bill.snp === "Reject"
-            ) {
-              stats.rejected++;
-            } else if (
-              bill.audit === "Hold" ||
-              bill.finance_admin === "Hold" ||
-              bill.snp === "Hold"
-            ) {
-              stats.onHold++;
-            } else {
-              stats.pending++;
-            }
-          });
-
-          setBillStats(stats);
-        }
-      } catch (err) {
-        console.error("Error loading user data:", err);
-      } finally {
-        setLoading(false);
+      if (me.error || mine.error) {
+        setNotice({ kind: "bad", text: me.error ?? mine.error! });
+        return;
       }
+
+      setEmployee({
+        id: me.data!.code,
+        employee_code: me.data!.code,
+        employee_name: me.data!.name,
+        email: me.data!.email ?? "",
+        department: me.data!.department ?? "",
+        employee_type: me.data!.role,
+        is_active: true,
+        created_at: "",
+        updated_at: "",
+      } as Employee);
+
+      setBalance(me.data!.pda ? Number(me.data!.pda.balance) : 0);
+
+      if (!me.data!.provisioned) {
+        setNotice({
+          kind: "info",
+          text:
+            "You are signed in, but nobody has been assigned to your account yet. " +
+            "Contact the Dean of Finance's office to have your role set up.",
+        });
+      }
+
+      const bills = mine.data!.bills;
+      setBills(bills);
+
+      // A bill is rejected the moment any desk rejects it -- rejection is
+      // terminal, so it can never come back from that.
+      const stats: BillStats = {
+        total: bills.length,
+        pending: 0,
+        approved: 0,
+        rejected: 0,
+        onHold: 0,
+      };
+      for (const bill of bills) {
+        if (bill.status === "Accepted") stats.approved++;
+        else if (bill.status === "Rejected") stats.rejected++;
+        else if (
+          bill.snp === "Hold" ||
+          bill.audit === "Hold" ||
+          bill.finance_admin === "Hold"
+        )
+          stats.onHold++;
+        else stats.pending++;
+      }
+      setBillStats(stats);
     };
+
     fetchData();
   }, [session]);
 
@@ -335,6 +309,7 @@ export default function UserPage() {
 
   return (
     <div className="flex w-screen h-screen overflow-hidden">
+      <Notice notice={notice} onDismiss={() => setNotice(null)} />
       {/* Sidebar */}
       <Sidebar open={open} setOpen={setOpen}>
         <SidebarBody className="justify-between gap-6 md:gap-10">
@@ -353,7 +328,7 @@ export default function UserPage() {
               <>
                 <SidebarLink
                   link={{
-                    label: employee?.name || session?.user?.username || "User",
+                    label: employee?.employee_name || session?.user?.username || "User",
                     href: "#",
                     icon: (
                       <img
@@ -415,7 +390,7 @@ export default function UserPage() {
               className="mb-6"
             >
               <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-                Welcome, {employee?.name || session?.user?.username}
+                Welcome, {employee?.employee_name || session?.user?.username}
               </h1>
               <p className="text-gray-600 text-sm md:text-base">
                 Integrated Finance Management Portal - IIT Mandi
@@ -764,7 +739,7 @@ export default function UserPage() {
 }
 
 /* Sidebar Logos */
-export const Logo = () => (
+const Logo = () => (
   <a href="#" className="flex items-center space-x-2 py-1 text-sm font-semibold text-black">
     <img src="/iit.png" alt="IIT Mandi" className="h-7 w-7" />
     <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="whitespace-pre text-black">
@@ -773,7 +748,7 @@ export const Logo = () => (
   </a>
 );
 
-export const LogoIcon = () => (
+const LogoIcon = () => (
   <a href="#" className="flex items-center space-x-2 py-1 text-sm font-semibold text-black">
     <img src="/iit.png" alt="IIT Mandi" className="h-7 w-7" />
   </a>

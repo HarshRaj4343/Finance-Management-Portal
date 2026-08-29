@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "../utils/supabase/client";
+import { api } from "@/lib/api";
 import QRCode from "react-qr-code";
 import { Bill } from "./types";
 
@@ -12,6 +12,7 @@ interface ApprovedBillsProps {
 const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
   const [bills, setBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!department) {
@@ -21,34 +22,29 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
 
     const fetchApprovedBills = async () => {
       setLoading(true);
-      try {
-        // get rows where any of the three is Approved (server-side reduces rows)
-        const { data, error, count } = await supabase
-          .from("bills")
-          .select("*", { count: "exact" })
-          .eq("employee_department", department)
-          .or("snp.eq.Approved,audit.eq.Approved,finance_admin.eq.Approved")
-          .order("created_at", { ascending: false })
-          .range(0, 9999);
+      const { data, error } = await api.get<{ bills: Bill[] }>(
+        `/api/bills?department=${encodeURIComponent(department)}&limit=500`
+      );
+      setLoading(false);
 
-        if (error) throw error;
-
-        // allow cases where at least one is "Approved" and the others are NULL (not the string "N/A")
-        const filtered = (data || []).filter((b: Bill) => {
-          const statuses = [b.snp, b.audit, b.finance_admin];
-          const approvedCount = statuses.filter((s) => s === "Approved").length;
-          // allow only Approved or NULL (SQL NULL -> JS null)
-          const othersAreAllowed = statuses.every((s) => s === "Approved" || s == null);
-          return approvedCount >= 1 && othersAreAllowed;
-        });
-
-        console.log("ApprovedBills: supabase count =", count, "returned =", (data || []).length, "filtered =", filtered.length);
-        setBills(filtered);
-      } catch (err) {
-        console.error("Error fetching approved bills:", err);
-      } finally {
-        setLoading(false);
+      if (error) {
+        setError(error);
+        setBills([]);
+        return;
       }
+
+      // Bills this department has had cleared at least one desk, and which
+      // no desk has rejected or is holding.
+      setError(null);
+      setBills(
+        data!.bills.filter((b) => {
+          const desks = [b.snp, b.audit, b.finance_admin];
+          return (
+            desks.some((d) => d === "Approved") &&
+            desks.every((d) => d === "Approved" || d == null)
+          );
+        })
+      );
     };
 
     fetchApprovedBills();
@@ -117,6 +113,11 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
   return (
     <div className="w-full">
       <h2 className="text-2xl font-semibold mb-6">Approved Bills</h2>
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {error}
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="min-w-full divide-y divide-gray-200 border rounded bg-white shadow-sm text-sm">
           <thead className="bg-gray-100">

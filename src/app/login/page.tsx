@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import { getSession, signIn } from "next-auth/react";
-import { getEmployeeByCode } from "../api/supabse"; // ✅ make sure filename is correct
+import { homeFor } from "@/lib/roles";
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -22,36 +22,40 @@ export default function LoginPage() {
     });
 
     if (res?.error) {
-      setError("Login failed");
-    } else if (res?.ok) {
+      // NextAuth reports every failure the same way. Do not guess at the
+      // cause -- a wrong password and an unreachable LDAP server look
+      // identical from here.
+      setError(
+        res.error === "CredentialsSignin"
+          ? "That username and password were not accepted."
+          : res.error
+      );
+      setLoading(false);
+      return;
+    }
+
+    if (res?.ok) {
       try {
         const session = await getSession();
-        const userId = session?.user?.id;
-
-        if (userId) {
-          const employeeType = session?.user?.employee_type;
-          console.log("Login successful, employee type:", employeeType);
-
-          const routeMap: Record<string, string> = {
-            "Finance Admin": "/finance-admin",
-            "Finance Employee": "/finance-employee",
-            "Audit": "/audit",
-            "Student Purchase": "/student-purchase",
-            "pda-manager": "/pda-manager",
-            "bill_employee_fill": "/apply-bill",
-            "bill_employee_edit": "/bill-editor",
-            
-          };
-
-          const redirectUrl = employeeType && routeMap[employeeType] ? routeMap[employeeType] : "/user";
-          console.log("Redirecting to:", redirectUrl);
-          window.location.href = redirectUrl;
+        if (!session?.user?.id) {
+          setError("Signed in, but the session could not be read. Please try again.");
+          setLoading(false);
+          return;
         }
-      } catch (err) {
-        console.error("Error during login redirections:", err);
-        setError("Error during login. Please try again by connecting iit mandi network.");
+
+        // The role comes from the database, resolved during sign-in.
+        // homeFor understands the older spellings that are still in the
+        // data, so nobody lands on a route that does not exist.
+        window.location.href = homeFor(session.user.employee_type);
+        return;
+      } catch {
+        setError(
+          "Signed in, but could not work out where to send you. " +
+            "If you are off campus, connect to the IIT Mandi network and try again."
+        );
       }
     }
+
     setLoading(false);
   };
 

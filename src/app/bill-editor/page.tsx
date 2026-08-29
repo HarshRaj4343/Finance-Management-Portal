@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "../utils/supabase/client";
+import { api } from "@/lib/api";
+import Notice, { NoticeState } from "@/components/Notice";
 import BillsHistory from "../apply-bill/BillsHistory";
 import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { Logo, LogoIcon } from "../apply-bill/Logo";
@@ -15,69 +16,54 @@ export default function BillEditorPage() {
   const [loading, setLoading] = useState(true);
   const [department, setDepartment] = useState<string | null>(null);
 
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  // This desk corrects bills for its own department. The department comes
+  // from /api/me; the bills come back already scoped by the server.
+  const loadBills = async (dept: string) => {
+    const { data, error } = await api.get<{ bills: Bill[] }>(
+      `/api/bills?department=${encodeURIComponent(dept)}&limit=500`
+    );
+    if (error) {
+      setNotice({ kind: "bad", text: error });
+      setBills([]);
+      return;
+    }
+    setBills(data!.bills);
+  };
+
   useEffect(() => {
-    const fetchDepartmentAndBills = async () => {
-      const userId = session?.user?.id;
-      if (!userId) return;
+    if (!session?.user?.id) return;
+
+    const run = async () => {
       setLoading(true);
-      try {
-        const { data: emp, error: empErr } = await supabase
-          .from("employees")
-          .select("department")
-          
-          .or(
-            [
-              `employee_code.eq.${userId}`,
-              `employee_code.like.%${userId}%`,
-              `employee_code.like.%${userId}`,
-              `employee_code.like.${userId}%`
-            ].join(",")
-          )
-          .maybeSingle();
-          
-        if (empErr) throw empErr;
-        const dept = (emp as { department: string | null } | null)?.department || null;
-        setDepartment(dept);
-
-        if (!dept) {
-          setBills([]);
-          return;
-        }
-
-        const { data, error } = await supabase
-          .from("bills")
-          .select("*")
-          .eq("employee_department", dept)
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        setBills(data || []);
-      } catch (err) {
-        console.error("Error fetching bills:", err);
-        setBills([]);
-      } finally {
+      const me = await api.get<{ department: string | null }>("/api/me");
+      if (me.error) {
+        setNotice({ kind: "bad", text: me.error });
         setLoading(false);
+        return;
       }
+
+      const dept = me.data!.department;
+      setDepartment(dept);
+
+      if (!dept) {
+        setBills([]);
+        setNotice({
+          kind: "info",
+          text: "Your account has no department set. Ask the Dean of Finance's office to assign one.",
+        });
+      } else {
+        await loadBills(dept);
+      }
+      setLoading(false);
     };
-    fetchDepartmentAndBills();
+
+    run();
   }, [session]);
 
   const handleBillUpdated = () => {
-    // Refresh after any edit
-    const fetchBills = async () => {
-      try {
-        if (!department) return;
-        const { data, error } = await supabase
-          .from("bills")
-          .select("*")
-          .eq("employee_department", department)
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        setBills(data || []);
-      } catch (err) {
-        console.error("Error fetching bills:", err);
-      }
-    };
-    fetchBills();
+    if (department) loadBills(department);
   };
 
   // Below: bills are fetched and set with setBills(data || [])
@@ -88,6 +74,7 @@ export default function BillEditorPage() {
 
   return (
     <div className="flex h-screen w-full bg-white overflow-hidden">
+      <Notice notice={notice} onDismiss={() => setNotice(null)} />
       <Sidebar open={open} setOpen={setOpen}>
         <SidebarBody className="justify-between gap-8">
           <div className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto">

@@ -1,7 +1,8 @@
 // EditBillModal.tsx
 import React, { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { supabase } from "../utils/supabase/client";
+import { api } from "@/lib/api";
+import { AUDIT_THRESHOLD } from "@/lib/roles";
 import { Bill, BillFormData } from "./types";
 
 interface EditBillModalProps {
@@ -17,7 +18,7 @@ const EditBillModal: React.FC<EditBillModalProps> = ({
 }) => {
   const [formData, setFormData] = useState<BillFormData>({
     employee_id: bill.employee_id,
-    employee_name: bill.employee_name,
+    employee_name: bill.employee_name ?? "",
     po_details: bill.po_details || "",
     po_value: bill.po_value?.toString() || "",
     supplier_name: bill.supplier_name || "",
@@ -34,65 +35,31 @@ const EditBillModal: React.FC<EditBillModalProps> = ({
   });
   
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [balance, setBalance] = useState<number | null>(null);
   const [originalBillValue] = useState(bill.po_value || 0);
 
-  // Fetch current PDA balance
+  // What is still free on this employee's PDA, so the form can say whether
+  // an increase will fit. One exact lookup: employee codes are trimmed by a
+  // CHECK constraint, so the three fallback patterns that used to be here
+  // have nothing left to catch.
   useEffect(() => {
     const fetchBalance = async () => {
-      try {
-        const normalizedId = (bill.employee_id || "").toString().trim().toUpperCase();
-        // 1) Exact match → get first row
-        let { data, error } = await supabase
-          .from("pda_balances")
-          .select("employee_id,balance")
-          .eq("employee_id", normalizedId)
-          .order("updated_at", { ascending: false })
-          .limit(1);
-
-        let balanceValue: number | null = null;
-        if (!error && Array.isArray(data) && data.length > 0) {
-          balanceValue = Number((data as any)[0]?.balance ?? null);
-        }
-
-        // 2) Case-insensitive fallback
-        if ((error || balanceValue === null)) {
-          const res = await supabase
-            .from("pda_balances")
-            .select("employee_id,balance")
-            .ilike("employee_id", normalizedId)
-            .order("updated_at", { ascending: false })
-            .limit(1);
-          if (!res.error && Array.isArray(res.data) && res.data.length > 0) {
-            balanceValue = Number((res.data as any)[0]?.balance ?? null);
-          }
-          error = res.error as any;
-        }
-
-        // 3) Loose contains fallback (handles stray spaces or prefixes)
-        if ((error || balanceValue === null)) {
-          const res2 = await supabase
-            .from("pda_balances")
-            .select("employee_id,balance")
-            .ilike("employee_id", `%${normalizedId}%`)
-            .order("updated_at", { ascending: false })
-            .limit(1);
-          if (!res2.error && Array.isArray(res2.data) && res2.data.length > 0) {
-            balanceValue = Number((res2.data as any)[0]?.balance ?? null);
-          }
-          error = res2.error as any;
-        }
-
-        if (error && !balanceValue) {
-          console.error("Error fetching PDA balance:", error.message);
-          setBalance(null);
-        } else {
-          setBalance(Number.isFinite(balanceValue as number) ? (balanceValue as number) : 0);
-        }
-      } catch (err) {
-        console.error(err);
+      const code = (bill.employee_id ?? "").toString().trim();
+      if (!code) {
         setBalance(null);
+        return;
       }
+      const { data, error: err } = await api.get<{
+        found: boolean;
+        pda: { balance: number } | null;
+      }>(`/api/lookup/employee?code=${encodeURIComponent(code)}`);
+
+      if (err || !data?.found || !data.pda) {
+        setBalance(null);
+        return;
+      }
+      setBalance(Number(data.pda.balance));
     };
     fetchBalance();
   }, [bill.employee_id]);
@@ -103,14 +70,17 @@ const EditBillModal: React.FC<EditBillModalProps> = ({
 
     const newBillValue = parseFloat(formData.po_value);
 
-    // ENFORCE 50k THRESHOLD SIDE on amount edit
-    const wasAbove50k = originalBillValue > 50000;
-    const isAbove50k = newBillValue > 50000;
-    if (wasAbove50k !== isAbove50k) {
-      alert(
-        originalBillValue <= 50000
-          ? "New amount must remain ≤ 50,000 since the original was ≤ 50,000."
-          : "New amount must remain > 50,000 since the original was > 50,000."
+    // A correction may not carry the bill across the ₹50,000 line. Doing so
+    // would change which desks it should have visited, and the ones it has
+    // already been through cannot be un-visited. Such a bill has to be
+    // rejected and filed afresh.
+    const wasAbove = originalBillValue > AUDIT_THRESHOLD;
+    const isAbove = newBillValue > AUDIT_THRESHOLD;
+    if (wasAbove !== isAbove) {
+      setError(
+        wasAbove
+          ? `This bill was filed above ₹${AUDIT_THRESHOLD.toLocaleString("en-IN")}, so it has been routed through Audit. A correction cannot bring it below that line — the bill would need to be rejected and filed again.`
+          : `This bill was filed at or below ₹${AUDIT_THRESHOLD.toLocaleString("en-IN")}, so it skipped Audit. A correction cannot take it above that line — the bill would need to be rejected and filed again.`
       );
       setLoading(false);
       return;
@@ -118,110 +88,45 @@ const EditBillModal: React.FC<EditBillModalProps> = ({
 
     // Validation
     if (!formData.employee_id || !formData.employee_name) {
-      alert("Employee ID and Name are required.");
+      setError("An employee ID and a name are both required.");
       setLoading(false);
       return;
     }
 
     if (isNaN(newBillValue) || newBillValue <= 0) {
-      alert("Enter a valid bill amount.");
+      setError("Enter a bill amount greater than zero.");
       setLoading(false);
       return;
     }
 
-    // Check if we have sufficient balance for the difference
-    if (balance !== null) {
-      const balanceDifference = newBillValue - originalBillValue;
-      if (balanceDifference > 0 && balance < balanceDifference) {
-        alert("Insufficient PDA balance for the increased amount.");
-        setLoading(false);
-        return;
-      }
-    }
-
-    // Prepare workflow stage update
-    let snp = bill.snp;
-    let audit = bill.audit;
-    let finance_admin = bill.finance_admin;
-
-    if (bill.snp === 'Hold') {
-      snp = 'Pending';
-    } else if (bill.audit === 'Hold') {
-      audit = 'Pending';
-    } else if (bill.finance_admin === 'Hold') {
-      finance_admin = 'Pending';
-    }
-
-    // Normalize fields; only update hold-to-pending status
-    const normalizedData: any = {
+    /**
+     * One call does the lot.
+     *
+     * fn_amend_bill moves the PDA reservation with the amount -- taking
+     * more from the free balance if the bill went up, giving some back if
+     * it went down -- updates the bill, and puts it back in the queue at
+     * whichever desk was holding it, all in one transaction.
+     *
+     * This used to be two separate writes from the browser: adjust the
+     * balance, then update the bill. If the second one failed, the money
+     * and the bill disagreed and nothing said so.
+     */
+    const { error: err } = await api.patch(`/api/bills/${bill.id}`, {
       ...formData,
       po_value: newBillValue,
-      qty: formData.qty ? parseInt(formData.qty.toString()) : null,
-      qty_issued: formData.qty_issued ? parseInt(formData.qty_issued.toString()) : null,
-      snp,
-      audit,
-      finance_admin,
-    };
-
-    // Normalize empty strings to null
-    const optionalFields = [
-      "po_details",
-      "supplier_name",
-      "supplier_address",
-      "item_description",
-      "bill_details",
-      "indenter_name",
-      "source_of_fund",
-      "stock_entry",
-      "location",
-    ];
-
-    optionalFields.forEach((field) => {
-      if (!normalizedData[field] || normalizedData[field] === "") {
-        normalizedData[field] = null;
-      }
+      qty: formData.qty || null,
+      qty_issued: formData.qty_issued || null,
     });
 
-    try {
-      // Update PDA balance if bill value changed
-      const balanceDifference = newBillValue - originalBillValue;
-      if (balanceDifference !== 0 && balance !== null) {
-        const newBalance = balance - balanceDifference;
-        const { error: updateErr } = await (supabase as any)
-          .from("pda_balances")
-          .update({ balance: Number(newBalance), updated_at: new Date().toISOString() })
-          .eq("employee_id", bill.employee_id);
+    setLoading(false);
 
-        if (updateErr) {
-          console.error("Error updating PDA balance:", updateErr.message);
-          alert("Error updating PDA balance.");
-          setLoading(false);
-          return;
-        }
-      }
-
-      // Update the bill
-      const { error: updateBillErr } = await (supabase as any)
-        .from("bills")
-        .update(normalizedData)
-        .eq("id", bill.id);
-
-      if (updateBillErr) {
-        console.error("Failed to update bill:", updateBillErr.message);
-        alert(`Failed to update bill: ${updateBillErr.message}`);
-        setLoading(false);
-        return;
-      }
-
-      alert("Bill updated successfully!");
-      onBillUpdated();
-      onClose();
-    } catch (err: any) {
-      console.error("Unexpected error:", err.message || err);
-      alert("Something went wrong. Please try again.");
-    } finally {
-      setLoading(false);
+    if (err) {
+      setError(err);
+      return;
     }
+
+    onBillUpdated();
+    onClose();
   };
 
   return (
@@ -232,6 +137,11 @@ const EditBillModal: React.FC<EditBillModalProps> = ({
         exit={{ opacity: 0, scale: 0.95 }}
         className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto"
       >
+        {error && (
+          <div className="mx-6 mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+            {error}
+          </div>
+        )}
         <div className="px-6 py-4 border-b border-gray-200">
           <div className="flex justify-between items-center">
             <h2 className="text-xl font-semibold text-gray-900">Edit Bill</h2>

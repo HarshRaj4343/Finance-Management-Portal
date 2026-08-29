@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "../utils/supabase/client";
+import { api } from "@/lib/api";
+import Notice, { NoticeState } from "@/components/Notice";
 import { signOut, useSession } from "next-auth/react";
 import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { Logo, LogoIcon } from "./Logo";
@@ -21,59 +22,73 @@ export default function EmployeeDashboard() {
   const [activePage, setActivePage] = useState<PageView>("upload");
   const [department, setDepartment] = useState<string | null>(null);
 
-  // Fetch department and bills
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  /**
+   * This desk files bills on behalf of a school. It shows the ones that
+   * came back rejected and have not been acknowledged yet, so somebody can
+   * see what needs re-filing.
+   *
+   * The department comes from /api/me rather than from a lookup with four
+   * `like` patterns: employee codes are trimmed by a CHECK constraint now,
+   * so there is nothing left to guess at.
+   */
+  const loadBills = async (dept: string) => {
+    const { data, error } = await api.get<{ bills: Bill[] }>(
+      `/api/bills?department=${encodeURIComponent(dept)}&limit=500`
+    );
+    if (error) {
+      setNotice({ kind: "bad", text: error });
+      setBills([]);
+      return;
+    }
+    setBills(
+      data!.bills.filter(
+        (b) =>
+          (b.status === "Rejected" ||
+            b.snp === "Reject" ||
+            b.audit === "Reject" ||
+            b.finance_admin === "Reject") &&
+          !b.noted
+      )
+    );
+  };
+
   useEffect(() => {
-    const fetchDepartmentAndBills = async () => {
-      const userId = session?.user?.id;
-      if (!userId) return;
+    if (!session?.user?.id) return;
 
+    const run = async () => {
       setLoading(true);
-      try {
-        // Fetch department of the employee
-        const { data: emp, error: empErr } = await supabase
-          .from("employees")
-          .select("department")
-          .or(
-            [
-              `employee_code.eq.${userId}`,
-              `employee_code.like.%${userId}%`,
-              `employee_code.like.%${userId}`,
-              `employee_code.like.${userId}%`
-            ].join(",")
-        )
-        .maybeSingle();
-
-        if (empErr) throw empErr;
-        const dept = emp?.department || null;
-        setDepartment(dept);
-
-        if (!dept) {
-          setBills([]);
-          return;
-        }
-
-        // Fetch department bills (not approved)
-        const { data, error } = await supabase
-          .from("bills")
-          .select("*")
-          .eq("employee_department", dept)
-          .not("employee_department", "is", null)
-          .or("snp.eq.Reject,audit.eq.Reject,finance_admin.eq.Reject")
-          .or("noted.is.null,noted.eq.false")
-          .order("created_at", { ascending: false });
-
-        if (error) throw error;
-        setBills(data || []);
-      } catch (err) {
-        console.error("Error fetching department-scoped bills:", err);
-        setBills([]);
-      } finally {
+      const me = await api.get<{ department: string | null }>("/api/me");
+      if (me.error) {
+        setNotice({ kind: "bad", text: me.error });
         setLoading(false);
+        return;
       }
+
+      const dept = me.data!.department;
+      setDepartment(dept);
+
+      if (!dept) {
+        setBills([]);
+        setNotice({
+          kind: "info",
+          text: "Your account has no department set. Ask the Dean of Finance's office to assign one.",
+        });
+        setLoading(false);
+        return;
+      }
+
+      await loadBills(dept);
+      setLoading(false);
     };
 
-    fetchDepartmentAndBills();
+    run();
   }, [session, activePage]);
+
+  const refreshBills = async () => {
+    if (department) await loadBills(department);
+  };
 
   const handleBillSubmitted = () => {
     setActivePage("history");
@@ -86,26 +101,9 @@ export default function EmployeeDashboard() {
     setBills((prev) => prev.filter((bill) => bill.id !== billId));
   };
 
-  const refreshBills = async () => {
-    try {
-      if (!department) return;
-      const { data, error } = await supabase
-        .from("bills")
-        .select("*")
-        .eq("employee_department", department)
-        .not("employee_department", "is", null)
-        .or("snp.eq.Reject,audit.eq.Reject,finance_admin.eq.Reject")
-        .or("noted.is.null,noted.eq.false")
-        .order("created_at", { ascending: false });
-      if (error) throw error;
-      setBills(data || []);
-    } catch (err) {
-      console.error("Error refreshing bills:", err);
-    }
-  };
-
   return (
     <div className="flex h-screen w-full bg-white overflow-hidden">
+      <Notice notice={notice} onDismiss={() => setNotice(null)} />
       {/* Sidebar */}
       <Sidebar open={open} setOpen={setOpen}>
         <SidebarBody className="justify-between gap-8">

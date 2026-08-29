@@ -1,6 +1,6 @@
 // BillsHistory.tsx
 import React, { useState } from "react";
-import { supabase } from "../utils/supabase/client";
+import { api } from "@/lib/api";
 import { Bill } from "./types";
 import EditBillModal from "./EditBillModal";
 
@@ -25,6 +25,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
 }) => {
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [notingId, setNotingId] = useState<string | null>(null);
+  const [noteError, setNoteError] = useState<string | null>(null);
 
   const canEditBill = (bill: Bill) => {
     if (alwaysEditable) return true;
@@ -32,85 +33,37 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
     return bill.snp === "Hold" || bill.audit === "Hold";
   };
 
+  /**
+   * Acknowledge a rejected bill and clear it from this list.
+   *
+   * This moves no money. It used to credit the bill's value back to the
+   * PDA by hand, because a rejection left the amount debited -- the
+   * database now releases the reservation at the moment of rejection, so
+   * doing it here as well would credit the same amount twice.
+   */
   const handleNoted = async (billId: string) => {
     if (!allowDelete || !onBillNoted) return;
-  
+
     const confirmed = window.confirm(
-      "Mark this bill as noted? The bill will be removed and the amount will be restored to the employee's PDA balance."
+      "Note this bill? It will be cleared from this list.\n\n" +
+        "The amount was already returned to the employee's PDA when the bill " +
+        "was rejected, so nothing further is credited."
     );
     if (!confirmed) return;
-  
-    try {
-      setNotingId(billId);
-  
-      // ✅ 1️⃣ Fetch bill details (employee_id & po_value)
-      const { data: billData, error: billError } = await (supabase.from("bills") as any)
-        .select("employee_id, po_value")
-        .eq("id", billId)
-        .maybeSingle();
-  
-      if (billError || !billData) {
-        console.error("Error fetching bill details:", billError);
-        alert("Could not find bill details!");
-        return;
-      }
-  
-      const { employee_id, po_value } = billData;
-      if (!employee_id || !po_value) {
-        alert("Invalid bill data: missing employee ID or amount.");
-        return;
-      }
-  
-      const billValue = parseFloat(po_value);
-  
-      // ✅ 2️⃣ Fetch current PDA balance
-      const { data: balanceData, error: balanceError } = await (supabase.from("pda_balances") as any)
-        .select("id, balance")
-        .eq("employee_id", employee_id)
-        .maybeSingle();
-  
-      if (balanceError || !balanceData) {
-        console.error("Error fetching PDA balance:", balanceError);
-        alert("Could not fetch current PDA balance.");
-        return;
-      }
-  
-      const currentBalance = parseFloat(balanceData.balance || 0);
-      const newBalance = currentBalance + billValue;
-  
-      // ✅ 3️⃣ Update PDA balance
-      const { error: updateBalanceErr } = await (supabase.from("pda_balances") as any)
-        .update({ balance: newBalance })
-        .eq("employee_id", employee_id);
-  
-      if (updateBalanceErr) {
-        console.error("Error updating PDA balance:", updateBalanceErr);
-        alert("Failed to update PDA balance.");
-        return;
-      }
-  
-      // ✅ 4️⃣ Mark bill as noted
-      const { error: notedErr } = await (supabase.from("bills") as any)
-        .update({ noted: true })
-        .eq("id", billId);
-  
-      if (notedErr) {
-        console.error("Error marking bill as noted:", notedErr);
-        alert("Error marking bill as noted.");
-        return;
-      }
-  
-      // ✅ 5️⃣ Notify success + refresh UI
-      alert("Bill marked as noted and PDA balance restored successfully!");
-      onBillNoted(billId);
-    } catch (err) {
-      console.error("Error noting bill:", err);
-      alert("Unexpected error while marking bill as noted.");
-    } finally {
-      setNotingId(null);
+
+    setNotingId(billId);
+    const { error } = await api.post(`/api/bills/${billId}/note`, {});
+    setNotingId(null);
+
+    if (error) {
+      setNoteError(error);
+      return;
     }
+
+    setNoteError(null);
+    onBillNoted(billId);
   };
-  
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -142,6 +95,11 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
     return (
       <div className="w-full">
         <h2 className="text-2xl font-semibold mb-6">All Bills History</h2>
+      {noteError && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          {noteError}
+        </div>
+      )}
         <div className="text-center py-12">
           <p className="text-gray-500 text-lg">No bills uploaded yet.</p>
         </div>

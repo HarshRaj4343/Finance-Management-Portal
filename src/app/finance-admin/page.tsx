@@ -2,8 +2,9 @@
 import { signOut, useSession, signIn } from "next-auth/react";
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { supabase } from "../utils/supabase/client";
-import { sendBillRemarkNotification } from "../../helpers/emailService";
+import { api, money } from "@/lib/api";
+import Notice, { NoticeState } from "@/components/Notice";
+import { normaliseRole } from "@/lib/roles";
 import {
   IconArrowLeft,
   IconUsers,
@@ -106,42 +107,9 @@ const DEPARTMENTS = [
 ];
 
 /* ---------- Interfaces ---------- */
-interface Bill {
-  id: string;
-  po_details: string;
-  supplier_name: string;
-  po_value: number;
-  status: string;
-  snp: string;
-  audit: string;
-  finance_admin: string;
-  created_at?: string;
-  employee_id: string;
-  employee_name: string;
-  item_description?: string;
-  item_category?: string;
-  qty?: number;
-  remarks?: string; // finance remark
-  remarks1?: string; // snp remark
-  remarks2?: string; // audit remark
-  remarks3?: string; // other remark
-  remarks4?: string; // additional remark
-  has_bank_guarantee?: boolean;
-  bank_guarantee_details?: string;
-  bank_guarantee_amount?: number;
-  date_of_installation?: string;
-  date_of_delivery?: string;
-}
+import type { Bill } from "@/types/database";
 
-interface Employee {
-  id: string;
-  username: string;
-  name: string;
-  email: string;
-  department: string;
-  employee_type: string;
-  employee_code: string;
-}
+import type { Employee } from "@/types/database";
 
 type PageView = "dashboard" | "review-bills" | "hold-bills" | "employees";
 
@@ -173,7 +141,7 @@ export default function FinanceAdminDashboard() {
   const [newEmployee, setNewEmployee] = useState({
     employee_name: "",
     email: "",
-    employee_type: "Finance Employee",
+    employee_type: "User",
     department: "Finance and Accounts",
     employee_code: "",
   });
@@ -189,53 +157,43 @@ export default function FinanceAdminDashboard() {
         return;
       }
   
-      if (session && (session as any).user?.employee_type !== "Finance Admin") {
-        alert("You have no access to this page.");
-        signOut({ callbackUrl: "/login" });
+      if (session && normaliseRole((session as any).user?.employee_type) !== "Finance Admin") {
+        window.location.href = "/";
       }
     }, [status, session]);
-  // fetch bills
+  const [notice, setNotice] = useState<NoticeState>(null);
+
+  // Bills. The server scopes what this role may see; the browser no longer
+  // pulls the whole table down and filters it in React.
   useEffect(() => {
     const fetchBills = async () => {
       setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from("bills")
-          .select("*")
-          .order("created_at", { ascending: false });
-        if (error) throw error;
-        setBills(data || []);
-      } catch (err) {
-        console.error("Error fetching bills:", err);
-      } finally {
-        setLoading(false);
+      const { data, error } = await api.get<{ bills: Bill[] }>("/api/bills?limit=500");
+      setLoading(false);
+      if (error) {
+        setNotice({ kind: "bad", text: error });
+        return;
       }
+      setBills(data!.bills);
     };
-
     fetchBills();
   }, []);
 
-  // fetch employees
+  // The employee directory, newest first.
   const fetchEmployees = async () => {
-    try {
-      const { data, error } = await supabase
-        .from("employees")
-        .select("*")
-        .order('created_at', { ascending: false });  // Order by created_at descending
-      
-      if (error) throw error;
-      
-      // Additional client-side sort as fallback
-     const sortedData = (data || []).sort((a, b) => {
-       const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-       const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-       return dateB - dateA;
-     });
-      
-      setEmployees(sortedData);
-    } catch (err) {
-      console.error("Error fetching employees:", err);
+    const { data, error } = await api.get<{ employees: Employee[] }>(
+      "/api/admin/employees"
+    );
+    if (error) {
+      setNotice({ kind: "bad", text: error });
+      return;
     }
+    setEmployees(
+      [...data!.employees].sort(
+        (a, b) =>
+          new Date(b.created_at ?? 0).getTime() - new Date(a.created_at ?? 0).getTime()
+      )
+    );
   };
 
   useEffect(() => {
@@ -247,44 +205,33 @@ export default function FinanceAdminDashboard() {
   };
 
   const handleSaveEmployee = async (updatedEmployee: Employee) => {
-    console.log("handleSaveEmployee: payload =", updatedEmployee);
-    try {
-      if (!updatedEmployee?.id) {
-        throw new Error("Missing employee id - cannot update");
-      }
-
-      // validate/normalize department to match Postgres enum values
-      const deptToUpdate = normalizeDepartment(updatedEmployee.department);
-      if (updatedEmployee.department && deptToUpdate === null) {
-        console.warn("Invalid department provided, will set to null:", updatedEmployee.department);
-      }
-
-      const { error, data } = await supabase
-        .from("employees")
-        .update({
-          employee_name: updatedEmployee.name ?? updatedEmployee.username ?? null,
-          email: updatedEmployee.email,
-          department: deptToUpdate,
-          employee_type: updatedEmployee.employee_type,
-          employee_code: updatedEmployee.employee_code,
-        })
-        .eq("id", updatedEmployee.id)
-        .select()
-        .single();
-
-      if (error) {
-        console.error("Supabase update error:", error, JSON.stringify(error, Object.getOwnPropertyNames(error)));
-        throw error;
-      }
-
-      console.log("Employee updated:", data);
-      setEmployees((prev) => prev.map((e) => (e.id === (data as Employee).id ? (data as Employee) : e)));
-      setEditingEmployee(null);
-    } catch (err: any) {
-      console.error("Failed to update employee", err);
-      console.info("Next checks: confirm `updatedEmployee.id` is correct, verify RLS policies on `employees` table allow UPDATE for your client key, or test update from Supabase SQL editor / server-side function.");
-      throw err;
+    if (!updatedEmployee?.employee_code) {
+      setNotice({ kind: "bad", text: "That record has no employee code, so it cannot be saved." });
+      return;
     }
+
+    const { data, error } = await api.patch<{ employee: Employee }>(
+      `/api/admin/employees/${encodeURIComponent(updatedEmployee.employee_code)}`,
+      {
+        employee_name: updatedEmployee.employee_name,
+        email: updatedEmployee.email,
+        department: normalizeDepartment(updatedEmployee.department),
+        employee_type: updatedEmployee.employee_type,
+      }
+    );
+
+    if (error) {
+      // Includes "only the Dean of Finance can change somebody's role",
+      // which is a rule rather than a failure -- so it is shown as-is.
+      setNotice({ kind: "bad", text: error });
+      return;
+    }
+
+    setEmployees((prev) =>
+      prev.map((e) => (e.employee_code === data!.employee.employee_code ? data!.employee : e))
+    );
+    setEditingEmployee(null);
+    setNotice({ kind: "ok", text: `${data!.employee.employee_name} updated.` });
   };
 
   /* ---------- Password Protection ---------- */
@@ -298,11 +245,13 @@ export default function FinanceAdminDashboard() {
   const verifyPassword = async () => {
       // We need the user's username to re-authenticate.
       // This assumes the username is stored in the session.
-      // Check your console.log(session.user) to see if it's 'username', 'email', or 'name'
       const loginIdentifier = session?.user?.username || session?.user?.email;
 
       if (!loginIdentifier) {
-        alert("Error: Could not find user identifier in session. Please log out and log in again.");
+        setNotice({
+          kind: "bad",
+          text: "Your session does not carry a username. Sign out and sign in again.",
+        });
         return false;
       }
 
@@ -319,7 +268,7 @@ export default function FinanceAdminDashboard() {
 
       if (res?.error) {
         console.error("Re-authentication failed:", res.error);
-        alert("Incorrect password! Please try again.");
+        setNotice({ kind: "bad", text: "That password was not accepted." });
         return false;
       }
 
@@ -358,153 +307,89 @@ export default function FinanceAdminDashboard() {
   };
 
   /* ---------- Bill Actions ---------- */
-  const handleApprove = async (bill: Bill) => {
-    try {
-      const remarkText = remarks[bill.id] || bill.remarks || "Approved by Finance Admin";
-      const remarkWithUser = `${remarkText} (By: ${session?.user?.name || 'Finance Admin'} at ${new Date().toLocaleString()})`;
-      
-      const { error } = await (supabase as any)
-        .from("bills")
-        .update({ 
-          status: "Accepted", 
-          finance_admin: "Approved",
-          remarks: remarkWithUser
-        })
-        .eq("id", bill.id);
-      if (error) throw error;
+  /**
+   * This is the last desk. Approving here ends the workflow: the money
+   * moves from committed to spent and the purchase is entered in the
+   * departmental register under a fresh serial number. All of it happens
+   * inside fn_bill_action, so a bill can never be marked Accepted without
+   * its register entry, or vice versa.
+   */
+  const [busy, setBusy] = useState<string | null>(null);
 
-      setBills((prev) =>
-        prev.map((b) =>
-          b.id === bill.id
-            ? { ...b, status: "Accepted", finance_admin: "Approved", remarks: remarkWithUser }
-            : b
-        )
-      );
-
-      // No email notification for Approve
-      alert("Bill approved successfully!");
-    } catch (err) {
-      console.error("Error approving bill:", err);
-      alert("Error approving bill");
-    }
-  };
-
-  const handleHold = async (bill: Bill) => {
-    if (!remarks[bill.id] || remarks[bill.id].trim() === "") {
-      alert("Please provide a remark before holding.");
+  const act = async (bill: Bill, action: "Approved" | "Rejected" | "Hold") => {
+    const remark = (remarks[bill.id] ?? "").trim();
+    if (action !== "Approved" && !remark) {
+      setNotice({
+        kind: "bad",
+        text: `Write a remark before you ${action === "Rejected" ? "reject" : "hold"} this bill.`,
+      });
       return;
     }
-    try {
-      const remarkWithUser = `${remarks[bill.id]} (By: ${session?.user?.name || 'Finance Admin'} at ${new Date().toLocaleString()})`;
-      const { error } = await (supabase as any)
-        .from("bills")
-        .update({ 
-          finance_admin: "Hold", 
-          remarks: remarkWithUser 
-        })
-        .eq("id", bill.id);
-      if (error) throw error;
 
-      setBills((prev) =>
-        prev.map((b) =>
-          b.id === bill.id
-            ? { ...b, finance_admin: "Hold", remarks: remarkWithUser }
-            : b
-        )
-      );
+    setBusy(bill.id);
+    setNotice(null);
+    const { data, error } = await api.post<{ bill: Bill }>(
+      `/api/bills/${bill.id}/action`,
+      { action, remark: remark || undefined }
+    );
+    setBusy(null);
 
-      // Send email notification
-      await sendBillRemarkNotification({
-        billId: bill.id,
-        department: 'Finance Admin',
-        remark: remarks[bill.id],
-        action: 'Hold',
-        timestamp: new Date().toLocaleString()
-      });
-
-      alert("Bill put on hold! Email notification sent to employee.");
-    } catch (err) {
-      console.error("Error holding bill:", err);
-      alert("Error holding bill");
-    }
-  };
-
-  const handleReject = async (bill: Bill) => {
-    if (!remarks[bill.id] || remarks[bill.id].trim() === "") {
-      alert("Please provide a remark before rejecting.");
+    if (error) {
+      setNotice({ kind: "bad", text: error });
       return;
     }
-    try {
-      const remarkWithUser = `${remarks[bill.id]} (By: ${session?.user?.name || 'Finance Admin'} at ${new Date().toLocaleString()})`;
-      const { error } = await (supabase as any)
-        .from("bills")
-        .update({ 
-          finance_admin: "Reject", 
-          remarks: remarkWithUser 
-        })
-        .eq("id", bill.id);
-      if (error) throw error;
 
-      setBills((prev) =>
-        prev.map((b) =>
-          b.id === bill.id
-            ? { ...b, finance_admin: "Reject", remarks: remarkWithUser }
-            : b
-        )
-      );
-
-      // Send email notification
-      await sendBillRemarkNotification({
-        billId: bill.id,
-        department: 'Finance Admin',
-        remark: remarks[bill.id],
-        action: 'Reject',
-        timestamp: new Date().toLocaleString()
-      });
-
-      alert("Bill rejected! Email notification sent to employee.");
-    } catch (err) {
-      console.error("Error rejecting bill:", err);
-      alert("Error rejecting bill");
-    }
+    setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, ...data!.bill } : b)));
+    setRemarks((r) => ({ ...r, [bill.id]: "" }));
+    setNotice({
+      kind: "ok",
+      text:
+        action === "Approved"
+          ? `Bill ${data!.bill.bill_number ?? ""} approved. ${money(Number(bill.po_value))} has been debited and the purchase is now in the register.`
+          : action === "Rejected"
+          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and they have been emailed.`
+          : "Bill put on hold. The applicant has been emailed.",
+    });
   };
+
+  const handleApprove = (bill: Bill) => act(bill, "Approved");
+  const handleHold = (bill: Bill) => act(bill, "Hold");
+  const handleReject = (bill: Bill) => act(bill, "Rejected");
 
   /* ---------- Employee Actions ---------- */
-  const handleDeleteEmployee = async (id: string) => {
-    try {
-      const { error } = await supabase.from("employees").delete().eq("id", id);
-      if (error) throw error;
-      
-      setEmployees((prev) => prev.filter((e) => e.id !== id));
-      alert("Employee deleted successfully!");
-    } catch (err) {
-      console.error("Error deleting employee:", err);
-      alert("Error deleting employee");
+  /**
+   * Deactivate rather than delete. Bills, register entries and the event
+   * log all name the person who filed or approved them; deleting the row
+   * would orphan records that are meant to be permanent.
+   */
+  const handleDeleteEmployee = async (code: string) => {
+    const { data, error } = await api.del<{ employee: Employee; note: string }>(
+      `/api/admin/employees/${encodeURIComponent(code)}`
+    );
+    if (error) {
+      setNotice({ kind: "bad", text: error });
+      return;
     }
+    setEmployees((prev) =>
+      prev.map((e) => (e.employee_code === code ? { ...e, is_active: false } : e))
+    );
+    setNotice({ kind: "ok", text: data!.note });
   };
 
-  const handleUpdateEmployee = async (id: string, updates: Partial<Employee>) => {
-    try {
-      const { error } = await (supabase as any)
-        .from("employees")
-        .update({
-          username: updates.username,
-          name: updates.name,
-          email: updates.email,
-          department: updates.department,
-        })
-        .eq("id", id);
-      if (error) throw error;
-
-      setEmployees((prev) =>
-        prev.map((e) => (e.id === id ? { ...e, ...updates } : e))
-      );
-      setEditingEmployee(null);
-      alert("Employee updated successfully!");
-    } catch (err) {
-      console.error("Error updating employee:", err);
-      alert("Error updating employee");
+  const handleUpdateEmployee = async (code: string, updates: Partial<Employee>) => {
+    const { data, error } = await api.patch<{ employee: Employee }>(
+      `/api/admin/employees/${encodeURIComponent(code)}`,
+      updates
+    );
+    if (error) {
+      setNotice({ kind: "bad", text: error });
+      return;
     }
+    setEmployees((prev) =>
+      prev.map((e) => (e.employee_code === code ? data!.employee : e))
+    );
+    setEditingEmployee(null);
+    setNotice({ kind: "ok", text: `${data!.employee.employee_name} updated.` });
   };
 
   const handleNewEmployeeChange = (
@@ -517,47 +402,43 @@ export default function FinanceAdminDashboard() {
     }));
   };
 
-  // Modify handleAddEmployee to use form submit
   const handleAddEmployee = async (e: React.FormEvent) => {
-    e.preventDefault(); // Prevent form from submitting normally
-    try {
-      if (!newEmployee.employee_name || !newEmployee.email || !newEmployee.employee_code) {
-        alert("Employee name, email, and code are required!");
-        return;
-      }
+    e.preventDefault();
 
-      // normalize department for insert
-      const deptToInsert = normalizeDepartment(newEmployee.department);
-      if (newEmployee.department && deptToInsert === null) {
-        console.warn("Invalid department provided on add, will insert null:", newEmployee.department);
-      }
-
-      const { error } = await supabase
-        .from("employees")
-        .insert({
-          employee_name: newEmployee.employee_name,
-          email: newEmployee.email,
-          employee_type: newEmployee.employee_type,
-          department: deptToInsert,
-          employee_code: newEmployee.employee_code,
-        });
-
-      if (error) throw error;
-      
-      await fetchEmployees();
-      setNewEmployee({
-        employee_name: "",
-        email: "",
-        employee_type: "Finance Employee",
-        department: "Finance and Accounts",
-        employee_code: "",
-      });
-      setShowAddEmployeeForm(false);
-      alert("Employee added successfully!");
-    } catch (err) {
-      console.error("Error adding employee:", err);
-      alert("Error adding employee");
+    if (!newEmployee.employee_name || !newEmployee.email || !newEmployee.employee_code) {
+      setNotice({ kind: "bad", text: "A name, an email address and an employee code are all required." });
+      return;
     }
+
+    const { data, error } = await api.post<{ employee: Employee; note: string | null }>(
+      "/api/admin/employees",
+      {
+        employee_name: newEmployee.employee_name,
+        email: newEmployee.email,
+        employee_type: newEmployee.employee_type,
+        department: normalizeDepartment(newEmployee.department),
+        employee_code: newEmployee.employee_code,
+      }
+    );
+
+    if (error) {
+      setNotice({ kind: "bad", text: error });
+      return;
+    }
+
+    await fetchEmployees();
+    setNewEmployee({
+      employee_name: "",
+      email: "",
+      employee_type: "User",
+      department: "Finance and Accounts",
+      employee_code: "",
+    });
+    setShowAddEmployeeForm(false);
+    setNotice({
+      kind: data!.note ? "info" : "ok",
+      text: data!.note ?? `${data!.employee.employee_name} added.`,
+    });
   };
 
   /* ---------- Stats ---------- */
@@ -630,6 +511,7 @@ export default function FinanceAdminDashboard() {
 
   return (
     <div className="flex h-screen w-full bg-white overflow-hidden">
+      <Notice notice={notice} onDismiss={() => setNotice(null)} />
       {/* Sidebar */}
       <Sidebar open={open} setOpen={setOpen}>
         <SidebarBody className="justify-between gap-8">

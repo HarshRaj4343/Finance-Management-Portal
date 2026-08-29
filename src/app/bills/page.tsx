@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { supabase } from "../utils/supabase/client";
+import { api } from "@/lib/api";
 import { BillWithEmployee } from "@/types/database";
 import { Input } from "@/components/ui/input";
 import { Table, TableHeader, TableBody, TableRow, TableCell, TableHead } from "@/components/ui/table";
@@ -118,31 +118,21 @@ export default function AllBillsPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // Scoped by the server: a plain user gets only their own bills, an
+    // approver gets the lot. The browser is not trusted to filter this.
     async function fetchBills() {
       setLoading(true);
-      setError(null);
-      try {
-        console.log("Fetching bills...");
-        // Simple fetch - just get all bills without joins
-        const { data, error } = await supabase
-          .from('bills')
-          .select('*')
-          .order('created_at', { ascending: false });
-        
-        if (error) {
-          console.error("Supabase error:", error);
-          setError(`Database error: ${error.message}`);
-          return;
-        }
-        
-        console.log("Fetched bills:", data);
-        setBills(data || []);
-      } catch (err) {
-        console.error("Fetch error:", err);
-        setError(`Failed to fetch bills: ${err}`);
-      } finally {
-        setLoading(false);
+      const { data, error: err } = await api.get<{ bills: BillWithEmployee[] }>(
+        "/api/bills?limit=500"
+      );
+      setLoading(false);
+
+      if (err) {
+        setError(err);
+        return;
       }
+      setError(null);
+      setBills(data!.bills);
     }
     fetchBills();
   }, []);
@@ -187,13 +177,6 @@ export default function AllBillsPage() {
   const billsToShow = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Collect options - using fixed categories
-
-  console.log("Debug info:", {
-    billsCount: bills.length,
-    filteredCount: filtered.length,
-    loading,
-    error
-  });
 
   return (
     <div className="h-screen flex flex-col">

@@ -14,15 +14,9 @@ import {
   Menu,
 } from "lucide-react";
 import { useSession, signOut } from "next-auth/react";
-import { supabase } from "../app/utils/supabase/client";
+import { api } from "@/lib/api";
 
-interface Employee {
-  id: string;
-  employee_code: string;
-  employee_type: string;
-  email?: string;
-  username: string;
-}
+import type { Employee } from "@/types/database";
 
 interface NavigationItem {
   title: string;
@@ -88,22 +82,40 @@ export default function SidebarLayout({
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [isEmployee, setIsEmployee] = useState(false);
 
+  // Who is signed in, from the server. /api/me resolves the role from the
+  // employees table rather than trusting what the JWT is carrying.
   useEffect(() => {
     const checkEmployee = async () => {
       if (!session?.user?.username) return;
-      const { data, error } = await supabase
-        .from("employees")
-        .select("*")
-        .eq("employee_code", session.user.username)
-        .single();
 
-      if (data && !error) {
-        setEmployee(data);
-        setIsEmployee(true);
-      } else {
+      const { data, error } = await api.get<{
+        signedIn: boolean;
+        code: string;
+        name: string;
+        email: string | null;
+        department: string | null;
+        role: string;
+        provisioned: boolean;
+      }>("/api/me");
+
+      if (error || !data?.signedIn || !data.provisioned) {
         setIsEmployee(false);
         setEmployee(null);
+        return;
       }
+
+      setEmployee({
+        id: data.code,
+        employee_code: data.code,
+        employee_name: data.name,
+        email: data.email ?? "",
+        department: data.department ?? "",
+        employee_type: data.role,
+        is_active: true,
+        created_at: "",
+        updated_at: "",
+      } as Employee);
+      setIsEmployee(true);
     };
 
     checkEmployee();

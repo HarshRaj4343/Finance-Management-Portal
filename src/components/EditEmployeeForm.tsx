@@ -82,13 +82,7 @@ const DEPARTMENTS = [
   "Dean (Students) Office",
 ];
 
-interface Employee {
-  id: string;
-  email: string;         // Add email
-  employee_type: string;
-  department: string;
-  employee_code: string;
-}
+import type { Employee } from "@/types/database";
 
 interface EditEmployeeFormProps {
   employee: Employee;
