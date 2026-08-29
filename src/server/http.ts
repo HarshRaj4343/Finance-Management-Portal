@@ -36,6 +36,25 @@ export function fail(err: unknown, fallback = "Something went wrong."): NextResp
       { status: 400 }
     );
   }
+  // 42703 undefined_column / 42P01 undefined_table.
+  //
+  // These never mean the person did something wrong -- they mean the code
+  // is talking to a database that has not had the migrations applied. Say
+  // so, because "Something went wrong" sends people hunting through their
+  // own data for a fault that is in the deployment.
+  if (e?.code === "42703" || e?.code === "42P01") {
+    console.error("[api] schema mismatch:", e.message);
+    return NextResponse.json(
+      {
+        error:
+          "This database is missing part of the schema this app expects (" +
+          (e.message ?? "unknown object") +
+          "). Apply supabase/migrations/0001_schema.sql and 0002_functions.sql to it.",
+      },
+      { status: 503 }
+    );
+  }
+
   if (e?.code === "23503") {
     return NextResponse.json(
       { error: "That refers to a record which does not exist." },

@@ -113,7 +113,19 @@ async function loadEmployee(code: string): Promise<{
     .maybeSingle();
 
   if (error) {
-    console.error("[auth] employee lookup failed", error.message);
+    // A missing column or table here means the migrations have not been
+    // applied to this project. Without this line the only symptom is that
+    // everybody silently signs in as a plain User, which looks like a
+    // permissions bug rather than a deployment one.
+    if (error.code === "42703" || error.code === "42P01") {
+      console.error(
+        `[auth] SCHEMA MISMATCH -- ${error.message}. ` +
+          "Apply supabase/migrations/0001_schema.sql and 0002_functions.sql " +
+          "to this Supabase project. Until then every sign-in falls back to the User role."
+      );
+    } else {
+      console.error("[auth] employee lookup failed", error.message);
+    }
   }
 
   if (!data || data.is_active === false) {
