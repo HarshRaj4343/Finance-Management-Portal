@@ -20,6 +20,9 @@ import {
   IconBan,
   IconFileText,
   IconAlertCircle,
+  IconPlayerPause,
+  IconRefresh,
+  IconArrowRight,
 } from "@tabler/icons-react";
 import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
@@ -37,6 +40,19 @@ interface BillStats {
   rejected: number;
   onHold: number;
 }
+
+// Each workflow step is shown with a Tabler SVG icon rather than an emoji, so the
+// badges render identically on every platform and print cleanly.
+const STEP_TONE: Record<string, { icon: typeof IconCheck; className: string }> = {
+  Completed: { icon: IconCheck, className: "bg-green-100 text-green-800" },
+  Complete: { icon: IconCheck, className: "bg-green-100 text-green-800" },
+  Approved: { icon: IconCheck, className: "bg-green-100 text-green-800" },
+  Rejected: { icon: IconX, className: "bg-red-100 text-red-800" },
+  "On Hold": { icon: IconPlayerPause, className: "bg-orange-100 text-orange-800" },
+  "In Progress": { icon: IconRefresh, className: "bg-blue-100 text-blue-800" },
+  Skipped: { icon: IconArrowRight, className: "bg-gray-100 text-gray-800" },
+  Pending: { icon: IconClock, className: "bg-gray-100 text-gray-800" },
+};
 
 export default function UserPage() {
   const { data: session } = useSession();
@@ -234,42 +250,42 @@ export default function UserPage() {
       },
       departmentRemarks: remarks,
       workflowProgress: {
-        step1_Submission: "✅ Completed",
+        step1_Submission: "Completed",
         step2_SNP:
           bill.snp == null && (bill.status === "Audit" || bill.status === "Finance Admin")
-            ? "↷ Skipped"
+            ? "Skipped"
             : bill.snp === "Approved"
-            ? "✅ Approved"
+            ? "Approved"
             : bill.snp === "Reject"
-            ? "❌ Rejected"
+            ? "Rejected"
             : bill.snp === "Hold"
-            ? "⏸️ On Hold"
+            ? "On Hold"
             : bill.snp === "Pending"
-            ? "🔄 In Progress"
-            : "⏳ Pending",
+            ? "In Progress"
+            : "Pending",
         step3_Audit:
           bill.audit == null && bill.status === "Finance Admin"
-            ? "↷ Skipped"
+            ? "Skipped"
             : bill.audit === "Approved"
-            ? "✅ Approved"
+            ? "Approved"
             : bill.audit === "Reject"
-            ? "❌ Rejected"
+            ? "Rejected"
             : bill.audit === "Hold"
-            ? "⏸️ On Hold"
+            ? "On Hold"
             : bill.audit === "Pending"
-            ? "🔄 In Progress"
-            : "⏳ Pending",
+            ? "In Progress"
+            : "Pending",
         step4_FinanceAdmin:
           bill.finance_admin === "Approved"
-            ? "✅ Approved"
+            ? "Approved"
             : bill.finance_admin === "Reject"
-            ? "❌ Rejected"
+            ? "Rejected"
             : bill.finance_admin === "Hold"
-            ? "⏸️ On Hold"
+            ? "On Hold"
             : bill.finance_admin === "Pending"
-            ? "🔄 In Progress"
-            : "⏳ Pending",
-        step5_FinalApproval: bill.status === "Accepted" ? "✅ Complete" : "⏳ Pending",
+            ? "In Progress"
+            : "Pending",
+        step5_FinalApproval: bill.status === "Accepted" ? "Complete" : "Pending",
       }
     };
   };
@@ -664,20 +680,19 @@ export default function UserPage() {
                         <div className="bg-green-50 rounded-lg p-4">
                           <h3 className="text-lg font-semibold mb-3 text-gray-800">Workflow Progress</h3>
                           <div className="space-y-2 text-sm">
-                            {Object.entries(details.workflowProgress).map(([step, status]) => (
-                              <div key={step} className="flex justify-between items-center py-1">
-                                <span className="font-medium">{step.replace(/_/g, ' ').replace(/step\d+/i, '').trim()}:</span>
-                                <span className={`px-2 py-1 rounded text-xs font-medium ${
-                                  status.includes('✅') ? 'bg-green-100 text-green-800' :
-                                  status.includes('❌') ? 'bg-red-100 text-red-800' :
-                                  status.includes('⏸️') ? 'bg-orange-100 text-orange-800' :
-                                  status.includes('🔄') ? 'bg-blue-100 text-blue-800' :
-                                  'bg-gray-100 text-gray-800'
-                                }`}>
-                                  {status}
-                                </span>
-                              </div>
-                            ))}
+                            {Object.entries(details.workflowProgress).map(([step, status]) => {
+                              const tone = STEP_TONE[status] ?? STEP_TONE.Pending;
+                              const StepIcon = tone.icon;
+                              return (
+                                <div key={step} className="flex justify-between items-center py-1">
+                                  <span className="font-medium">{step.replace(/_/g, ' ').replace(/step\d+/i, '').trim()}:</span>
+                                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${tone.className}`}>
+                                    <StepIcon className="h-3.5 w-3.5 shrink-0" />
+                                    {status}
+                                  </span>
+                                </div>
+                              );
+                            })}
                           </div>
                         </div>
 

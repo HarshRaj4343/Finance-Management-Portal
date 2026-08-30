@@ -20,6 +20,14 @@ function IconArrowLeft(props: { className?: string }) {
   );
 }
 
+function IconClose(props: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
+      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function Sidebar({
   open,
   setOpen,
@@ -543,8 +551,8 @@ export default function PdaManagerPage() {
               <div className="w-full max-w-5xl rounded-xl border border-neutral-200 bg-white p-6 shadow-xl">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-xl font-semibold text-neutral-900">Add Member</h2>
-                  <button onClick={() => setIsAdding(false)} className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100">
-                    ✕
+                  <button onClick={() => setIsAdding(false)} className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100" aria-label="Close">
+                    <IconClose className="h-4 w-4" />
                   </button>
                 </div>
 
@@ -580,8 +588,8 @@ export default function PdaManagerPage() {
               <div className="w-full max-w-5xl rounded-xl border border-neutral-200 bg-white p-6 shadow-xl">
                 <div className="mb-4 flex items-center justify-between">
                   <h2 className="text-xl font-semibold text-neutral-900">Edit Member</h2>
-                  <button onClick={() => setEditing(null)} className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100">
-                    ✕
+                  <button onClick={() => setEditing(null)} className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100" aria-label="Close">
+                    <IconClose className="h-4 w-4" />
                   </button>
                 </div>
 

@@ -10,6 +10,7 @@ import {
   IconArrowLeft,
   IconCheck,
   IconX,
+  IconPlayerPause,
   IconClockPause,
   IconHome,
   IconListDetails,
@@ -794,12 +795,19 @@ export default function SnpDashboard() {
                                   bill.snp === "Reject" ? "bg-red-100 text-red-800" :
                                   "bg-yellow-50 text-yellow-800"
                                 }`}>
-                                  <p className="font-medium">
+                                  <p className="flex items-center gap-2 font-medium">
+                                    {bill.snp === "Approved" ? (
+                                      <IconCheck className="h-4 w-4 shrink-0" />
+                                    ) : bill.snp === "Reject" ? (
+                                      <IconX className="h-4 w-4 shrink-0" />
+                                    ) : (
+                                      <IconPlayerPause className="h-4 w-4 shrink-0" />
+                                    )}
                                     {bill.snp === "Approved"
-                                      ? "✅ Bill approved"
+                                      ? "Bill approved"
                                       : bill.snp === "Reject"
-                                      ? "❌ Bill rejected by Store and Purchase Department"
-                                      : "⏸️ Bill on Hold by Store and Purchase Department"}
+                                      ? "Bill rejected by Store and Purchase Department"
+                                      : "Bill on Hold by Store and Purchase Department"}
                                   </p>
                                 </div>
                               )}

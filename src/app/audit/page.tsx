@@ -621,10 +621,15 @@ export default function AuditDashboard() {
                             bill.audit === "Approved" ? "bg-green-100 text-green-800" :
                             "bg-red-100 text-red-800"
                           }`}>
-                            <p className="font-medium">
-                              {bill.audit === "Approved" 
-                                ? "✅ Bill approved and sent to Finance Admin Department" 
-                                : "❌ Bill rejected by Audit Department"}
+                            <p className="flex items-center gap-2 font-medium">
+                              {bill.audit === "Approved" ? (
+                                <IconCheck className="h-4 w-4 shrink-0" />
+                              ) : (
+                                <IconX className="h-4 w-4 shrink-0" />
+                              )}
+                              {bill.audit === "Approved"
+                                ? "Bill approved and sent to Finance Admin Department"
+                                : "Bill rejected by Audit Department"}
                             </p>
                           </div>
                         )}

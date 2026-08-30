@@ -5,14 +5,15 @@ import { api } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import { signOut, useSession } from "next-auth/react";
 import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
+import { IconArrowLeft } from "@tabler/icons-react";
 import { Logo, LogoIcon } from "./Logo";
 import SidebarLinks from "./SidebarLinks";
 import UploadBill from "./UploadBill";
 import BillsHistory from "./BillsHistory";
-import ApprovedBills from "./ApprovedBills"; // ✅ import the ApprovedBills component
+import ApprovedBills from "./ApprovedBills";
 import { Bill } from "./types";
 
-type PageView = "upload" | "history" | "approved"; // ✅ add new page type
+type PageView = "upload" | "history" | "approved";
 
 export default function EmployeeDashboard() {
   const { data: session } = useSession();
@@ -129,7 +130,7 @@ export default function EmployeeDashboard() {
                 {open && "Rejected Bills"}
               </button>
 
-              {/* ✅ New Approved Bills Sidebar Option */}
+              {/* Approved Bills sidebar option */}
               <button
                 onClick={() => setActivePage("approved")}
                 className={`flex items-center gap-2 px-3 py-2 rounded ${
@@ -144,7 +145,7 @@ export default function EmployeeDashboard() {
                 onClick={() => signOut({ callbackUrl: "/login" })}
                 className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full mt-4"
               >
-                <span className="h-5 w-5 shrink-0 text-neutral-700">←</span>
+                <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700" />
                 {open && <span>Logout</span>}
               </button>
             </div>
@@ -169,7 +170,7 @@ export default function EmployeeDashboard() {
           />
         )}
 
-        {/* ✅ Approved Bills page rendering */}
+        {/* Approved Bills page rendering */}
         {activePage === "approved" && <ApprovedBills department={department} />}
       </div>
     </div>

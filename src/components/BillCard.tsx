@@ -185,7 +185,12 @@ export const BillCard: React.FC<BillCardProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-purple-50 p-4 rounded-lg">
               <div>
                 <p className="text-sm font-medium text-purple-800">Bank Guarantee</p>
-                <p className="text-sm text-green-700 font-medium">✅ Required</p>
+                <p className="flex items-center gap-1 text-sm text-green-700 font-medium">
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                  Required
+                </p>
               </div>
               
               {bill.bank_guarantee_details && (

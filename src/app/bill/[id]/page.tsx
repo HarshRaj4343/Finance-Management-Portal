@@ -178,7 +178,9 @@ export default function BillDetailsPage() {
             );
             return (
               <React.Fragment key={stop}>
-                <span className="text-gray-300">→</span>
+                <svg className="h-4 w-4 shrink-0 text-gray-300" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                  <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
                 <span
                   className={`px-2.5 py-1 rounded ${
                     rejectedHere

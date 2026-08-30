@@ -5,6 +5,7 @@ import { api } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import BillsHistory from "../apply-bill/BillsHistory";
 import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
+import { IconArrowLeft } from "@tabler/icons-react";
 import { Logo, LogoIcon } from "../apply-bill/Logo";
 import { signOut, useSession } from "next-auth/react";
 import { Bill } from "../apply-bill/types";
@@ -84,7 +85,7 @@ export default function BillEditorPage() {
                 onClick={() => signOut({ callbackUrl: "/login" })}
                 className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full mt-4"
               >
-                <span className="h-5 w-5 shrink-0 text-neutral-700">←</span>
+                <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700" />
                 {open && <span>Logout</span>}
               </button>
             </div>
