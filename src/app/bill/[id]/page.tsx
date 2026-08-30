@@ -29,37 +29,39 @@ type Payload = {
   error?: string;
 };
 
-const STATUS_TONE: Record<string, string> = {
-  Accepted: "bg-green-100 text-green-800 border-green-200",
-  Rejected: "bg-red-100 text-red-800 border-red-200",
-  "Finance Admin": "bg-sky-100 text-sky-800 border-sky-200",
-  Audit: "bg-amber-100 text-amber-800 border-amber-200",
-  "Student Purchase": "bg-violet-100 text-violet-800 border-violet-200",
-  User: "bg-gray-100 text-gray-700 border-gray-200",
+const statusColor = (status: string) => {
+  switch (status) {
+    case "Accepted":
+      return "text-green-600 bg-green-100";
+    case "Rejected":
+      return "text-red-600 bg-red-100";
+    case "Finance Admin":
+      return "text-blue-600 bg-blue-100";
+    case "Audit":
+      return "text-yellow-600 bg-yellow-100";
+    case "Student Purchase":
+      return "text-purple-600 bg-purple-100";
+    default:
+      return "text-gray-600 bg-gray-100";
+  }
 };
 
-const ACTION_DOT: Record<string, string> = {
-  Submitted: "bg-[#217093]",
-  Approved: "bg-green-600",
-  Rejected: "bg-red-600",
-  Hold: "bg-amber-500",
-  Forwarded: "bg-gray-300",
-  Registered: "bg-[#217093]",
-  Notified: "bg-gray-300",
+const dotColor = (action: string) => {
+  switch (action) {
+    case "Approved":
+      return "bg-green-600";
+    case "Rejected":
+      return "bg-red-600";
+    case "Hold":
+      return "bg-yellow-500";
+    case "Submitted":
+      return "bg-blue-600";
+    case "Registered":
+      return "bg-blue-600";
+    default:
+      return "bg-gray-300";
+  }
 };
-
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
-  const empty =
-    value === null || value === undefined || value === "" || value === "NULL";
-  return (
-    <div className="min-w-0">
-      <dt className="text-xs uppercase tracking-wide text-gray-400">{label}</dt>
-      <dd className={`mt-0.5 break-words ${empty ? "text-gray-300" : "text-gray-900"}`}>
-        {empty ? "—" : value}
-      </dd>
-    </div>
-  );
-}
 
 export default function BillDetailsPage() {
   const { id } = useParams<{ id: string }>();
@@ -79,11 +81,9 @@ export default function BillDetailsPage() {
 
     if (authStatus === "unauthenticated") {
       // Come back here once they have signed in.
-      const back = encodeURIComponent(`/bill/${id}`);
-      window.location.href = `/login?callbackUrl=${back}`;
+      window.location.href = `/login?callbackUrl=${encodeURIComponent(`/bill/${id}`)}`;
       return;
     }
-
     if (!id) return;
 
     const load = async () => {
@@ -99,254 +99,226 @@ export default function BillDetailsPage() {
     load();
   }, [id, authStatus]);
 
-  if (authStatus === "loading" || loading) {
+  if (authStatus === "loading" || loading)
     return (
-      <div className="mx-auto mt-20 max-w-md text-center text-gray-500">
-        Loading bill details…
-      </div>
+      <div className="text-center mt-10 text-gray-500">Loading bill details...</div>
     );
-  }
 
-  if (error || !payload?.bill) {
+  if (error || !payload?.bill)
     return (
-      <div className="mx-auto mt-20 max-w-md rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-center text-sm text-red-800">
+      <div className="max-w-md mx-auto mt-10 bg-red-50 border border-red-200 text-red-800 rounded-lg px-5 py-4 text-center text-sm">
         {error ?? "Bill not found."}
       </div>
     );
-  }
 
   const { bill, events, register, applicant, route } = payload;
-  const decided = bill.status === "Accepted" || bill.status === "Rejected";
+
+  // helper for pretty formatting
+  const formatValue = (val: any) => {
+    if (val === null || val === undefined || val === "NULL") return "—";
+    if (typeof val === "boolean") return val ? "Yes" : "No";
+    if (typeof val === "string" && val.trim() === "") return "—";
+    return val;
+  };
 
   return (
-    <div className="mx-auto mb-16 mt-8 max-w-5xl px-4 print:mt-0">
-      {/* -------------------------------------------------- header */}
-      <div className="rounded-t-lg bg-[#217093] px-6 py-5 text-white">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-xs uppercase tracking-[0.08em] opacity-80">
-              IIT Mandi · Integrated Finance Management Portal
-            </p>
-            <h1 className="mt-1 text-2xl font-semibold">
-              {bill.bill_number ?? `Bill ${bill.id.slice(0, 8)}`}
-            </h1>
-            <p className="mt-1 text-sm opacity-90">
-              {bill.item_description ?? "Purchase"} · {money(bill.po_value)}
-            </p>
-          </div>
-          <button
-            onClick={() => window.print()}
-            className="rounded border border-white/40 px-4 py-2 text-sm hover:bg-white/10 print:hidden"
-          >
-            Print
-          </button>
+    <div className="max-w-4xl mx-auto bg-white shadow rounded-lg p-6 mt-10 mb-10">
+      <div className="flex justify-between items-center mb-6">
+        <div>
+          <h2 className="text-2xl font-semibold text-gray-800">Bill Details</h2>
+          {bill.bill_number && (
+            <p className="text-sm text-gray-500 mt-1">{bill.bill_number}</p>
+          )}
+        </div>
+        <button
+          onClick={() => window.print()}
+          className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+        >
+          Print Page
+        </button>
+      </div>
+
+      {/* Status */}
+      <div className="flex flex-wrap items-center gap-3 mb-6 pb-6 border-b">
+        <span
+          className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor(bill.status)}`}
+        >
+          {bill.status === "Accepted"
+            ? "Approved"
+            : bill.status === "Rejected"
+            ? "Rejected"
+            : `With ${bill.status}`}
+        </span>
+        {register && (
+          <span className="px-3 py-1 rounded-full text-sm bg-blue-50 text-blue-700 border border-blue-200">
+            Register entry <strong>{register.serial_no}</strong>
+          </span>
+        )}
+        <span className="text-sm text-gray-500">
+          Filed {when(bill.created_at)}
+          {bill.decided_at && ` · decided ${when(bill.decided_at)}`}
+        </span>
+      </div>
+
+      {/* Approval route */}
+      <div className="mb-6 print:hidden">
+        <p className="text-sm font-medium text-gray-700 mb-2">
+          Approval route for a {bill.item_category?.toLowerCase()} purchase of{" "}
+          {money(bill.po_value)}
+        </p>
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <span className="px-2.5 py-1 rounded bg-gray-100 text-gray-600">Filed</span>
+          {route.map((stop) => {
+            const passed =
+              events.some((e) => e.stage === stop && e.action === "Approved") ||
+              bill.status === "Accepted";
+            const here = bill.status === stop;
+            const rejectedHere = events.some(
+              (e) => e.stage === stop && e.action === "Rejected"
+            );
+            return (
+              <React.Fragment key={stop}>
+                <span className="text-gray-300">→</span>
+                <span
+                  className={`px-2.5 py-1 rounded ${
+                    rejectedHere
+                      ? "bg-red-100 text-red-800"
+                      : here
+                      ? "bg-blue-600 text-white"
+                      : passed
+                      ? "bg-green-100 text-green-800"
+                      : "bg-gray-100 text-gray-400"
+                  }`}
+                >
+                  {stop}
+                </span>
+              </React.Fragment>
+            );
+          })}
         </div>
       </div>
 
-      <div className="rounded-b-lg border border-t-0 bg-white shadow-sm">
-        {/* ---------------------------------------------- status strip */}
-        <div className="flex flex-wrap items-center gap-3 border-b px-6 py-4">
-          <span
-            className={`rounded-full border px-3 py-1 text-sm font-medium ${
-              STATUS_TONE[bill.status] ?? STATUS_TONE.User
-            }`}
-          >
-            {bill.status === "Accepted"
-              ? "Approved"
-              : bill.status === "Rejected"
-              ? "Rejected"
-              : `With ${bill.status}`}
-          </span>
+      {/* Details, in the original two-column layout */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3 text-sm">
+        <p><strong>Bill Number:</strong> {formatValue(bill.bill_number)}</p>
+        <p><strong>Employee ID:</strong> {formatValue(bill.employee_id)}</p>
+        <p><strong>Employee Name:</strong> {formatValue(applicant?.employee_name ?? bill.employee_name)}</p>
+        <p><strong>Department:</strong> {formatValue(bill.employee_department)}</p>
+        <p><strong>PO Details:</strong> {formatValue(bill.po_details)}</p>
+        <p><strong>PO Value:</strong> {money(bill.po_value)}</p>
+        <p><strong>Supplier Name:</strong> {formatValue(bill.supplier_name)}</p>
+        <p><strong>Supplier Address:</strong> {formatValue(bill.supplier_address)}</p>
+        <p><strong>Item Category:</strong> {formatValue(bill.item_category)}</p>
+        <p><strong>Item Description:</strong> {formatValue(bill.item_description)}</p>
+        <p><strong>Quantity:</strong> {formatValue(bill.qty)}</p>
+        <p><strong>Quantity Issued:</strong> {formatValue(bill.qty_issued)}</p>
+        <p><strong>Indenter Name:</strong> {formatValue(bill.indenter_name)}</p>
+        <p><strong>Bill Details:</strong> {formatValue(bill.bill_details)}</p>
+        <p><strong>Source of Fund:</strong> {formatValue(bill.source_of_fund)}</p>
+        <p><strong>Stock Entry:</strong> {formatValue(bill.stock_entry)}</p>
+        <p><strong>Location:</strong> {formatValue(bill.location)}</p>
+        <p><strong>Status:</strong> {formatValue(bill.status)}</p>
+        <p><strong>SNP:</strong> {formatValue(bill.snp)}</p>
+        <p><strong>Audit:</strong> {formatValue(bill.audit)}</p>
+        <p><strong>Finance Admin:</strong> {formatValue(bill.finance_admin)}</p>
+        <p><strong>Noted:</strong> {formatValue(bill.noted)}</p>
+        <p><strong>Created At:</strong> {when(bill.created_at)}</p>
+      </div>
 
-          {register && (
-            <span className="rounded-full border border-[#217093]/20 bg-[#217093]/5 px-3 py-1 text-sm text-[#1c5a76]">
-              Register entry <strong>{register.serial_no}</strong>
-            </span>
-          )}
-
-          <span className="text-sm text-gray-500">
-            Filed {when(bill.created_at)}
-            {decided && ` · decided ${when(bill.decided_at)}`}
-          </span>
-        </div>
-
-        {/* ---------------------------------------------- route */}
-        <div className="border-b px-6 py-4 print:hidden">
-          <p className="mb-2 text-xs uppercase tracking-wide text-gray-400">
-            Approval route for a {bill.item_category?.toLowerCase()} purchase of{" "}
-            {money(bill.po_value)}
-          </p>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="rounded bg-gray-100 px-2.5 py-1 text-gray-600">Filed</span>
-            {route.map((stop) => {
-              const passed =
-                events.some((e) => e.stage === stop && e.action === "Approved") ||
-                bill.status === "Accepted";
-              const here = bill.status === stop;
-              const rejectedHere = events.some(
-                (e) => e.stage === stop && e.action === "Rejected"
-              );
-              return (
-                <React.Fragment key={stop}>
-                  <span className="text-gray-300">→</span>
-                  <span
-                    className={`rounded px-2.5 py-1 ${
-                      rejectedHere
-                        ? "bg-red-100 text-red-800"
-                        : here
-                        ? "bg-[#217093] text-white"
-                        : passed
-                        ? "bg-green-100 text-green-800"
-                        : "bg-gray-100 text-gray-400"
-                    }`}
-                  >
-                    {stop}
-                  </span>
-                </React.Fragment>
-              );
-            })}
+      {/* Bank guarantee, only when there is one */}
+      {bill.has_bank_guarantee && (
+        <>
+          <h3 className="text-lg font-semibold text-gray-800 mt-8 mb-3">
+            Bank Guarantee
+          </h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3 text-sm">
+            <p><strong>Reference:</strong> {formatValue(bill.bank_guarantee_details)}</p>
+            <p><strong>Amount:</strong> {bill.bank_guarantee_amount ? money(bill.bank_guarantee_amount) : "—"}</p>
+            <p><strong>Delivery Due:</strong> {when(bill.date_of_delivery)}</p>
+            <p><strong>Installation Due:</strong> {when(bill.date_of_installation)}</p>
           </div>
-        </div>
+        </>
+      )}
 
-        <div className="grid gap-8 px-6 py-6 md:grid-cols-[1fr_auto]">
-          {/* ------------------------------------------ the details */}
-          <div className="min-w-0 space-y-8">
-            <section>
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Purchase
-              </h2>
-              <dl className="grid grid-cols-1 gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
-                <Field label="Item" value={bill.item_description} />
-                <Field label="Category" value={bill.item_category} />
-                <Field label="Quantity" value={bill.qty} />
-                <Field label="Quantity issued" value={bill.qty_issued} />
-                <Field label="Amount" value={money(bill.po_value)} />
-                <Field label="Supplier" value={bill.supplier_name} />
-                <Field label="Supplier address" value={bill.supplier_address} />
-                <Field label="PO details" value={bill.po_details} />
-                <Field label="Invoice" value={bill.bill_details} />
-                <Field label="Source of fund" value={bill.source_of_fund} />
-                <Field label="Stock entry" value={bill.stock_entry} />
-                <Field label="Location" value={bill.location} />
-              </dl>
-            </section>
-
-            <section>
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                Applicant
-              </h2>
-              <dl className="grid grid-cols-1 gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
-                <Field label="Employee" value={applicant?.employee_name ?? bill.employee_name} />
-                <Field label="Employee ID" value={bill.employee_id} />
-                <Field label="Department" value={bill.employee_department} />
-                <Field label="Indenter" value={bill.indenter_name} />
-              </dl>
-            </section>
-
-            {bill.has_bank_guarantee && (
-              <section>
-                <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                  Bank guarantee
-                </h2>
-                <dl className="grid grid-cols-1 gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
-                  <Field label="Reference" value={bill.bank_guarantee_details} />
-                  <Field
-                    label="Amount"
-                    value={
-                      bill.bank_guarantee_amount ? money(bill.bank_guarantee_amount) : null
-                    }
-                  />
-                  <Field label="Delivery due" value={when(bill.date_of_delivery)} />
-                  <Field label="Installation due" value={when(bill.date_of_installation)} />
-                </dl>
-              </section>
-            )}
-
-            {register && (
-              <section>
-                <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">
-                  Register entry
-                </h2>
-                <div className="rounded-lg border border-[#217093]/20 bg-[#217093]/[0.03] p-4">
-                  <dl className="grid grid-cols-1 gap-x-8 gap-y-4 text-sm sm:grid-cols-2">
-                    <Field label="Serial number" value={<strong>{register.serial_no}</strong>} />
-                    <Field label="Financial year" value={register.financial_year} />
-                    <Field label="Entered on" value={when(register.recorded_at)} />
-                    <Field label="Entered by" value={register.recorded_by} />
-                    <Field label="Department register" value={register.department} />
-                    <Field label="Amount" value={money(register.amount)} />
-                  </dl>
-                  <p className="mt-3 border-t border-[#217093]/10 pt-3 text-xs text-gray-500">
-                    This purchase is recorded permanently in the {register.department}{" "}
-                    register. Register entries cannot be edited or deleted.
-                  </p>
-                </div>
-              </section>
-            )}
-          </div>
-
-          {/* ------------------------------------------ QR */}
-          <aside className="flex flex-col items-center gap-3 md:w-52">
-            {qrUrl && (
-              <div className="rounded-lg border bg-white p-3">
-                <QRCode value={qrUrl} size={160} />
-              </div>
-            )}
-            <p className="text-center text-xs leading-relaxed text-gray-500">
-              Scan to reopen this record.
-              <br />
-              Signing in is required.
+      {/* Register entry */}
+      {register && (
+        <>
+          <h3 className="text-lg font-semibold text-gray-800 mt-8 mb-3">
+            Register Entry
+          </h3>
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3 text-sm">
+              <p><strong>Serial Number:</strong> {register.serial_no}</p>
+              <p><strong>Financial Year:</strong> {register.financial_year}</p>
+              <p><strong>Entered On:</strong> {when(register.recorded_at)}</p>
+              <p><strong>Entered By:</strong> {formatValue(register.recorded_by)}</p>
+              <p><strong>Department Register:</strong> {register.department}</p>
+              <p><strong>Amount:</strong> {money(register.amount)}</p>
+            </div>
+            <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-blue-200">
+              This purchase is recorded permanently in the {register.department} register.
+              Register entries cannot be edited or deleted.
             </p>
-          </aside>
-        </div>
+          </div>
+        </>
+      )}
 
-        {/* ---------------------------------------------- the log */}
-        <section className="border-t px-6 py-6">
-          <h2 className="mb-1 text-sm font-semibold uppercase tracking-wide text-gray-500">
-            History
-          </h2>
-          <p className="mb-5 text-xs text-gray-400">
-            Every step this bill took, in order. This log is append-only: entries
-            cannot be edited or removed once written.
-          </p>
+      {/* History */}
+      <h3 className="text-lg font-semibold text-gray-800 mt-8 mb-1">History</h3>
+      <p className="text-xs text-gray-500 mb-5">
+        Every step this bill took, in order. This log is append-only — entries cannot be
+        edited or removed once written.
+      </p>
 
-          <ol className="relative space-y-6 border-l border-gray-200 pl-6">
-            {events.map((e) => (
-              <li key={e.id} className="relative">
-                <span
-                  className={`absolute -left-[1.9rem] top-1.5 h-3 w-3 rounded-full ring-4 ring-white ${
-                    ACTION_DOT[e.action] ?? "bg-gray-300"
-                  }`}
-                />
-                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-                  <span className="font-medium text-gray-900">
-                    {e.action === "Forwarded" || e.action === "Registered" || e.action === "Notified"
-                      ? e.remark
-                      : `${e.stage} — ${e.action}`}
-                  </span>
-                  <span className="text-xs text-gray-400">{when(e.created_at)}</span>
-                </div>
+      <ol className="relative space-y-6 border-l border-gray-200 pl-6 ml-2">
+        {events.map((e) => (
+          <li key={e.id} className="relative">
+            <span
+              className={`absolute -left-[1.85rem] top-1.5 h-3 w-3 rounded-full ring-4 ring-white ${dotColor(
+                e.action
+              )}`}
+            />
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <span className="font-medium text-gray-900 text-sm">
+                {e.action === "Forwarded" ||
+                e.action === "Registered" ||
+                e.action === "Notified"
+                  ? e.remark
+                  : `${e.stage} — ${e.action}`}
+              </span>
+              <span className="text-xs text-gray-400">{when(e.created_at)}</span>
+            </div>
 
-                {e.actor_name && (
-                  <p className="mt-0.5 text-sm text-gray-500">
-                    {e.actor_name}
-                    {e.actor_code ? ` (${e.actor_code})` : ""}
-                    {e.actor_role ? ` · ${e.actor_role}` : ""}
-                  </p>
-                )}
+            {e.actor_name && (
+              <p className="mt-0.5 text-sm text-gray-500">
+                {e.actor_name}
+                {e.actor_code ? ` (${e.actor_code})` : ""}
+                {e.actor_role ? ` · ${e.actor_role}` : ""}
+              </p>
+            )}
 
-                {e.remark &&
-                  e.action !== "Forwarded" &&
-                  e.action !== "Registered" &&
-                  e.action !== "Notified" && (
-                    <p className="mt-1.5 rounded border-l-2 border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">
-                      {e.remark}
-                    </p>
-                  )}
-              </li>
-            ))}
-          </ol>
-        </section>
+            {e.remark &&
+              e.action !== "Forwarded" &&
+              e.action !== "Registered" &&
+              e.action !== "Notified" && (
+                <p className="mt-1.5 bg-gray-50 border-l-2 border-gray-200 px-3 py-2 text-sm text-gray-700 rounded-r">
+                  {e.remark}
+                </p>
+              )}
+          </li>
+        ))}
+      </ol>
+
+      {/* QR */}
+      <div className="mt-8 pt-6 border-t flex flex-col items-center gap-3">
+        {qrUrl && (
+          <div className="bg-white p-3 border rounded-lg">
+            <QRCode value={qrUrl} size={150} />
+          </div>
+        )}
+        <p className="text-xs text-gray-500 text-center">
+          Scan to reopen this record. Signing in is required.
+        </p>
       </div>
     </div>
   );
