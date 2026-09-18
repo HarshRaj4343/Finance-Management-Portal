@@ -903,3 +903,46 @@ consequences rather than fabrications.
 | 7 | Serial number formats are placeholders | `fn_next_bill_number` |
 | 8 | Four `window.confirm` prompts remain for destructive actions | — |
 | 9 | No middleware; unauthenticated page loads redirect client-side | §10.7 |
+
+---
+
+## 11. Supabase Removed — Plain PostgreSQL
+
+**Decision.** Drop Supabase entirely. The portal talks to any PostgreSQL
+(13+) through `pg`, configured by a single `DATABASE_URL`.
+
+**Why.** After §10 the portal used none of what Supabase adds. Auth is
+LDAP + NextAuth, the browser never touches the database, row-level security
+is off (§10.11), and every write already goes through a plain PL/pgSQL
+function. What was left was the PostgREST query builder standing between
+the API routes and SQL. It also carried the service-role key and anon key
+around, and tied local development to a hosted project.
+
+**What changed.**
+- `src/server/db.ts` is a `pg` connection pool with `query` / `queryOne`
+  helpers. It parses `numeric` and `bigint` as JS numbers and leaves `date`
+  as a string, so API responses keep the shape they had under PostgREST.
+- Every API route uses parameterised SQL. The workflow functions are called
+  directly (`select public.fn_bill_action(...)`) and are unchanged.
+- The admin lists get the PDA position (and the person's name) through a
+  join instead of a second query. Adding an employee with an allocation now
+  happens in one statement, so a failed PDA insert no longer leaves the
+  person half-added.
+- Search input is escaped for `ILIKE` instead of having `%,()` stripped out
+  (those characters were only special in PostgREST's filter syntax).
+- `supabase/` is now `db/`. `scripts/db-setup.sh` (`npm run db:setup`)
+  creates and builds a database. `docker-compose.yml` has a `postgres:17`
+  service that runs the same files on first start.
+- Deleted: `@supabase/*` packages, the unused anon-key clients,
+  `data_base.sql` and `supabase_bootstrap.sql` (Supabase dumps with `auth`,
+  `storage` and `vault` schemas that do not load into plain Postgres), and
+  `apply-all.sql` (which existed for pasting into the Supabase SQL editor).
+- The Docker image no longer takes build args; nothing about the database
+  is compiled into the browser bundle.
+
+**Trade-off.** Backups, connection pooling and hosting are now ours to run.
+`vercel.json` is still present, but a Vercel deployment needs a reachable
+managed Postgres in `DATABASE_URL`. A database on `localhost` will not do.
+
+**Where.** `src/server/db.ts`, `src/app/api/**`, `db/`, `scripts/db-setup.sh`,
+`docker-compose.yml`

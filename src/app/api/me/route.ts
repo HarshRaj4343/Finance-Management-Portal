@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { db } from "@/server/db";
+import { queryOne } from "@/server/db";
 import { currentActor } from "@/server/session";
 import { fail, ok } from "@/server/http";
 import { homeFor } from "@/lib/roles";
@@ -13,17 +13,17 @@ export async function GET() {
     const actor = await currentActor();
     if (!actor) return NextResponse.json({ signedIn: false }, { status: 200 });
 
-    const { data: pda } = await db()
-      .from("pda_balances")
-      .select("allocated, balance, committed, spent, updated_at")
-      .eq("employee_id", actor.code)
-      .maybeSingle();
+    const pda = await queryOne(
+      `select allocated, balance, committed, spent, updated_at
+         from public.pda_balances where employee_id = $1`,
+      [actor.code]
+    );
 
     return ok({
       signedIn: true,
       ...actor,
       home: homeFor(actor.role),
-      pda: pda ?? null,
+      pda,
     });
   } catch (err) {
     return fail(err, "Could not load your profile.");

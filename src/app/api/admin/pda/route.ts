@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { db } from "@/server/db";
+import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireRole } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 
@@ -24,38 +24,28 @@ export async function GET(req: NextRequest) {
     await requireRole("PDA Manager", "Dean", "Finance Admin");
     const p = req.nextUrl.searchParams;
 
-    let q = db()
-      .from("pda_balances")
-      .select("*", { count: "exact" })
-      .order("updated_at", { ascending: false });
+    const params = new Params();
+    const where: string[] = [];
 
-    if (p.get("department")) q = q.eq("department", p.get("department"));
+    if (p.get("department")) where.push(`pda.department::text = ${params.add(p.get("department"))}`);
 
     const text = p.get("q")?.trim();
     if (text) {
-      const like = `%${text.replace(/[%,()]/g, "")}%`;
-      q = q.or([`employee_id.ilike.${like}`, `email.ilike.${like}`].join(","));
+      const like = params.add(likePattern(text));
+      where.push(`(pda.employee_id ilike ${like} or pda.email ilike ${like})`);
     }
 
-    const { data, error, count } = await q;
-    if (error) throw error;
-
     // Names live on employees, not here.
-    const codes = (data ?? []).map((r) => r.employee_id);
-    const { data: people } = await db()
-      .from("employees")
-      .select("employee_code, employee_name, employee_type")
-      .in("employee_code", codes.length ? codes : ["__none__"]);
-    const byCode = new Map((people ?? []).map((e) => [e.employee_code, e]));
+    const accounts = await query(
+      `select pda.*, e.employee_name, e.employee_type
+         from public.pda_balances pda
+         left join public.employees e on e.employee_code = pda.employee_id
+         ${whereClause(where)}
+        order by pda.updated_at desc`,
+      params.values
+    );
 
-    return ok({
-      accounts: (data ?? []).map((r) => ({
-        ...r,
-        employee_name: byCode.get(r.employee_id)?.employee_name ?? null,
-        employee_type: byCode.get(r.employee_id)?.employee_type ?? null,
-      })),
-      total: count ?? 0,
-    });
+    return ok({ accounts, total: accounts.length });
   } catch (err) {
     return fail(err, "Could not load PDA accounts.");
   }
@@ -74,31 +64,24 @@ export async function POST(req: NextRequest) {
       return badRequest("Enter an allocation of zero or more.");
     }
 
-    const { data: emp } = await db()
-      .from("employees")
-      .select("employee_code, email, department")
-      .eq("employee_code", code)
-      .maybeSingle();
+    const emp = await queryOne(
+      "select employee_code, email, department from public.employees where employee_code = $1",
+      [code]
+    );
     if (!emp) {
       return badRequest(
         `There is no employee with the code "${code}". Add them from the employees tab first.`
       );
     }
 
-    const { data, error } = await db()
-      .from("pda_balances")
-      .insert({
-        employee_id: emp.employee_code,
-        email: emp.email,
-        department: emp.department,
-        allocated,
-        balance: allocated,
-      })
-      .select()
-      .single();
-    if (error) throw error;
+    const account = await queryOne(
+      `insert into public.pda_balances (employee_id, email, department, allocated, balance)
+       values ($1, $2, $3, $4, $4)
+       returning *`,
+      [emp.employee_code, emp.email, emp.department, allocated]
+    );
 
-    return ok({ account: data }, 201);
+    return ok({ account }, 201);
   } catch (err) {
     return fail(err, "Could not open that PDA account.");
   }
@@ -122,11 +105,10 @@ export async function PATCH(req: NextRequest) {
     if (b.top_up !== undefined) {
       const add = Number(b.top_up);
       if (!Number.isFinite(add)) return badRequest("Enter a valid amount.");
-      const { data: cur } = await db()
-        .from("pda_balances")
-        .select("allocated")
-        .eq("employee_id", code)
-        .maybeSingle();
+      const cur = await queryOne<{ allocated: number }>(
+        "select allocated from public.pda_balances where employee_id = $1",
+        [code]
+      );
       if (!cur) return badRequest(`No PDA account for "${code}".`);
       target = Number(cur.allocated) + add;
     } else {
@@ -136,14 +118,12 @@ export async function PATCH(req: NextRequest) {
       }
     }
 
-    const { data, error } = await db().rpc("fn_set_pda_allocation", {
-      p_employee_code: code,
-      p_allocated: target,
-      p_actor_code: actor.code,
-    });
-    if (error) throw error;
+    const row = await queryOne<{ account: unknown }>(
+      "select public.fn_set_pda_allocation($1, $2, $3) as account",
+      [code, target, actor.code]
+    );
 
-    return ok({ account: data });
+    return ok({ account: row?.account });
   } catch (err) {
     return fail(err, "Could not update that PDA account.");
   }
@@ -162,11 +142,10 @@ export async function DELETE(req: NextRequest) {
     const code = req.nextUrl.searchParams.get("employee_id")?.trim();
     if (!code) return badRequest("Which account? Pass employee_id.");
 
-    const { data: acc } = await db()
-      .from("pda_balances")
-      .select("committed, spent")
-      .eq("employee_id", code)
-      .maybeSingle();
+    const acc = await queryOne<{ committed: number; spent: number }>(
+      "select committed, spent from public.pda_balances where employee_id = $1",
+      [code]
+    );
     if (!acc) return badRequest(`No PDA account for "${code}".`);
 
     if (Number(acc.committed) > 0 || Number(acc.spent) > 0) {
@@ -175,8 +154,7 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    const { error } = await db().from("pda_balances").delete().eq("employee_id", code);
-    if (error) throw error;
+    await query("delete from public.pda_balances where employee_id = $1", [code]);
 
     return ok({ closed: code });
   } catch (err) {

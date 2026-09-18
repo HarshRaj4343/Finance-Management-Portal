@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { db } from "@/server/db";
+import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { canSeeAllBills } from "@/lib/roles";
@@ -40,43 +40,50 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(Number(p.get("limit") ?? 100) || 100, 500);
     const offset = Math.max(Number(p.get("offset") ?? 0) || 0, 0);
 
-    let q = db()
-      .from("bills")
-      .select(BILL_COLUMNS, { count: "exact" })
-      .order("created_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+    const params = new Params();
+    const where: string[] = [];
 
     if (!canSeeAllBills(actor.role)) {
       // Not negotiable, and applied before anything from the query string.
-      q = q.eq("employee_id", actor.code);
+      where.push(`employee_id = ${params.add(actor.code)}`);
     } else if (p.get("employee")) {
-      q = q.eq("employee_id", p.get("employee")!.trim());
+      where.push(`employee_id = ${params.add(p.get("employee")!.trim())}`);
     }
 
-    if (p.get("stage")) q = q.eq("status", p.get("stage"));
-    if (p.get("status")) q = q.eq("status", p.get("status"));
-    if (p.get("category")) q = q.eq("item_category", p.get("category"));
-    if (p.get("department")) q = q.eq("employee_department", p.get("department"));
+    if (p.get("stage")) where.push(`status = ${params.add(p.get("stage"))}`);
+    if (p.get("status")) where.push(`status = ${params.add(p.get("status"))}`);
+    if (p.get("category")) where.push(`item_category = ${params.add(p.get("category"))}`);
+    if (p.get("department")) {
+      where.push(`employee_department::text = ${params.add(p.get("department"))}`);
+    }
 
     const text = p.get("q")?.trim();
     if (text) {
-      const like = `%${text.replace(/[%,()]/g, "")}%`;
-      q = q.or(
-        [
-          `item_description.ilike.${like}`,
-          `supplier_name.ilike.${like}`,
-          `bill_number.ilike.${like}`,
-          `po_details.ilike.${like}`,
-          `employee_name.ilike.${like}`,
-          `employee_id.ilike.${like}`,
-        ].join(",")
+      const like = params.add(likePattern(text));
+      where.push(
+        `(item_description ilike ${like} or supplier_name ilike ${like}
+          or bill_number ilike ${like} or po_details ilike ${like}
+          or employee_name ilike ${like} or employee_id ilike ${like})`
       );
     }
 
-    const { data, error, count } = await q;
-    if (error) throw error;
+    const filter = whereClause(where);
+    const filterValues = [...params.values];
+    const page = `limit ${params.add(limit)} offset ${params.add(offset)}`;
 
-    return ok({ bills: data ?? [], total: count ?? 0, limit, offset });
+    const [data, counted] = await Promise.all([
+      query(
+        `select ${BILL_COLUMNS} from public.bills ${filter}
+         order by created_at desc ${page}`,
+        params.values
+      ),
+      queryOne<{ total: number }>(
+        `select count(*) as total from public.bills ${filter}`,
+        filterValues
+      ),
+    ]);
+
+    return ok({ bills: data, total: counted?.total ?? 0, limit, offset });
   } catch (err) {
     return fail(err, "Could not load bills.");
   }
@@ -108,13 +115,15 @@ export async function POST(req: NextRequest) {
       return badRequest("Enter a bill amount greater than zero.");
     }
 
-    const { data, error } = await db().rpc("fn_submit_bill", {
-      p_payload: { ...body, po_value: amount },
-      p_actor: { code: actor.code, name: actor.name, role: actor.role },
-    });
-    if (error) throw error;
+    const row = await queryOne<{ bill: unknown }>(
+      "select public.fn_submit_bill($1::jsonb, $2::jsonb) as bill",
+      [
+        JSON.stringify({ ...body, po_value: amount }),
+        JSON.stringify({ code: actor.code, name: actor.name, role: actor.role }),
+      ]
+    );
 
-    return ok({ bill: data }, 201);
+    return ok({ bill: row?.bill }, 201);
   } catch (err) {
     return fail(err, "Could not file the bill.");
   }

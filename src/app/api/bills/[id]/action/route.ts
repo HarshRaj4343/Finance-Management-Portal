@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
-import { db } from "@/server/db";
+import { queryOne } from "@/server/db";
 import { requireApprover } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { notifyApplicant } from "@/server/notify";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -48,22 +49,26 @@ export async function POST(
 
     // Remember which desk it was at: fn_bill_action will have moved it on
     // by the time we come to write the notification.
-    const { data: before } = await db()
-      .from("bills")
-      .select("status")
-      .eq("id", id)
-      .maybeSingle();
+    if (!isUuid(id)) return badRequest("No such bill.");
 
-    const { data: bill, error } = await db().rpc("fn_bill_action", {
-      p_bill_id: id,
-      p_actor_code: actor.code,
-      p_actor_name: actor.name,
-      p_actor_role: actor.role,
-      p_action: action,
-      p_remark: body.remark ?? null,
-      p_extra: body.extra ?? {},
-    });
-    if (error) throw error;
+    const before = await queryOne<{ status: string }>(
+      "select status from public.bills where id = $1",
+      [id]
+    );
+
+    const row = await queryOne<{ bill: { status: string; bill_number: string | null } }>(
+      "select public.fn_bill_action($1::uuid, $2, $3, $4, $5, $6, $7::jsonb) as bill",
+      [
+        id,
+        actor.code,
+        actor.name,
+        actor.role,
+        action,
+        body.remark ?? null,
+        JSON.stringify(body.extra ?? {}),
+      ]
+    );
+    const bill = row?.bill;
 
     const stage = before?.status ?? actor.role;
     const finished = bill?.status === "Accepted";

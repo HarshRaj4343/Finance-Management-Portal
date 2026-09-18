@@ -10,7 +10,7 @@
 --   Notify User / QR Code Generation     -> bills.bill_number + bill_approvals
 --   Departmental register                -> purchase_register
 --
--- Run this on a FRESH Supabase project (SQL editor or `supabase db push`).
+-- Run this on a fresh database: npm run db:setup (scripts/db-setup.sh).
 -- =====================================================================
 
 -- ---------------------------------------------------------------------

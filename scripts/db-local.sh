@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Spin up a throwaway Postgres, build the schema, run the workflow tests,
-# and optionally load the demo data. Nothing here touches Supabase, and
+# and optionally load the demo data. Nothing here touches your development database, and
 # the cluster lives in a temp directory you can delete.
 #
 #   ./scripts/db-local.sh test     schema + functions + the 44 assertions
@@ -42,8 +42,8 @@ start() {
 build() {
   echo "==> applying the schema"
   "${PSQL[@]}" -q -c 'drop schema if exists public cascade; create schema public;' >/dev/null
-  "${PSQL[@]}" -q -f supabase/migrations/0001_schema.sql
-  "${PSQL[@]}" -q -f supabase/migrations/0002_functions.sql
+  "${PSQL[@]}" -q -f db/migrations/0001_schema.sql
+  "${PSQL[@]}" -q -f db/migrations/0002_functions.sql
 }
 
 case "${1:-test}" in
@@ -58,7 +58,7 @@ case "${1:-test}" in
   seed)
     start; build
     echo "==> loading the demo data (this runs the real workflow, so it takes a moment)"
-    "${PSQL[@]}" -q -f supabase/seed/0003_demo_data.sql
+    "${PSQL[@]}" -q -f db/seed/0003_demo_data.sql
     echo
     echo "Cluster is still running. Inspect it with:  ./scripts/db-local.sh psql"
     ;;

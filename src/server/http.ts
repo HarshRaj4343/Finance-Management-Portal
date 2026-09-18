@@ -11,7 +11,7 @@ import { NextResponse } from "next/server";
  * a raw Postgres error string is neither useful nor safe to show.
  */
 export function fail(err: unknown, fallback = "Something went wrong."): NextResponse {
-  const e = err as { code?: string; message?: string; details?: string; status?: number };
+  const e = err as { code?: string; message?: string; detail?: string; status?: number };
 
   // An HttpError thrown by a session guard already knows its status code.
   if (typeof e?.status === "number" && e.status >= 400 && e.status < 500 && e.message) {
@@ -49,7 +49,7 @@ export function fail(err: unknown, fallback = "Something went wrong."): NextResp
         error:
           "This database is missing part of the schema this app expects (" +
           (e.message ?? "unknown object") +
-          "). Apply supabase/migrations/0001_schema.sql and 0002_functions.sql to it.",
+          "). Apply db/migrations/0001_schema.sql and 0002_functions.sql to it (npm run db:setup).",
       },
       { status: 503 }
     );
@@ -62,7 +62,7 @@ export function fail(err: unknown, fallback = "Something went wrong."): NextResp
     );
   }
 
-  console.error("[api]", e?.code ?? "", e?.message ?? err, e?.details ?? "");
+  console.error("[api]", e?.code ?? "", e?.message ?? err, e?.detail ?? "");
   return NextResponse.json({ error: fallback }, { status: 500 });
 }
 

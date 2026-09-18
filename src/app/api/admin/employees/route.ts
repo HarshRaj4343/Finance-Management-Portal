@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { db } from "@/server/db";
+import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireRole } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { ROLES, normaliseRole } from "@/lib/roles";
@@ -25,43 +25,41 @@ export async function GET(req: NextRequest) {
     await requireRole("Dean", "Finance Admin");
     const p = req.nextUrl.searchParams;
 
-    let q = db()
-      .from("employees")
-      .select("*", { count: "exact" })
-      .order("employee_type")
-      .order("employee_code");
+    const params = new Params();
+    const where: string[] = [];
 
-    if (p.get("role")) q = q.eq("employee_type", p.get("role"));
-    if (p.get("department")) q = q.eq("department", p.get("department"));
-    if (p.get("active") === "true") q = q.eq("is_active", true);
-    if (p.get("active") === "false") q = q.eq("is_active", false);
+    if (p.get("role")) where.push(`e.employee_type = ${params.add(p.get("role"))}`);
+    if (p.get("department")) where.push(`e.department::text = ${params.add(p.get("department"))}`);
+    if (p.get("active") === "true") where.push("e.is_active");
+    if (p.get("active") === "false") where.push("not e.is_active");
 
     const text = p.get("q")?.trim();
     if (text) {
-      const like = `%${text.replace(/[%,()]/g, "")}%`;
-      q = q.or(
-        [`employee_code.ilike.${like}`, `employee_name.ilike.${like}`, `email.ilike.${like}`].join(",")
+      const like = params.add(likePattern(text));
+      where.push(
+        `(e.employee_code ilike ${like} or e.employee_name ilike ${like} or e.email ilike ${like})`
       );
     }
 
-    const { data, error, count } = await q;
-    if (error) throw error;
+    // Each person's PDA position comes along in the same query.
+    const employees = await query(
+      `select e.*,
+              case when pda.employee_id is null then null else json_build_object(
+                'employee_id', pda.employee_id,
+                'allocated',   pda.allocated,
+                'balance',     pda.balance,
+                'committed',   pda.committed,
+                'spent',       pda.spent,
+                'updated_at',  pda.updated_at
+              ) end as pda
+         from public.employees e
+         left join public.pda_balances pda on pda.employee_id = e.employee_code
+         ${whereClause(where)}
+        order by e.employee_type, e.employee_code`,
+      params.values
+    );
 
-    // Attach each person's PDA position in one extra query rather than
-    // one per row.
-    const codes = (data ?? []).map((e) => e.employee_code);
-    const { data: pdas } = await db()
-      .from("pda_balances")
-      .select("employee_id, allocated, balance, committed, spent, updated_at")
-      .in("employee_id", codes.length ? codes : ["__none__"]);
-
-    const byCode = new Map((pdas ?? []).map((p) => [p.employee_id, p]));
-
-    return ok({
-      employees: (data ?? []).map((e) => ({ ...e, pda: byCode.get(e.employee_code) ?? null })),
-      total: count ?? 0,
-      roles: ROLES,
-    });
+    return ok({ employees, total: employees.length, roles: ROLES });
   } catch (err) {
     return fail(err, "Could not load the employee list.");
   }
@@ -92,32 +90,23 @@ export async function POST(req: NextRequest) {
     if (!EMAIL.test(email)) return badRequest(`"${email}" is not a valid email address.`);
     if (!department) return badRequest("Choose a department.");
 
-    const { data, error } = await db()
-      .from("employees")
-      .insert({
-        employee_code: code,
-        employee_name: name,
-        email,
-        department,
-        employee_type: role,
-        is_active: true,
-      })
-      .select()
-      .single();
-    if (error) throw error;
-
-    // Open a PDA account at the same time if an allocation was given.
+    // Open a PDA account at the same time if an allocation was given. One
+    // statement, so a failed PDA insert does not leave the person half-added.
     const allocated = Number(b.allocated ?? 0);
-    if (allocated > 0) {
-      const { error: pdaErr } = await db().from("pda_balances").insert({
-        employee_id: code,
-        email,
-        department,
-        allocated,
-        balance: allocated,
-      });
-      if (pdaErr) throw pdaErr;
-    }
+    const data = await queryOne(
+      `with person as (
+         insert into public.employees
+           (employee_code, employee_name, email, department, employee_type, is_active)
+         values ($1, $2, $3, $4, $5, true)
+         returning *
+       ), account as (
+         insert into public.pda_balances (employee_id, email, department, allocated, balance)
+         select employee_code, email, department, $6::numeric, $6::numeric
+           from person where $6::numeric > 0
+       )
+       select * from person`,
+      [code, name, email, department, role, allocated]
+    );
 
     console.log(`[admin] ${actor.code} added ${code} as ${role}`);
     return ok(

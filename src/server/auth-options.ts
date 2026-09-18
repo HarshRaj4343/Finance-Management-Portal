@@ -2,7 +2,7 @@ import "server-only";
 import type { AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import ldap from "ldapjs";
-import { db } from "./db";
+import { queryOne } from "./db";
 import { normaliseRole, type Role } from "@/lib/roles";
 
 /**
@@ -27,10 +27,24 @@ const ldapConfig = {
  * network, where no LDAP server is reachable. Every one of these exists as
  * a real row in `employees`, so the role still comes from the database.
  *
- * Set DEMO_LOGIN_ENABLED=false for the production deployment.
+ * These bypass LDAP entirely, and the list includes "Dean", so leaving
+ * them on in production hands anybody who guesses the password the run of
+ * the portal. They are therefore OFF in production unless somebody turns
+ * them on deliberately AND sets a password: no default, no "123".
  */
-const DEMO_LOGIN_ENABLED = process.env.DEMO_LOGIN_ENABLED !== "false";
-const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? "123";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
+const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? (IS_PRODUCTION ? null : "123");
+const DEMO_LOGIN_ENABLED =
+  DEMO_PASSWORD !== null &&
+  (process.env.DEMO_LOGIN_ENABLED === "true" ||
+    (!IS_PRODUCTION && process.env.DEMO_LOGIN_ENABLED !== "false"));
+
+if (IS_PRODUCTION && DEMO_LOGIN_ENABLED) {
+  console.warn(
+    "[auth] WARNING: demo logins are ENABLED in production. Anyone who knows " +
+      "DEMO_PASSWORD can sign in as Dean. Unset DEMO_LOGIN_ENABLED to disable them."
+  );
+}
 const DEMO_ACCOUNTS = [
   "Dean",
   "Finance Admin",
@@ -106,11 +120,25 @@ async function loadEmployee(code: string): Promise<{
   role: Role;
   provisioned: boolean;
 }> {
-  const { data, error } = await db()
-    .from("employees")
-    .select("employee_code, employee_name, email, department, employee_type, is_active")
-    .eq("employee_code", code.trim())
-    .maybeSingle();
+  let data: {
+    employee_code: string;
+    employee_name: string | null;
+    email: string | null;
+    department: string | null;
+    employee_type: string;
+    is_active: boolean;
+  } | null = null;
+  let error: { code?: string; message: string } | null = null;
+
+  try {
+    data = await queryOne(
+      `select employee_code, employee_name, email, department, employee_type, is_active
+         from public.employees where employee_code = $1`,
+      [code.trim()]
+    );
+  } catch (err) {
+    error = err as { code?: string; message: string };
+  }
 
   if (error) {
     // A missing column or table here means the migrations have not been
@@ -120,8 +148,8 @@ async function loadEmployee(code: string): Promise<{
     if (error.code === "42703" || error.code === "42P01") {
       console.error(
         `[auth] SCHEMA MISMATCH -- ${error.message}. ` +
-          "Apply supabase/migrations/0001_schema.sql and 0002_functions.sql " +
-          "to this Supabase project. Until then every sign-in falls back to the User role."
+          "Apply db/migrations/0001_schema.sql and 0002_functions.sql " +
+          "to this database (npm run db:setup). Until then every sign-in falls back to the User role."
       );
     } else {
       console.error("[auth] employee lookup failed", error.message);

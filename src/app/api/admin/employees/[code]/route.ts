@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { db } from "@/server/db";
+import { queryOne, Params } from "@/server/db";
 import { requireRole } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { ROLES, normaliseRole } from "@/lib/roles";
@@ -69,13 +69,15 @@ export async function PATCH(
 
     if (Object.keys(patch).length === 0) return badRequest("Nothing to change.");
 
-    const { data, error } = await db()
-      .from("employees")
-      .update(patch)
-      .eq("employee_code", target)
-      .select()
-      .maybeSingle();
-    if (error) throw error;
+    // Column names come from the fixed set above, never from the request.
+    const values = new Params();
+    const sets = Object.entries(patch).map(([column, value]) => `${column} = ${values.add(value)}`);
+    const data = await queryOne(
+      `update public.employees set ${sets.join(", ")}
+        where employee_code = ${values.add(target)}
+        returning *`,
+      values.values
+    );
     if (!data) return badRequest(`No employee with the code "${target}".`);
 
     console.log(`[admin] ${actor.code} updated ${target}:`, Object.keys(patch).join(", "));
@@ -107,20 +109,20 @@ export async function DELETE(
       return badRequest("You cannot deactivate your own account.");
     }
 
-    const { data, error } = await db()
-      .from("employees")
-      .update({ is_active: false })
-      .eq("employee_code", target)
-      .select("employee_code, employee_name, is_active")
-      .maybeSingle();
-    if (error) throw error;
+    const data = await queryOne<{ employee_code: string; employee_name: string; is_active: boolean }>(
+      `update public.employees set is_active = false
+        where employee_code = $1
+        returning employee_code, employee_name, is_active`,
+      [target]
+    );
     if (!data) return badRequest(`No employee with the code "${target}".`);
 
-    const { count } = await db()
-      .from("bills")
-      .select("id", { count: "exact", head: true })
-      .eq("employee_id", target)
-      .not("status", "in", '("Accepted","Rejected")');
+    const open = await queryOne<{ count: number }>(
+      `select count(*) as count from public.bills
+        where employee_id = $1 and status not in ('Accepted', 'Rejected')`,
+      [target]
+    );
+    const count = open?.count ?? 0;
 
     return ok({
       employee: data,

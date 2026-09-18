@@ -1,25 +1,90 @@
+# PILOT deployment: two containers, one private network.
+#
+# The database is NOT reachable from outside this compose network -- it
+# publishes no port on the host, so the only thing that can talk to it is
+# the app container. Back it up with scripts/db-backup.sh.
+#
+# ---------------------------------------------------------------------
+# THIS IS SET UP FOR PILOT TESTING, NOT FOR REAL MONEY:
+#   * the demo dataset is loaded into the database (59 people, 151 bills)
+#   * demo logins are on, so Dean / Finance Admin / Audit / SNP /
+#     Bill-form / Bill-edit / "pda manager" / User sign in with
+#     DEMO_PASSWORD and no LDAP
+# Before the portal handles real bills, do both of these:
+#   1. delete the 0003_demo_data.sql line below, and recreate the
+#      database:  docker compose down -v && docker compose up -d
+#   2. remove DEMO_LOGIN_ENABLED and DEMO_PASSWORD from .env
+# ---------------------------------------------------------------------
+#
+# Required in .env (see .env.example):
+#   POSTGRES_PASSWORD   database password, generated, not a word
+#   NEXTAUTH_SECRET     openssl rand -base64 32
+#   NEXTAUTH_URL        https://<the portal's public URL>
+#   DEMO_LOGIN_ENABLED=true and DEMO_PASSWORD   (pilot only)
+#   LDAP_URL, LDAP_BASE_DN, OU                  (if LDAP is reachable)
+#
 services:
+  db:
+    image: postgres:17-alpine
+    container_name: ifmp_db
+    environment:
+      POSTGRES_DB: ifmp
+      POSTGRES_USER: ifmp
+      # No default: compose refuses to start if it is not set.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Run once, in name order, when the data volume is first created.
+      # They do NOT re-run on a restart; to load them again you must
+      # destroy the volume:  docker compose down -v  (DESTROYS DATA)
+      - ./db/migrations/0001_schema.sql:/docker-entrypoint-initdb.d/0001_schema.sql:ro
+      - ./db/migrations/0002_functions.sql:/docker-entrypoint-initdb.d/0002_functions.sql:ro
+      # PILOT ONLY -- the demo dataset, and the demo accounts (Dean,
+      # Finance Admin, Audit, SNP, ...) that the demo logins sign in as.
+      # Delete this line before the portal is used for real bills.
+      - ./db/seed/0003_demo_data.sql:/docker-entrypoint-initdb.d/0003_demo_data.sql:ro
+    # No `ports:` -- the database is reachable only on the compose network,
+    # as the institute asked. To inspect it:
+    #   docker compose exec db psql -U ifmp -d ifmp
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ifmp -d ifmp"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
   next-app:
     build:
       context: .
       dockerfile: Dockerfile
-      args:
-        # Compiled into the browser bundle at build time -- see Dockerfile.
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
 
     image: iitmandi-finance-portal:latest
     container_name: my_next_app
 
-    # Server-side secrets (LDAP, SMTP, service-role key, NextAuth) are read
-    # at runtime, so .env is enough for these.
+    # Server-side secrets (LDAP, SMTP, NextAuth) are read at runtime.
     env_file:
       - .env
 
-    ports:
-      - "3000:3000"
-
     environment:
       - NODE_ENV=production
+      # Inside compose the database is the `db` service, whatever .env says.
+      - DATABASE_URL=postgres://ifmp:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/ifmp
 
+    depends_on:
+      db:
+        condition: service_healthy
+
+    # Published on the loopback interface only: put nginx (with the
+    # institute's TLS certificate) in front of it. Change to "3000:3000"
+    # only if this machine is not the one terminating TLS.
+    ports:
+      - "127.0.0.1:3000:3000"
+
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
+
+volumes:
+  pgdata:

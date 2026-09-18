@@ -1,6 +1,6 @@
 ## Integrated Finance Management Portal for IIT Mandi
 
-An **integrated, role-based finance management portal** for IIT Mandi built with **Next.js 15**, **React 19**, **Supabase**, and **NextAuth.js**.  
+An **integrated, role-based finance management portal** for IIT Mandi built with **Next.js 15**, **React 19**, **PostgreSQL**, and **NextAuth.js**.  
 It streamlines workflows such as bill application and approval, auditing, student purchases, and finance administration in a single web interface.
 
 ---
@@ -17,7 +17,7 @@ This architecture shows how the frontend, backend, authentication, and database 
 
 - **Authentication & Security**
   - **NextAuth.js** authentication
-  - **Supabase** as the primary data layer
+  - **PostgreSQL** as the data layer, accessed only from server-side API routes
   - **Role-based access control** (students, PDA managers, finance admins, auditors, etc.)
 
 - **Finance & Bills**
@@ -47,7 +47,7 @@ This architecture shows how the frontend, backend, authentication, and database 
   - Radix UI components
   - Custom reusable UI primitives
 - **Auth & Data**:
-  - Supabase
+  - PostgreSQL (via `pg`)
   - NextAuth.js
 - **Email & Utilities**:
   - Nodemailer
@@ -61,7 +61,7 @@ This architecture shows how the frontend, backend, authentication, and database 
 
 - Node.js (LTS recommended)
 - npm
-- Supabase project
+- PostgreSQL 13 or newer (e.g. `brew install postgresql@17 && brew services start postgresql@17`)
 
 ### Installation
 
@@ -69,4 +69,6 @@ This architecture shows how the frontend, backend, authentication, and database 
 git clone <your-repo-url>
 cd integrated-finance-management-portal-for-iit-mandi
 npm install
+cp .env.example .env        # then fill in DATABASE_URL, NEXTAUTH_SECRET, ...
+npm run db:setup            # creates the database, applies db/migrations, loads demo data
 npm run dev

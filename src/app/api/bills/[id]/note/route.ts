@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
-import { db } from "@/server/db";
+import { query, queryOne } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { canSeeAllBills } from "@/lib/roles";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -26,12 +27,12 @@ export async function POST(
     const actor = await requireActor();
     const { id } = await params;
 
-    const { data: bill, error } = await db()
-      .from("bills")
-      .select("id, bill_number, status, employee_id, noted")
-      .eq("id", id)
-      .maybeSingle();
-    if (error) throw error;
+    const bill = isUuid(id)
+      ? await queryOne(
+          "select id, bill_number, status, employee_id, noted from public.bills where id = $1",
+          [id]
+        )
+      : null;
     if (!bill) return badRequest("No such bill.");
 
     if (!canSeeAllBills(actor.role) && bill.employee_id !== actor.code) {
@@ -46,26 +47,23 @@ export async function POST(
     }
     if (bill.noted) return ok({ bill, alreadyNoted: true });
 
-    const { data: updated, error: updErr } = await db()
-      .from("bills")
-      .update({ noted: true })
-      .eq("id", id)
-      .select()
-      .single();
-    if (updErr) throw updErr;
+    const updated = await queryOne(
+      "update public.bills set noted = true where id = $1 returning *",
+      [id]
+    );
 
-    await db().rpc("fn_log_event", {
-      p_bill_id: id,
-      p_stage: "Applicant",
-      p_action: "Forwarded",
-      p_actor_code: actor.code,
-      p_actor_name: actor.name,
-      p_actor_role: actor.role,
-      p_remark: "Rejection acknowledged by the filing desk.",
-      p_from_status: "Rejected",
-      p_to_status: "Rejected",
-      p_amount: null,
-    });
+    await query("select public.fn_log_event($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)", [
+      id,
+      "Applicant",
+      "Forwarded",
+      actor.code,
+      actor.name,
+      actor.role,
+      "Rejection acknowledged by the filing desk.",
+      "Rejected",
+      "Rejected",
+      null,
+    ]);
 
     return ok({ bill: updated });
   } catch (err) {

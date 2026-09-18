@@ -1,6 +1,6 @@
 import "server-only";
 import nodemailer from "nodemailer";
-import { db } from "./db";
+import { query, queryOne } from "./db";
 
 /**
  * Outbound mail.
@@ -23,6 +23,19 @@ function transporter() {
     auth: { user: process.env.EMAIL, pass: process.env.EMAIL_PASSWORD },
   });
 }
+
+/**
+ * Anything that reaches the message body is written by a person -- a
+ * remark, a supplier name, an item description. Mail clients render HTML,
+ * so it is escaped rather than trusted.
+ */
+const esc = (v: unknown): string =>
+  String(v ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
 
 const money = (n: number) =>
   "₹" + Number(n).toLocaleString("en-IN", { minimumFractionDigits: 2 });
@@ -61,20 +74,18 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
   try {
     if (!MAIL_ENABLED) return;
 
-    const { data: bill } = await db()
-      .from("bills")
-      .select(
-        "id, bill_number, employee_id, employee_name, po_value, item_description, supplier_name, po_details, status"
-      )
-      .eq("id", n.billId)
-      .maybeSingle();
+    const bill = await queryOne(
+      `select id, bill_number, employee_id, employee_name, po_value,
+              item_description, supplier_name, po_details, status
+         from public.bills where id = $1`,
+      [n.billId]
+    );
     if (!bill) return;
 
-    const { data: emp } = await db()
-      .from("employees")
-      .select("email, employee_name")
-      .eq("employee_code", bill.employee_id)
-      .maybeSingle();
+    const emp = await queryOne<{ email: string | null; employee_name: string }>(
+      "select email, employee_name from public.employees where employee_code = $1",
+      [bill.employee_id]
+    );
 
     const intended = emp?.email;
     if (!intended) {
@@ -102,7 +113,7 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
   ${
     redirected
       ? `<p style="background:#fef3c7;border:1px solid #fcd34d;padding:10px 12px;border-radius:6px;font-size:13px;margin:0 0 16px">
-           <strong>Test message.</strong> This would have gone to ${intended}.
+           <strong>Test message.</strong> This would have gone to ${esc(intended)}.
          </p>`
       : ""
   }
@@ -110,22 +121,22 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
     <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85">
       IIT Mandi &middot; Finance Management Portal
     </div>
-    <h1 style="margin:6px 0 0;font-size:19px;font-weight:600">${HEADLINE[n.outcome](n.stage)}</h1>
+    <h1 style="margin:6px 0 0;font-size:19px;font-weight:600">${esc(HEADLINE[n.outcome](n.stage))}</h1>
   </div>
 
   <div style="border:1px solid #e5e7eb;border-top:0;border-radius:0 0 8px 8px;padding:20px">
     <p style="margin:0 0 16px;line-height:1.55">
-      Dear ${bill.employee_name ?? bill.employee_id},<br/>${LEAD[n.outcome](n.stage)}
+      Dear ${esc(bill.employee_name ?? bill.employee_id)},<br/>${esc(LEAD[n.outcome](n.stage))}
     </p>
 
     <table style="width:100%;border-collapse:collapse;font-size:14px">
       ${[
-        ["Bill number", bill.bill_number ?? "—"],
-        ["Item", bill.item_description ?? "—"],
-        ["Supplier", bill.supplier_name ?? "—"],
+        ["Bill number", esc(bill.bill_number ?? "—")],
+        ["Item", esc(bill.item_description ?? "—")],
+        ["Supplier", esc(bill.supplier_name ?? "—")],
         ["Amount", money(Number(bill.po_value))],
-        ["PO details", bill.po_details ?? "—"],
-        ["Current status", bill.status],
+        ["PO details", esc(bill.po_details ?? "—")],
+        ["Current status", esc(bill.status)],
       ]
         .map(
           ([k, v]) => `<tr>
@@ -140,9 +151,9 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
       n.remark
         ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-left:3px solid #217093;border-radius:0 4px 4px 0">
              <div style="font-size:12px;color:#6b7280;margin-bottom:4px">
-               Remark from ${n.actorName ?? n.stage}
+               Remark from ${esc(n.actorName ?? n.stage)}
              </div>
-             <div style="line-height:1.5">${n.remark}</div>
+             <div style="line-height:1.5">${esc(n.remark)}</div>
            </div>`
         : ""
     }
@@ -173,18 +184,18 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
 
     // Record that the applicant was told. The event log should show the
     // notification alongside the decision that triggered it.
-    await db().rpc("fn_log_event", {
-      p_bill_id: n.billId,
-      p_stage: "System",
-      p_action: "Notified",
-      p_actor_code: null,
-      p_actor_name: null,
-      p_actor_role: null,
-      p_remark: `Notification sent to ${intended}${redirected ? ` (redirected to ${to} for this deployment)` : ""}.`,
-      p_from_status: bill.status,
-      p_to_status: bill.status,
-      p_amount: null,
-    });
+    await query("select public.fn_log_event($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10)", [
+      n.billId,
+      "System",
+      "Notified",
+      null,
+      null,
+      null,
+      `Notification sent to ${intended}${redirected ? ` (redirected to ${to} for this deployment)` : ""}.`,
+      bill.status,
+      bill.status,
+      null,
+    ]);
   } catch (err) {
     // Deliberately swallowed: the bill has already moved.
     console.error("[notify] failed to send", err);

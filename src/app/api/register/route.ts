@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { db } from "@/server/db";
+import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok } from "@/server/http";
 import { canSeeAllBills } from "@/lib/roles";
@@ -25,53 +25,62 @@ export async function GET(req: NextRequest) {
     const limit = Math.min(Number(p.get("limit") ?? 100) || 100, 500);
     const offset = Math.max(Number(p.get("offset") ?? 0) || 0, 0);
 
-    let q = db()
-      .from("purchase_register")
-      .select("*", { count: "exact" })
-      .order("recorded_at", { ascending: false })
-      .range(offset, offset + limit - 1);
+    const params = new Params();
+    const where: string[] = [];
 
     // A plain user sees their own purchases in the register, nobody else's.
     if (!canSeeAllBills(actor.role)) {
-      q = q.eq("employee_code", actor.code);
+      where.push(`employee_code = ${params.add(actor.code)}`);
     }
 
-    if (p.get("department")) q = q.eq("department", p.get("department"));
-    if (p.get("fy")) q = q.eq("financial_year", p.get("fy"));
-    if (p.get("from")) q = q.gte("entry_date", p.get("from"));
-    if (p.get("to")) q = q.lte("entry_date", p.get("to"));
+    if (p.get("department")) where.push(`department::text = ${params.add(p.get("department"))}`);
+    if (p.get("fy")) where.push(`financial_year = ${params.add(p.get("fy"))}`);
+    if (p.get("from")) where.push(`entry_date >= ${params.add(p.get("from"))}::date`);
+    if (p.get("to")) where.push(`entry_date <= ${params.add(p.get("to"))}::date`);
 
     const text = p.get("q")?.trim();
     if (text) {
-      const like = `%${text.replace(/[%,()]/g, "")}%`;
-      q = q.or(
-        [
-          `serial_no.ilike.${like}`,
-          `item_description.ilike.${like}`,
-          `supplier_name.ilike.${like}`,
-          `employee_name.ilike.${like}`,
-          `employee_code.ilike.${like}`,
-          `bill_number.ilike.${like}`,
-        ].join(",")
+      const like = params.add(likePattern(text));
+      where.push(
+        `(serial_no ilike ${like} or item_description ilike ${like}
+          or supplier_name ilike ${like} or employee_name ilike ${like}
+          or employee_code ilike ${like} or bill_number ilike ${like})`
       );
     }
 
-    const { data, error, count } = await q;
-    if (error) throw error;
+    const filter = whereClause(where);
+    const filterValues = [...params.values];
+    const page = `limit ${params.add(limit)} offset ${params.add(offset)}`;
 
-    // Totals for the filtered set, computed in the database rather than by
-    // adding up one page of rows in the browser.
-    const { data: totals } = await db().rpc("fn_register_totals", {
-      p_department: p.get("department"),
-      p_fy: p.get("fy"),
-    });
+    const [entries, counted, totals] = await Promise.all([
+      query(
+        `select * from public.purchase_register ${filter}
+         order by recorded_at desc ${page}`,
+        params.values
+      ),
+      queryOne<{ total: number }>(
+        `select count(*) as total from public.purchase_register ${filter}`,
+        filterValues
+      ),
+      // Totals for the filtered set, computed in the database rather than by
+      // adding up one page of rows in the browser.
+      // A department name that is not in the enum makes the cast inside
+      // fn_register_totals fail; the entries still load, without totals.
+      queryOne<{ totals: unknown }>(
+        "select public.fn_register_totals($1, $2) as totals",
+        [p.get("department"), p.get("fy")]
+      ).catch((err) => {
+        console.error("[register] totals failed", err.message);
+        return null;
+      }),
+    ]);
 
     return ok({
-      entries: data ?? [],
-      total: count ?? 0,
+      entries,
+      total: counted?.total ?? 0,
       limit,
       offset,
-      totals: totals ?? null,
+      totals: totals?.totals ?? null,
     });
   } catch (err) {
     return fail(err, "Could not load the purchase register.");

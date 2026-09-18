@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
-import { db } from "@/server/db";
+import { query, queryOne } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok } from "@/server/http";
 import { canSeeAllBills, plannedRoute } from "@/lib/roles";
+import { isUuid } from "@/lib/utils";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,42 +26,30 @@ export async function GET(
     const actor = await requireActor();
     const { id } = await params;
 
-    const { data: bill, error } = await db()
-      .from("bills")
-      .select("*")
-      .eq("id", id)
-      .maybeSingle();
-    if (error) throw error;
+    if (!isUuid(id)) return ok({ error: "No such bill." }, 404);
+
+    const bill = await queryOne("select * from public.bills where id = $1", [id]);
     if (!bill) return ok({ error: "No such bill." }, 404);
 
     if (!canSeeAllBills(actor.role) && bill.employee_id !== actor.code) {
       return ok({ error: "This bill belongs to somebody else." }, 403);
     }
 
-    const [{ data: events }, { data: register }, { data: applicant }] =
-      await Promise.all([
-        db()
-          .from("bill_approvals")
-          .select("*")
-          .eq("bill_id", id)
-          .order("seq", { ascending: true }),
-        db()
-          .from("purchase_register")
-          .select("*")
-          .eq("bill_id", id)
-          .maybeSingle(),
-        db()
-          .from("employees")
-          .select("employee_code, employee_name, email, department")
-          .eq("employee_code", bill.employee_id)
-          .maybeSingle(),
-      ]);
+    const [events, register, applicant] = await Promise.all([
+      query("select * from public.bill_approvals where bill_id = $1 order by seq", [id]),
+      queryOne("select * from public.purchase_register where bill_id = $1", [id]),
+      queryOne(
+        `select employee_code, employee_name, email, department
+           from public.employees where employee_code = $1`,
+        [bill.employee_id]
+      ),
+    ]);
 
     return ok({
       bill,
-      events: events ?? [],
-      register: register ?? null,
-      applicant: applicant ?? null,
+      events,
+      register,
+      applicant,
       // The desks this bill was always going to visit, so the timeline can
       // show what is still ahead of it as well as what is behind.
       route: plannedRoute(bill.item_category, Number(bill.po_value)),
@@ -86,25 +75,28 @@ export async function PATCH(
     const { id } = await params;
     const body = (await req.json()) as Record<string, unknown>;
 
-    const { data: bill } = await db()
-      .from("bills")
-      .select("employee_id")
-      .eq("id", id)
-      .maybeSingle();
+    const bill = isUuid(id)
+      ? await queryOne<{ employee_id: string }>(
+          "select employee_id from public.bills where id = $1",
+          [id]
+        )
+      : null;
     if (!bill) return ok({ error: "No such bill." }, 404);
 
     if (!canSeeAllBills(actor.role) && bill.employee_id !== actor.code) {
       return ok({ error: "That bill belongs to somebody else." }, 403);
     }
 
-    const { data, error } = await db().rpc("fn_amend_bill", {
-      p_bill_id: id,
-      p_payload: body,
-      p_actor: { code: actor.code, name: actor.name, role: actor.role },
-    });
-    if (error) throw error;
+    const row = await queryOne<{ bill: unknown }>(
+      "select public.fn_amend_bill($1::uuid, $2::jsonb, $3::jsonb) as bill",
+      [
+        id,
+        JSON.stringify(body),
+        JSON.stringify({ code: actor.code, name: actor.name, role: actor.role }),
+      ]
+    );
 
-    return ok({ bill: data });
+    return ok({ bill: row?.bill });
   } catch (err) {
     return fail(err, "Could not save those corrections.");
   }

@@ -7,7 +7,6 @@ out
 build
 
 # Env files -- secrets must never be baked into the image.
-# NEXT_PUBLIC_* values are passed via --build-arg instead.
 .env
 .env.*
 
@@ -22,7 +21,6 @@ docker-compose.yml
 README.md
 DECISIONS.md
 architecture.jpeg
-data_base.sql
 .vercel
 npm-debug.log*
 *.tsbuildinfo

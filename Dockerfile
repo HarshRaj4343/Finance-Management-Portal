@@ -3,7 +3,7 @@
 # =============================================================================
 # Stage 1: Dependencies
 # =============================================================================
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -12,52 +12,47 @@ RUN npm ci
 # =============================================================================
 # Stage 2: Build
 # =============================================================================
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# ---------------------------------------------------------------------------
-# NEXT_PUBLIC_* variables are INLINED INTO THE CLIENT BUNDLE AT BUILD TIME.
-# They must be supplied here as build args -- setting them only at `docker run`
-# is too late, the browser JS would still hold the old/empty value.
-# ---------------------------------------------------------------------------
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+# No build args: the browser never talks to the database, so nothing about
+# it is compiled into the bundle. DATABASE_URL and the other secrets are
+# read at runtime.
 ENV NEXT_TELEMETRY_DISABLED=1
-
-# Fail fast with a clear message instead of shipping a broken client bundle.
-RUN if [ -z "$NEXT_PUBLIC_SUPABASE_URL" ] || [ -z "$NEXT_PUBLIC_SUPABASE_ANON_KEY" ]; then \
-      echo "ERROR: NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY must be passed as --build-arg." >&2; \
-      echo "       These are compiled into the browser bundle and cannot be set at runtime." >&2; \
-      exit 1; \
-    fi
 
 RUN npm run build
 
 # =============================================================================
 # Stage 3: Production runtime
 # =============================================================================
-FROM node:20-alpine AS production
+FROM node:22-alpine AS production
 WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Run as an unprivileged user: a flaw in the app then cannot write to the
+# image or read files it does not own. node:alpine ships a `node` user.
+RUN chown node:node /app
+USER node
+
 # Next.js standalone output: a self-contained server with only the
 # node_modules it actually needs.
-COPY --from=build /app/.next/standalone ./
-COPY --from=build /app/public ./public
-COPY --from=build /app/.next/static ./.next/static
+COPY --from=build --chown=node:node /app/.next/standalone ./
+COPY --from=build --chown=node:node /app/public ./public
+COPY --from=build --chown=node:node /app/.next/static ./.next/static
 
 # server.js reads PORT and HOSTNAME; 0.0.0.0 makes it reachable from
 # outside the container.
 ENV PORT=3000
 ENV HOSTNAME=0.0.0.0
 EXPOSE 3000
+
+# The login page needs no database, so this reports the web tier only.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.js"]

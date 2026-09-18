@@ -1,9 +1,7 @@
 /**
- * Database types, matching supabase/migrations/0001_schema.sql.
+ * Database types, matching db/migrations/0001_schema.sql.
  *
- * Hand-maintained. If you change the schema, change this too -- or
- * regenerate it with:
- *     supabase gen types typescript --project-id <id> > src/types/database.ts
+ * Hand-maintained. If you change the schema, change this too.
  *
  * The previous version of this file described a schema that no longer
  * existed, which is why so much of the app was typed as `never` and had to

@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { db } from "@/server/db";
+import { queryOne } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { canSeeAllBills } from "@/lib/roles";
@@ -29,12 +29,11 @@ export async function GET(req: NextRequest) {
       return ok({ error: "You can only look up your own account." }, 403);
     }
 
-    const { data: employee, error } = await db()
-      .from("employees")
-      .select("employee_code, employee_name, email, department, employee_type, is_active")
-      .eq("employee_code", code)
-      .maybeSingle();
-    if (error) throw error;
+    const employee = await queryOne(
+      `select employee_code, employee_name, email, department, employee_type, is_active
+         from public.employees where employee_code = $1`,
+      [code]
+    );
 
     if (!employee) {
       return ok(
@@ -52,16 +51,16 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    const { data: pda } = await db()
-      .from("pda_balances")
-      .select("allocated, balance, committed, spent, updated_at")
-      .eq("employee_id", code)
-      .maybeSingle();
+    const pda = await queryOne(
+      `select allocated, balance, committed, spent, updated_at
+         from public.pda_balances where employee_id = $1`,
+      [code]
+    );
 
     return ok({
       found: true,
       employee,
-      pda: pda ?? null,
+      pda,
       message: pda
         ? null
         : `${employee.employee_name} has no PDA account yet. The PDA Manager needs to open one before a bill can be filed.`,
