@@ -76,12 +76,41 @@ services:
       db:
         condition: service_healthy
 
-    # Published on the loopback interface only: put nginx (with the
-    # institute's TLS certificate) in front of it. Change to "3000:3000"
-    # only if this machine is not the one terminating TLS.
-    ports:
-      - "127.0.0.1:3000:3000"
+    # No host port: the only way in is through the `proxy` service, which
+    # terminates TLS on 8116. Uncomment for a plain-HTTP local run.
+    # ports:
+    #   - "127.0.0.1:3000:3000"
 
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+  # TLS termination on the port the institute allocated (8116).
+  #
+  # SSL_CERT_FILE and SSL_KEY_FILE are paths ON THE HOST -- the two files
+  # IT copied into your home directory, e.g.
+  #   SSL_CERT_FILE=/home/<user>/portal.crt
+  #   SSL_KEY_FILE=/home/<user>/portal.key
+  # Whatever they are named, they are mounted read-only at a fixed path
+  # inside the container, so deploy/nginx/portal.conf never changes.
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: ifmp_proxy
+    volumes:
+      - ./deploy/nginx/portal.conf:/etc/nginx/conf.d/portal.conf:ro
+      - ./deploy/nginx/upgrade-map.conf:/etc/nginx/conf.d/00-upgrade-map.conf:ro
+      - ${SSL_CERT_FILE:?set SSL_CERT_FILE in .env to the certificate path}:/etc/nginx/certs/server.crt:ro
+      - ${SSL_KEY_FILE:?set SSL_KEY_FILE in .env to the private key path}:/etc/nginx/certs/server.key:ro
+    ports:
+      - "8116:8116"
+    depends_on:
+      next-app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "nginx -t >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
     security_opt:
       - no-new-privileges:true
     restart: unless-stopped
