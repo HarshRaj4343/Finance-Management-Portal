@@ -81,9 +81,40 @@ if [ ! -r "$KEY" ]; then
   die "$KEY is not readable by this user."
 fi
 
+# The certificate file must carry the intermediate(s) too. With only the
+# leaf, browsers that cannot fetch the issuer themselves show a warning,
+# and curl refuses outright.
+if [ "$(grep -c 'BEGIN CERTIFICATE' "$CERT")" -eq 1 ]; then
+  warn "$CERT holds only the server certificate, with no intermediate."
+  warn "if the institute also gave you a CA bundle, join them:"
+  warn "  cat <cert> <bundle> > ~/ssl/fullchain.crt"
+  warn "  SSL_CERT_FILE=~/ssl/fullchain.crt $0"
+fi
+
+# Does the key actually belong to the certificate?
+c_mod=$(openssl x509 -noout -modulus -in "$CERT" 2>/dev/null | openssl md5)
+k_mod=$(openssl rsa  -noout -modulus -in "$KEY"  2>/dev/null | openssl md5)
+if [ -n "$c_mod" ] && [ -n "$k_mod" ] && [ "$c_mod" != "$k_mod" ]; then
+  die "$KEY does not match $CERT -- nginx would refuse to start."
+fi
+
 # ------------------------------------------------------------------ .env
+# How people actually reach this machine. In an SSH session that is the
+# address the session came in on, which is exactly the one to trust --
+# `hostname -I` lists every interface and its first entry is often some
+# internal bridge (the first deployment picked a 192.168.x address and
+# NextAuth then built its sign-in redirects for the wrong host).
+if [ -z "${PORTAL_HOST:-}" ] && [ -n "${SSH_CONNECTION:-}" ]; then
+  PORTAL_HOST=$(awk '{print $3}' <<<"$SSH_CONNECTION")
+fi
 PORTAL_HOST=${PORTAL_HOST:-$(hostname -I 2>/dev/null | awk '{print $1}')}
 [ -n "$PORTAL_HOST" ] || PORTAL_HOST=127.0.0.1
+say "portal address: $PORTAL_HOST:$PORTAL_PORT"
+ALL_IPS=$(hostname -I 2>/dev/null || true)
+if [ "$(wc -w <<<"$ALL_IPS")" -gt 1 ]; then
+  warn "this machine has several addresses: $ALL_IPS"
+  warn "if people reach it on a different one, re-run with PORTAL_HOST=<address>"
+fi
 
 if [ -f .env ]; then
   say ".env already exists -- leaving its values alone"
@@ -94,7 +125,7 @@ else
 # Written by scripts/deploy-server.sh on $(date -u +%Y-%m-%dT%H:%MZ)
 
 # DATABASE_URL is not set here on purpose: docker-compose.yml points the
-# app at the `db` container, and that setting wins over this file.
+# app at the db container, and that setting wins over this file.
 
 # The port the institute allocated. nginx listens on 8116 inside the
 # container; this is what it is published as on the host.
@@ -130,6 +161,12 @@ for var in POSTGRES_PASSWORD NEXTAUTH_SECRET NEXTAUTH_URL SSL_CERT_FILE SSL_KEY_
   grep -qE "^$var=.+" .env || die "$var is missing from .env"
 done
 grep -qE "^NEXTAUTH_URL=https://" .env || warn "NEXTAUTH_URL is not https -- sign-in cookies will be dropped"
+CONFIGURED_URL=$(grep -E '^NEXTAUTH_URL=' .env | cut -d= -f2-)
+if [ "$CONFIGURED_URL" != "https://$PORTAL_HOST:$PORTAL_PORT" ]; then
+  warn "NEXTAUTH_URL in .env is $CONFIGURED_URL"
+  warn "people reaching the portal at https://$PORTAL_HOST:$PORTAL_PORT will not be able to sign in."
+  warn "fix it in .env, then: ${DOCKER[*]} compose up -d --force-recreate next-app"
+fi
 
 # -------------------------------------------------------------- bring up
 say "building the image (first run takes a few minutes)"
