@@ -38,6 +38,20 @@ function pool(): Pool {
     );
   }
 
+  // pg parses this with the WHATWG URL parser, which rejects a password
+  // containing "/" -- and reports only "Invalid URL", with no mention of
+  // the database, so every query fails with nothing pointing at the cause.
+  // (A generated base64 password did exactly this to a live deployment.)
+  try {
+    new URL(connectionString);
+  } catch {
+    throw new Error(
+      "DATABASE_URL is not a valid connection URL. A password containing " +
+        "'/', '@', ':' or '#' has to be percent-encoded, or the database " +
+        "password changed to one without them."
+    );
+  }
+
   const p = new Pool({
     connectionString,
     max: Number(process.env.DATABASE_POOL_MAX ?? 10),

@@ -131,7 +131,9 @@ else
 # container; this is what it is published as on the host.
 PORTAL_PORT=$PORTAL_PORT
 
-POSTGRES_PASSWORD=$(openssl rand -base64 24 | tr -d '\n')
+# hex, not base64: a '/' in the password makes the connection URL
+# that docker-compose.yml builds unparseable.
+POSTGRES_PASSWORD=$(openssl rand -hex 24)
 NEXTAUTH_SECRET=$(openssl rand -base64 32 | tr -d '\n')
 NEXTAUTH_URL=https://$PORTAL_HOST:$PORTAL_PORT
 
