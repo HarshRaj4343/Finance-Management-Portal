@@ -84,6 +84,24 @@ export function canSeeAllBills(role: Role): boolean {
   return role !== "User";
 }
 
+/**
+ * Store and Purchase is an umbrella desk: people from every school ask it to
+ * raise their bills. A clerk there files for any department, so the
+ * "same department" check and the department-scoped lists do not apply.
+ */
+export const UMBRELLA_DEPARTMENT = "Store and Purchase Section";
+
+export function isUmbrellaDepartment(dept: string | null | undefined): boolean {
+  return (dept ?? "").trim() === UMBRELLA_DEPARTMENT;
+}
+
+/** Query string for /api/bills: every bill for the umbrella desk, else one department's. */
+export function billScopeQuery(dept: string): string {
+  return isUmbrellaDepartment(dept)
+    ? "limit=500"
+    : `department=${encodeURIComponent(dept)}&limit=500`;
+}
+
 /** The amount above which a bill must pass through Audit. */
 export const AUDIT_THRESHOLD = 50000;
 

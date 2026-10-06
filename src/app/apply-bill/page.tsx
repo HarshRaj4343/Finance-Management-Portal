@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
+import { billScopeQuery, normaliseRole } from "@/lib/roles";
 import { signOut, useSession } from "next-auth/react";
 import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { IconArrowLeft } from "@tabler/icons-react";
@@ -11,19 +12,38 @@ import SidebarLinks from "./SidebarLinks";
 import UploadBill from "./UploadBill";
 import BillsHistory from "./BillsHistory";
 import ApprovedBills from "./ApprovedBills";
+import PendingBills from "./PendingBills";
 import { Bill } from "./types";
 
-type PageView = "upload" | "history" | "approved";
+type PageView = "upload" | "pending" | "history" | "approved";
 
 export default function EmployeeDashboard() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const [open, setOpen] = useState(false);
   const [bills, setBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
   const [activePage, setActivePage] = useState<PageView>("upload");
   const [department, setDepartment] = useState<string | null>(null);
+  const [submittedCount, setSubmittedCount] = useState(0);
 
   const [notice, setNotice] = useState<NoticeState>(null);
+
+  // This desk is for the "Bill Employee" clerk role only. The department
+  // guard inside UploadBill assumes the filer belongs to a real,
+  // multi-person department -- it was never meant to field people like the
+  // Dean, whose "department" is a placeholder for a role of one.
+  useEffect(() => {
+    if (status === "loading") return;
+
+    if (status === "unauthenticated") {
+      if (typeof window !== "undefined") window.location.href = "/login";
+      return;
+    }
+
+    if (session && normaliseRole((session as any).user?.employee_type) !== "Bill Employee") {
+      window.location.href = "/";
+    }
+  }, [status, session]);
 
   /**
    * This desk files bills on behalf of a school. It shows the ones that
@@ -36,7 +56,7 @@ export default function EmployeeDashboard() {
    */
   const loadBills = async (dept: string) => {
     const { data, error } = await api.get<{ bills: Bill[] }>(
-      `/api/bills?department=${encodeURIComponent(dept)}&limit=500`
+      `/api/bills?${billScopeQuery(dept)}`
     );
     if (error) {
       setNotice({ kind: "bad", text: error });
@@ -91,8 +111,9 @@ export default function EmployeeDashboard() {
     if (department) await loadBills(department);
   };
 
+  // The form shows its own confirmation screen, so stay on it.
   const handleBillSubmitted = () => {
-    setActivePage("history");
+    setSubmittedCount((n) => n + 1);
     refreshBills();
   };
 
@@ -119,6 +140,15 @@ export default function EmployeeDashboard() {
                 }`}
               >
                 {open && "Apply Bill"}
+              </button>
+
+              <button
+                onClick={() => setActivePage("pending")}
+                className={`flex items-center gap-2 px-3 py-2 rounded ${
+                  activePage === "pending" ? "bg-gray-200 font-semibold" : "hover:bg-gray-100"
+                }`}
+              >
+                {open && "Pending Bills"}
               </button>
 
               <button
@@ -157,6 +187,10 @@ export default function EmployeeDashboard() {
       <div className="flex flex-1 p-6 overflow-y-auto bg-gray-50">
         {activePage === "upload" && (
           <UploadBill onBillSubmitted={handleBillSubmitted} department={department} />
+        )}
+
+        {activePage === "pending" && (
+          <PendingBills department={department} refreshKey={submittedCount} />
         )}
 
         {activePage === "history" && (

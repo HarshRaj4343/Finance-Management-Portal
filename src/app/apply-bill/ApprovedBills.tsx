@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import QRCode from "react-qr-code";
+import { billScopeQuery } from "@/lib/roles";
 import { Bill } from "./types";
 
 interface ApprovedBillsProps {
@@ -23,7 +24,7 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
     const fetchApprovedBills = async () => {
       setLoading(true);
       const { data, error } = await api.get<{ bills: Bill[] }>(
-        `/api/bills?department=${encodeURIComponent(department)}&limit=500`
+        `/api/bills?${billScopeQuery(department)}`
       );
       setLoading(false);
 
