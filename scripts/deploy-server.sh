@@ -174,6 +174,12 @@ fi
 say "building the image (first run takes a few minutes)"
 "${DOCKER[@]}" compose build
 
+say "starting the database"
+"${DOCKER[@]}" compose up -d --wait db
+say "applying the additive stock-reference migration"
+"${DOCKER[@]}" compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 \
+  < db/migrations/0003_stock_entry.sql
+
 say "starting the containers"
 "${DOCKER[@]}" compose up -d
 

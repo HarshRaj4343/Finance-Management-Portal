@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api, money } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
-import { normaliseRole } from "@/lib/roles";
+import { normaliseRole, deskLabel } from "@/lib/roles";
 import { signOut, useSession } from "next-auth/react";
 import {
   IconArrowLeft,
@@ -169,7 +169,7 @@ export default function SnpDashboard() {
       kind: "ok",
       text:
         action === "Approved"
-          ? `Bill ${data!.bill.bill_number ?? ""} approved and forwarded to ${data!.bill.status}.`
+          ? `Bill ${data!.bill.bill_number ?? ""} approved and forwarded to ${deskLabel(data!.bill.status)}.`
           : action === "Rejected"
           ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and they have been emailed.`
           : "Bill put on hold. The applicant has been emailed.",
@@ -737,7 +737,7 @@ export default function SnpDashboard() {
                                 <div className="space-y-3">
                                   <div>
                                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      Add SNP Remark {bill.snp === "Hold" ? "(Update)" : "(Required for Hold/Reject)"}
+                                      Add Store &amp; Purchase Remark {bill.snp === "Hold" ? "(Update)" : "(Required for Hold/Reject)"}
                                     </label>
                                     <textarea
                                       rows={2}

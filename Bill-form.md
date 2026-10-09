@@ -1,5 +1,20 @@
 # Bill Form Page: Full Specification
 
+## Implemented revision — 9 October 2026
+
+The live `/apply-bill` form now uses one submitter identity, resolved from an
+employee/student ID entered without regard to case and displayed in uppercase.
+It no longer displays PDA or PO balances, balance warnings, a manual bill amount,
+stock-register page numbers, or per-unit asset specification fields. Bill totals
+come from item prices plus other charges. Custodian and placement appear only in
+Funding and Stock, once per item. Previously combined item types are separate
+choices, and bill status summaries display “Store & Purchase”. Stock references
+are assigned by the database at submission using migration `0003_stock_entry.sql`.
+Existing financial reservation and approval accounting still runs on the server.
+
+The specification below records the earlier design; this revision supersedes
+its conflicting identity, balance, amount, stock-page and asset-field requirements.
+
 **Portal:** Integrated Finance Management Portal, IIT Mandi
 **Page:** Upload Bill for Store and Purchase Section
 **Route (proposed):** `/bills/new` (edit draft: `/bills/[id]/edit`)

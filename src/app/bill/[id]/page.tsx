@@ -1,5 +1,6 @@
 "use client";
 
+import { deskLabel } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
@@ -147,7 +148,7 @@ export default function BillDetailsPage() {
             ? "Approved"
             : bill.status === "Rejected"
             ? "Rejected"
-            : `With ${bill.status}`}
+            : `With ${deskLabel(bill.status)}`}
         </span>
         {register && (
           <span className="px-3 py-1 rounded-full text-sm bg-blue-50 text-blue-700 border border-blue-200">
@@ -177,7 +178,7 @@ export default function BillDetailsPage() {
               (e) => e.stage === stop && e.action === "Rejected"
             );
             return (
-              <React.Fragment key={stop}>
+              <React.Fragment key={deskLabel(stop)}>
                 <svg className="h-4 w-4 shrink-0 text-gray-300" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
@@ -192,7 +193,7 @@ export default function BillDetailsPage() {
                       : "bg-gray-100 text-gray-400"
                   }`}
                 >
-                  {stop}
+                  {deskLabel(stop)}
                 </span>
               </React.Fragment>
             );
@@ -219,8 +220,8 @@ export default function BillDetailsPage() {
         <p><strong>Source of Fund:</strong> {formatValue(bill.source_of_fund)}</p>
         <p><strong>Stock Entry:</strong> {formatValue(bill.stock_entry)}</p>
         <p><strong>Location:</strong> {formatValue(bill.location)}</p>
-        <p><strong>Status:</strong> {formatValue(bill.status)}</p>
-        <p><strong>SNP:</strong> {formatValue(bill.snp)}</p>
+        <p><strong>Status:</strong> {formatValue(deskLabel(bill.status))}</p>
+        <p><strong>Store &amp; Purchase:</strong> {formatValue(bill.snp)}</p>
         <p><strong>Audit:</strong> {formatValue(bill.audit)}</p>
         <p><strong>Finance Admin:</strong> {formatValue(bill.finance_admin)}</p>
         <p><strong>Noted:</strong> {formatValue(bill.noted)}</p>
@@ -285,8 +286,8 @@ export default function BillDetailsPage() {
                 {e.action === "Forwarded" ||
                 e.action === "Registered" ||
                 e.action === "Notified"
-                  ? e.remark
-                  : `${e.stage} — ${e.action}`}
+                  ? deskLabel(e.remark)
+                  : `${deskLabel(e.stage)} — ${e.action}`}
               </span>
               <span className="text-xs text-gray-400">{when(e.created_at)}</span>
             </div>
@@ -295,7 +296,7 @@ export default function BillDetailsPage() {
               <p className="mt-0.5 text-sm text-gray-500">
                 {e.actor_name}
                 {e.actor_code ? ` (${e.actor_code})` : ""}
-                {e.actor_role ? ` · ${e.actor_role}` : ""}
+                {e.actor_role ? ` · ${deskLabel(e.actor_role)}` : ""}
               </p>
             )}
 
@@ -304,7 +305,7 @@ export default function BillDetailsPage() {
               e.action !== "Registered" &&
               e.action !== "Notified" && (
                 <p className="mt-1.5 bg-gray-50 border-l-2 border-gray-200 px-3 py-2 text-sm text-gray-700 rounded-r">
-                  {e.remark}
+                  {deskLabel(e.remark)}
                 </p>
               )}
           </li>

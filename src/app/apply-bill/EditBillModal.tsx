@@ -1,5 +1,5 @@
 // EditBillModal.tsx
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { motion } from "framer-motion";
 import { api } from "@/lib/api";
 import { AUDIT_THRESHOLD } from "@/lib/roles";
@@ -36,33 +36,7 @@ const EditBillModal: React.FC<EditBillModalProps> = ({
   
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [balance, setBalance] = useState<number | null>(null);
   const [originalBillValue] = useState(bill.po_value || 0);
-
-  // What is still free on this employee's PDA, so the form can say whether
-  // an increase will fit. One exact lookup: employee codes are trimmed by a
-  // CHECK constraint, so the three fallback patterns that used to be here
-  // have nothing left to catch.
-  useEffect(() => {
-    const fetchBalance = async () => {
-      const code = (bill.employee_id ?? "").toString().trim();
-      if (!code) {
-        setBalance(null);
-        return;
-      }
-      const { data, error: err } = await api.get<{
-        found: boolean;
-        pda: { balance: number } | null;
-      }>(`/api/lookup/employee?code=${encodeURIComponent(code)}`);
-
-      if (err || !data?.found || !data.pda) {
-        setBalance(null);
-        return;
-      }
-      setBalance(Number(data.pda.balance));
-    };
-    fetchBalance();
-  }, [bill.employee_id]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -157,7 +131,7 @@ const EditBillModal: React.FC<EditBillModalProps> = ({
 
         <form onSubmit={handleSubmit} className="p-6">
           <div className="grid grid-cols-2 gap-4 mb-6">
-            {Object.keys(formData).map((field) => (
+            {Object.keys(formData).filter((field) => field !== "stock_entry").map((field) => (
               <div key={field} className="col-span-1">
                 <label className="block text-gray-700 font-medium mb-1">
                   {field.replace(/_/g, " ")}
@@ -195,20 +169,6 @@ const EditBillModal: React.FC<EditBillModalProps> = ({
               </div>
             ))}
           </div>
-
-          {balance !== null && (
-            <div className="mb-4 p-3 bg-blue-50 rounded-lg">
-              <div className="text-sm text-gray-600">
-                <p>Current PDA Balance: ₹ {balance.toFixed(2)}</p>
-                <p>Original Bill Value: ₹ {originalBillValue.toFixed(2)}</p>
-                {parseFloat(formData.po_value) !== originalBillValue && (
-                  <p className="font-medium">
-                    Balance after update: ₹ {(balance - (parseFloat(formData.po_value) - originalBillValue)).toFixed(2)}
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
 
           <div className="flex justify-end gap-3">
             <button

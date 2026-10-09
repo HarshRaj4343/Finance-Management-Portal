@@ -1,5 +1,6 @@
 "use client";
 
+import { deskLabel } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import { BillWithEmployee } from "@/types/database";
@@ -252,7 +253,7 @@ export default function AllBillsPage() {
                   <TableHead className="py-3">PO Value</TableHead>
                   <TableHead className="py-3">Category</TableHead>
                   <TableHead className="py-3">Status</TableHead>
-                  <TableHead className="py-3">SNP</TableHead>
+                  <TableHead className="py-3">Store &amp; Purchase</TableHead>
                   <TableHead className="py-3">Audit</TableHead>
                   <TableHead className="py-3">Finance Admin</TableHead>
                   <TableHead className="py-3">Created At</TableHead>
@@ -280,7 +281,7 @@ export default function AllBillsPage() {
                   <TableCell className="py-3">{bill.po_details || "N/A"}</TableCell>
                   <TableCell className="py-3">₹ {bill.po_value?.toLocaleString() || '-'}</TableCell>
                   <TableCell className="py-3"><span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">{bill.item_category}</span></TableCell>
-                  <TableCell className="py-3"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.status)}`}>{bill.status}</span></TableCell>
+                  <TableCell className="py-3"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.status)}`}>{deskLabel(bill.status)}</span></TableCell>
                   <TableCell className="py-3">{bill.snp ? <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.snp)}`}>{bill.snp}</span> : 'N/A'}</TableCell>
                   <TableCell className="py-3">{bill.audit ? <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.audit)}`}>{bill.audit}</span> : 'N/A'}</TableCell>
                   <TableCell className="py-3">{bill.finance_admin ? <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.finance_admin)}`}>{bill.finance_admin}</span> : 'N/A'}</TableCell>

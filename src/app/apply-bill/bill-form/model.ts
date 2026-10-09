@@ -6,16 +6,6 @@ import { findType, FUND_PATTERN, FUNDS, ITEM_CATEGORIES } from "./masters";
 
 export type Place = { building: string; floor: string; room: string };
 
-export type Unit = Place & {
-  make: string;
-  model: string;
-  serial: string;
-  warranty: string;
-  custodian: string;
-  condition: string;
-  specs: Record<string, string>;
-};
-
 export type Line = Place & {
   key: string;
   group: string;
@@ -29,8 +19,7 @@ export type Line = Place & {
   uom: string;
   unitPrice: string;
   qtyIssued: string;
-  stockPage: string;
-  units: Unit[];
+  custodian: string;
 };
 
 export type FormState = {
@@ -46,8 +35,6 @@ export type FormState = {
 
   billNo: string;
   billDate: string;
-  basicOverride: boolean;
-  basicManual: string;
   otherCharges: string;
   remarks: string;
 
@@ -64,7 +51,6 @@ export type FormState = {
 
   declaration: boolean;
   totalConfirmed: boolean;
-  poOverrunReason: string;
 };
 
 export const STEPS = [
@@ -77,18 +63,6 @@ export const STEPS = [
 ] as const;
 
 export const emptyPlace = (): Place => ({ building: "", floor: "", room: "" });
-
-export const emptyUnit = (from?: Partial<Unit>): Unit => ({
-  ...emptyPlace(),
-  make: "",
-  model: "",
-  serial: "",
-  warranty: "12",
-  custodian: "",
-  condition: "New",
-  specs: {},
-  ...from,
-});
 
 let seq = 0;
 export const emptyLine = (): Line => ({
@@ -104,8 +78,7 @@ export const emptyLine = (): Line => ({
   uom: "Nos",
   unitPrice: "",
   qtyIssued: "",
-  stockPage: "",
-  units: [],
+  custodian: "",
 });
 
 export const emptyForm = (): FormState => ({
@@ -119,8 +92,6 @@ export const emptyForm = (): FormState => ({
   supplierAddress: "",
   billNo: "",
   billDate: "",
-  basicOverride: false,
-  basicManual: "",
   otherCharges: "",
   remarks: "",
   delivered: "",
@@ -133,7 +104,6 @@ export const emptyForm = (): FormState => ({
   fund: "",
   declaration: false,
   totalConfirmed: false,
-  poOverrunReason: "",
 });
 
 // ---------------------------------------------------------------------
@@ -201,18 +171,16 @@ export const lineTotal = (l: Line) => r2(lineQty(l) * orZero(toNum(l.unitPrice))
 
 export function totals(f: FormState) {
   const itemsSum = r2(f.lines.reduce((s, l) => s + lineTotal(l), 0));
-  const manual = toNum(f.basicManual);
-  const basic = f.basicOverride ? orZero(manual) : itemsSum;
+  const basic = itemsSum;
   const other = orZero(toNum(f.otherCharges));
   const total = r2(basic + other);
   const units = f.lines.reduce((s, l) => s + lineQty(l), 0);
   const issued = f.lines.reduce((s, l) => s + orZero(toNum(l.qtyIssued)), 0);
   const poValue = toNum(f.poValue);
-  const poBalance = Number.isFinite(poValue) ? r2(poValue - total) : null;
-  return { itemsSum, basic, other, total, units, issued, poValue, poBalance };
+  return { itemsSum, basic, other, total, units, issued, poValue };
 }
 
-export const isAssetLine = (l: Line) => Boolean(findType(l.group, l.type)?.assetTracking);
+export const needsMakeModel = (l: Line) => Boolean(findType(l.group, l.type)?.requiresMakeModel);
 
 // ---------------------------------------------------------------------
 // Validation
@@ -224,8 +192,6 @@ export type Context = {
   requesterFound: boolean;
   requesterDepartment: string | null;
   filingDepartment: string | null;
-  pdaBalance: number | null;
-  hasPda: boolean;
 };
 
 const isInt = (s: string) => /^\d+$/.test(s.trim());
@@ -235,9 +201,8 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
   const T = totals(f);
 
   if (step === 0) {
-    if (!f.requesterCode.trim()) e["f-requester"] = "Enter the ID of the person who placed the order.";
+    if (!f.requesterCode.trim()) e["f-requester"] = "Enter an employee ID or student enrolment number.";
     else if (!ctx.requesterFound) e["f-requester"] = "That employee ID could not be found.";
-    else if (!ctx.hasPda) e["f-requester"] = "This employee has no PDA account yet. The PDA Manager must open one first.";
     else if (
       ctx.filingDepartment?.trim() &&
       ctx.requesterDepartment?.trim() &&
@@ -268,7 +233,6 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
     if (!f.billDate) e["f-bill-date"] = "Enter the bill date.";
     else if (f.billDate > todayISO()) e["f-bill-date"] = "Bill date cannot be in the future.";
     else if (f.purchaseType === "po" && f.poDate && f.billDate < f.poDate) e["f-bill-date"] = "Bill date cannot be before the PO date.";
-    if (f.basicOverride && !(toNum(f.basicManual) > 0)) e["f-basic"] = "Enter a basic amount greater than zero.";
     if (f.otherCharges.trim() && !(toNum(f.otherCharges) >= 0)) e["f-other"] = "Other charges cannot be negative.";
     if (!f.delivered) e["f-delivered"] = "Say whether the goods have been delivered.";
     else if (f.delivered === "yes") {
@@ -294,13 +258,12 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
 
   if (step === 3) {
     if (!(ITEM_CATEGORIES as readonly string[]).includes(f.category)) e["f-category"] = "Choose an item category.";
-    const serials = new Map<string, string>();
     f.lines.forEach((l, i) => {
       const id = (k: string) => `line-${i}-${k}`;
       const type = findType(l.group, l.type);
       if (!l.group) e[id("group")] = "Choose an item group.";
-      if (l.group && !l.type) e[id("type")] = "Choose an item type.";
-      if (type?.assetTracking) {
+      if (l.group && !type) e[id("type")] = "Choose an item type from the list.";
+      if (type?.requiresMakeModel) {
         if (!l.brand.trim()) e[id("brand")] = "Choose or enter the make.";
         if (!l.model.trim()) e[id("model")] = "Enter the model.";
       }
@@ -312,29 +275,7 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
       if (!l.uom) e[id("uom")] = "Choose a unit.";
       if (!(toNum(l.unitPrice) > 0)) e[id("price")] = "Enter a unit price above zero.";
 
-      if (type?.assetTracking) {
-        l.units.slice(0, lineQty(l)).forEach((u, j) => {
-          const uid = (k: string) => `line-${i}-unit-${j}-${k}`;
-          if (!u.make.trim()) e[uid("make")] = "Required.";
-          if (!u.model.trim()) e[uid("model")] = "Required.";
-          if (type.serial) {
-            const s = u.serial.trim().toUpperCase();
-            if (!s) e[uid("serial")] = "Required.";
-            else if (serials.has(s)) e[uid("serial")] = `Same as ${serials.get(s)}.`;
-            else serials.set(s, `Item ${i + 1}, Unit ${j + 1}`);
-          }
-          if (!u.warranty) e[uid("warranty")] = "Required.";
-          // A unit with no placement of its own inherits the line's default
-          // location, which step 5 makes mandatory.
-          if (placeLabel(u) && !placeComplete(u)) e[uid("room")] = "Finish the location or clear it to use the default.";
-          if (l.group === "Computer & IT" && !u.custodian.trim()) e[uid("custodian")] = "Required for IT items.";
-          if (!u.condition) e[uid("condition")] = "Required.";
-        });
-      }
     });
-    if (f.basicOverride && Number.isFinite(toNum(f.basicManual)) && Math.abs(toNum(f.basicManual) - T.itemsSum) > 1) {
-      e["f-items-sum"] = `Basic amount ${inr(toNum(f.basicManual))} differs from the item total ${inr(T.itemsSum)} by more than ₹ 1. Fix the items or the basic amount.`;
-    }
   }
 
   if (step === 4) {
@@ -343,10 +284,10 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
     else if (!FUND_PATTERN.test(f.fund) || !fund) e["f-fund"] = "Choose an active fund code.";
     f.lines.forEach((l, i) => {
       const id = (k: string) => `line-${i}-${k}`;
-      if (!l.stockPage.trim()) e[id("stock-page")] = "Enter the register page no.";
       const qi = l.qtyIssued.trim();
       if (!qi) e[id("qty-issued")] = "Enter quantity issued (0 if none).";
       else if (!isInt(qi) || Number(qi) > lineQty(l)) e[id("qty-issued")] = `Whole number from 0 to ${lineQty(l)}.`;
+      if (!l.custodian.trim()) e[id("custodian")] = "Enter the custodian responsible for this item.";
       if (!placeComplete(l)) e[id("room")] = "Choose building, floor and room.";
     });
   }
@@ -354,13 +295,8 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
   if (step === 5) {
     if (!f.declaration) e["f-declaration"] = "Confirm the declaration to submit.";
     if (!f.totalConfirmed) e["f-total-confirmed"] = "Confirm the total matches the supplier's bill.";
-    if (T.poBalance !== null && T.poBalance < 0 && !f.poOverrunReason.trim()) {
-      e["f-po-reason"] = "This bill exceeds the PO balance. Give a justification.";
-    }
     if (!(T.total > 0)) e["f-total"] = "The bill total must be greater than zero.";
-    else if (ctx.pdaBalance !== null && T.total > ctx.pdaBalance) {
-      e["f-pda"] = `Insufficient PDA balance. ${inr(ctx.pdaBalance)} is available and this bill is ${inr(T.total)}.`;
-    }
+
   }
 
   return e;
@@ -370,9 +306,9 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
 export function stepOfField(id: string): number {
   if (id === "f-requester") return 0;
   if (/^f-(purchase-type|po-|supplier|address)/.test(id)) return 1;
-  if (/^f-(bill-|basic|other|remarks|deliver|install)/.test(id)) return 2;
-  if (/^f-(category|items-sum)/.test(id) || /^line-\d+-(group|type|brand|model|description|qty$|uom|price|unit-)/.test(id)) return 3;
-  if (/^f-fund/.test(id) || /^line-\d+-(stock-page|qty-issued|room|building|floor)/.test(id)) return 4;
+  if (/^f-(bill-|other|remarks|deliver|install)/.test(id)) return 2;
+  if (/^f-(category)/.test(id) || /^line-\d+-(group|type|brand|model|description|qty$|uom|price)/.test(id)) return 3;
+  if (/^f-fund/.test(id) || /^line-\d+-(custodian|qty-issued|room|building|floor)/.test(id)) return 4;
   return 5;
 }
 
@@ -395,24 +331,9 @@ export function toPayload(f: FormState) {
     })
     .join("; ");
 
-  const assets = f.lines
-    .flatMap((l, i) =>
-      isAssetLine(l)
-        ? l.units.slice(0, lineQty(l)).map((u, j) => {
-            const bits = [
-              `I${i + 1}/U${j + 1}`,
-              [u.make, u.model].filter(Boolean).join(" "),
-              u.serial.trim() && `S/N ${u.serial.trim()}`,
-              `${u.warranty}m warranty`,
-              placeLabel(u) || placeLabel(l),
-              u.custodian.trim() && `custodian ${u.custodian.trim()}`,
-              u.condition,
-            ].filter(Boolean);
-            return bits.join(", ");
-          })
-        : []
-    )
-    .join(" | ");
+  const custodians = f.lines
+    .map((l, i) => `Item ${i + 1}: ${l.custodian.trim()} (${placeLabel(l)})`)
+    .join("; ");
 
   const billDetails = [
     `Bill No. ${f.billNo.trim()} dated ${shortDate(f.billDate)}`,
@@ -420,14 +341,13 @@ export function toPayload(f: FormState) {
     `Delivered ${shortDate(f.deliveryDate)}`,
     f.installRequired === "yes" ? `Installed ${shortDate(f.installDate)}` : "No installation required",
     f.remarks.trim() && `Remarks: ${f.remarks.trim()}`,
-    f.poOverrunReason.trim() && `PO overrun justification: ${f.poOverrunReason.trim()}`,
-    assets && `Assets: ${assets}`,
+    custodians && `Custodians: ${custodians}`,
   ]
     .filter(Boolean)
     .join(". ");
 
   return {
-    employee_id: f.requesterCode.trim(),
+    employee_id: f.requesterCode.trim().toUpperCase(),
     employee_name: f.requesterName.trim(),
     po_details:
       f.purchaseType === "po"
@@ -443,7 +363,6 @@ export function toPayload(f: FormState) {
     bill_details: billDetails,
     qty_issued: T.issued,
     source_of_fund: f.fund,
-    stock_entry: `Register page ${[...new Set(f.lines.map((l) => l.stockPage.trim()))].join(", ")}`,
     location: [...new Set(f.lines.map((l) => placeLabel(l)))].join(" | "),
   };
 }
@@ -460,15 +379,35 @@ export function loadDraft(key: string): Draft | null {
     if (!raw) return null;
     const d = JSON.parse(raw) as Draft;
     if (!d?.form || !Array.isArray(d.form.lines)) return null;
-    // Drafts saved before a field existed come back without it.
+    // Copy only fields that still belong to this form. Old balance checks,
+    // manual amounts and stock pages must not survive a resumed draft.
     const blank = emptyForm();
+    const form = { ...blank };
+    for (const key of Object.keys(blank) as (keyof FormState)[]) {
+      if (key !== "lines" && typeof d.form[key] === typeof blank[key]) {
+        Object.assign(form, { [key]: d.form[key] });
+      }
+    }
+    form.requesterCode = form.requesterCode.trim().toUpperCase();
+    form.lines = d.form.lines.map((saved) => {
+      const line = emptyLine();
+      for (const key of Object.keys(line) as (keyof Line)[]) {
+        if (typeof saved[key] === "string") Object.assign(line, { [key]: saved[key] });
+      }
+      line.descriptionEdited = Boolean(saved.descriptionEdited);
+      const legacy = saved as Line & { units?: { custodian?: string; building?: string; floor?: string; room?: string }[] };
+      if (!line.custodian) {
+        line.custodian = [...new Set((legacy.units ?? []).map((u) => u.custodian?.trim()).filter(Boolean))].join(", ");
+      }
+      // A former combined item type needs an explicit choice of the new type.
+      if (line.type && !findType(line.group, line.type)) line.type = "";
+      return line;
+    });
+    if (!form.lines.length) form.lines = [emptyLine()];
     return {
-      ...d,
-      form: {
-        ...blank,
-        ...d.form,
-        lines: d.form.lines.map((l) => ({ ...emptyLine(), ...l, units: (l.units ?? []).map((u) => emptyUnit(u)) })),
-      },
+      form,
+      step: Math.max(0, Math.min(Number(d.step) || 0, STEPS.length - 1)),
+      savedAt: Number(d.savedAt) || Date.now(),
     };
   } catch {
     return null;

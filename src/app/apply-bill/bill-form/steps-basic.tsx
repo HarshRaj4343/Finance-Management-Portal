@@ -13,10 +13,9 @@ export type StepProps = {
 
 export type Lookup = {
   state: "idle" | "looking" | "found" | "missing";
+  code?: string;
   name?: string;
   department?: string | null;
-  balance?: number | null;
-  committed?: number | null;
   message?: string | null;
 };
 
@@ -24,79 +23,29 @@ export type Lookup = {
 // Step 1 — Submitter
 // ---------------------------------------------------------------------
 
-export function StepSubmitter({
-  f,
-  set,
-  errors,
-  submitter,
-  lookup,
-}: StepProps & {
-  submitter: { id: string; name: string; department: string };
-  lookup: Lookup;
-}) {
+export function StepSubmitter({ f, set, errors, lookup }: StepProps & { lookup: Lookup }) {
   return (
-    <div className="space-y-8">
-      <Card title="Submitter" description="You are filing this bill. These details come from your login and cannot be edited.">
-        <Grid>
-          <ReadOnlyField id="f-sub-id" label="Employee ID" value={submitter.id} source="your institute login" />
-          <ReadOnlyField id="f-sub-name" label="Employee Name" value={submitter.name} source="your institute login" />
-          <ReadOnlyField id="f-sub-dept" label="Department / Section" value={submitter.department} source="your employee profile" />
-          <ReadOnlyField id="f-sub-date" label="Submission Date" value={shortDate(todayISO())} source="the server date" />
-        </Grid>
-      </Card>
-
-      <Card
-        title="Order Placed By"
-        description="The person who placed the order. The bill amount is reserved against this person's PDA."
-      >
-        <Grid>
-          <TextField
-            id="f-requester"
-            label="Employee ID"
-            required
-            value={f.requesterCode}
-            onChange={(v) => set({ requesterCode: v, requesterName: "" })}
-            error={errors["f-requester"]}
-            hint={
-              lookup.state === "looking"
-                ? "Looking up…"
-                : "Enter the ID exactly as printed on the order."
-            }
-            autoComplete="off"
-            placeholder="e.g. E001"
-          />
-          <ReadOnlyField
-            id="f-requester-name"
-            label="Employee Name"
-            value={lookup.state === "found" ? (lookup.name ?? "") : ""}
-            source="the employee directory"
-          />
-          <ReadOnlyField
-            id="f-requester-dept"
-            label="Department / Section"
-            value={lookup.state === "found" ? (lookup.department ?? "") : ""}
-            source="the employee directory"
-          />
-          <ReadOnlyField
-            id="f-requester-pda"
-            label="PDA Balance"
-            money
-            value={lookup.state === "found" && lookup.balance != null ? inr(lookup.balance) : ""}
-            source="the PDA register"
-            hint={
-              lookup.state === "found" && lookup.committed
-                ? `${inr(lookup.committed)} already committed to bills in progress.`
-                : undefined
-            }
-          />
-        </Grid>
-        {lookup.state === "missing" && lookup.message && !errors["f-requester"] && (
-          <div className="mt-5">
-            <Banner tone="warning">{lookup.message}</Banner>
-          </div>
-        )}
-      </Card>
-    </div>
+    <Card title="Submitter" description="Enter the employee ID or student enrolment number associated with this bill.">
+      <Grid>
+        <TextField
+          id="f-requester"
+          label="Employee ID / Student Enrolment"
+          required
+          value={f.requesterCode}
+          onChange={(v) => set({ requesterCode: v.toUpperCase(), requesterName: "" })}
+          error={errors["f-requester"]}
+          hint={lookup.state === "looking" ? "Looking up…" : "IDs are matched without regard to letter case."}
+          autoComplete="off"
+          placeholder="e.g. E001 or B24101"
+        />
+        <ReadOnlyField id="f-requester-name" label="Name" value={lookup.state === "found" ? lookup.name ?? "" : ""} source="the employee directory" />
+        <ReadOnlyField id="f-requester-dept" label="Department / Section" value={lookup.state === "found" ? lookup.department ?? "" : ""} source="the employee directory" />
+        <ReadOnlyField id="f-sub-date" label="Submission Date" value={shortDate(todayISO())} source="today’s date" />
+      </Grid>
+      {lookup.state === "missing" && lookup.message && !errors["f-requester"] && (
+        <div className="mt-5"><Banner tone="warning">{lookup.message}</Banner></div>
+      )}
+    </Card>
   );
 }
 
@@ -105,7 +54,6 @@ export function StepSubmitter({
 // ---------------------------------------------------------------------
 
 export function StepSupplier({ f, set, errors }: StepProps) {
-  const T = totals(f);
   const isPo = f.purchaseType === "po";
   return (
     <div className="space-y-8">
@@ -158,16 +106,6 @@ export function StepSupplier({ f, set, errors }: StepProps) {
               onChange={(v) => set({ poValue: v })}
               error={errors["f-po-value"]}
               hint={isPo ? "Fills automatically once the PO register is connected." : undefined}
-            />
-          )}
-          {isPo && (
-            <ReadOnlyField
-              id="f-po-balance"
-              label="PO Balance (₹)"
-              money
-              value={T.poBalance !== null && T.total > 0 ? inr(T.poBalance) : ""}
-              source="PO value minus this bill"
-              hint="Bills filed earlier against the same PO are not subtracted yet."
             />
           )}
         </Grid>
@@ -245,50 +183,10 @@ export function StepBill({ f, set, errors }: StepProps) {
       </Card>
 
       <Card
-        title="Amounts"
-        description="Worked out from the items you add in the next step. The total must match the supplier's bill."
+        title="Other Charges"
+        description="The bill total is calculated from item quantities and unit prices in the next step."
       >
         <Grid>
-          {f.basicOverride ? (
-            <MoneyField
-              id="f-basic"
-              label="Bill Amount (₹)"
-              required
-              value={f.basicManual}
-              onChange={(v) => set({ basicManual: v })}
-              error={errors["f-basic"]}
-              right={
-                <button
-                  type="button"
-                  className="text-xs font-medium text-blue-700 underline-offset-2 hover:underline"
-                  onClick={() => set({ basicOverride: false, basicManual: "" })}
-                >
-                  Use item total
-                </button>
-              }
-              hint="Entered by hand. It must stay within ₹ 1 of the item total."
-            />
-          ) : (
-            <ReadOnlyField
-              id="f-basic"
-              label="Bill Amount (₹)"
-              money
-              value={T.itemsSum > 0 ? inr(T.basic) : ""}
-              source="the sum of your item lines"
-              hint={
-                <>
-                  Fills from the items in the next step.{" "}
-                  <button
-                    type="button"
-                    className="font-medium text-blue-700 underline-offset-2 hover:underline"
-                    onClick={() => set({ basicOverride: true, basicManual: T.itemsSum > 0 ? String(T.itemsSum) : "" })}
-                  >
-                    Enter manually
-                  </button>
-                </>
-              }
-            />
-          )}
           <MoneyField
             id="f-other"
             label="Other Charges (₹)"

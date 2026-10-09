@@ -128,7 +128,7 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">PO Details</th>
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">PO Value</th>
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">SNP</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Store &amp; Purchase</th>
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Audit</th>
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Finance Admin</th>
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created At</th>

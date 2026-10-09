@@ -1,4 +1,5 @@
 // BillsHistory.tsx
+import { deskLabel } from "@/lib/roles";
 import React, { useState } from "react";
 import { api } from "@/lib/api";
 import { Bill } from "./types";
@@ -45,9 +46,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
     if (!allowDelete || !onBillNoted) return;
 
     const confirmed = window.confirm(
-      "Note this bill? It will be cleared from this list.\n\n" +
-        "The amount was already returned to the employee's PDA when the bill " +
-        "was rejected, so nothing further is credited."
+      "Note this rejected bill? It will be cleared from this list. The bill and its history will remain in the portal."
     );
     if (!confirmed) return;
 
@@ -133,7 +132,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
                 Status
               </th>
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                SNP
+                Store &amp; Purchase
               </th>
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Audit
@@ -178,7 +177,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
                 </td>
                 <td className="px-3 py-4 whitespace-nowrap text-sm">
                   <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.status)}`}>
-                    {bill.status}
+                    {deskLabel(bill.status)}
                   </span>
                 </td>
                 <td className="px-3 py-4 whitespace-nowrap text-sm">

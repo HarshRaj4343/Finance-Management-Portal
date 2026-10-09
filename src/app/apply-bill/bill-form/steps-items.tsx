@@ -1,13 +1,13 @@
 "use client";
 
-import React, { useState } from "react";
-import { Copy, Plus, Trash2 } from "lucide-react";
-import { AreaField, Banner, Button, Card, ComboField, Full, Grid, MoneyField, NumberField, ReadOnlyField, SelectField, TextField } from "./ui";
+import React from "react";
+import { Plus, Trash2 } from "lucide-react";
+import { AreaField, Button, Card, ComboField, Full, Grid, MoneyField, NumberField, ReadOnlyField, SelectField, TextField } from "./ui";
 import {
-  BRANDS, BUILDINGS, CONDITIONS, FLOORS, FUNDS, ITEM_CATEGORIES, ITEM_GROUPS, SPEC_PROFILES, UOMS, WARRANTY_MONTHS,
+  BRANDS, BUILDINGS, FLOORS, FUNDS, ITEM_CATEGORIES, ITEM_GROUPS, UOMS,
   findType, typesForGroup,
 } from "./masters";
-import { FormState, Line, Place, Unit, emptyLine, emptyUnit, inr, isAssetLine, lineQty, lineTotal, toNum, totals } from "./model";
+import { FormState, Line, Place, emptyLine, inr, needsMakeModel, lineQty, lineTotal, toNum, totals } from "./model";
 import type { StepProps } from "./steps-basic";
 
 // ---------------------------------------------------------------------
@@ -91,16 +91,6 @@ export function LocationFields({
 // Step 4 — Items
 // ---------------------------------------------------------------------
 
-/** Keep the unit rows in step with qty and item type. */
-function syncUnits(l: Line): Line {
-  const type = findType(l.group, l.type);
-  if (!type?.assetTracking) return { ...l, units: [] };
-  const n = lineQty(l);
-  const units = l.units.slice(0, n);
-  while (units.length < n) units.push(emptyUnit({ make: l.brand, model: l.model }));
-  return { ...l, units };
-}
-
 const suggest = (l: Line) => [l.type, l.brand, l.model].map((s) => s.trim()).filter(Boolean).join(" ");
 
 export function StepItems({ f, set, errors }: StepProps) {
@@ -118,27 +108,12 @@ export function StepItems({ f, set, errors }: StepProps) {
         const t = findType(next.group, next.type);
         next = { ...next, uom: t?.uom ?? next.uom, descriptionEdited: false };
       }
-      // Units that still carry the old make/model follow the line.
-      if (patch.brand !== undefined || patch.model !== undefined) {
-        next.units = next.units.map((u) => ({
-          ...u,
-          make: u.make === l.brand ? next.brand : u.make,
-          model: u.model === l.model ? next.model : u.model,
-        }));
-      }
       if (!next.descriptionEdited && !("description" in patch)) next.description = suggest(next);
       if ("description" in patch) next.descriptionEdited = true;
-      return syncUnits(next);
+      return next;
     });
     set({ lines });
   };
-
-  const patchUnit = (i: number, j: number, patch: Partial<Unit>) =>
-    set({
-      lines: f.lines.map((l, k) =>
-        k === i ? { ...l, units: l.units.map((u, m) => (m === j ? { ...u, ...patch } : u)) } : l
-      ),
-    });
 
   return (
     <div className="space-y-8">
@@ -165,8 +140,6 @@ export function StepItems({ f, set, errors }: StepProps) {
           errors={errors}
           canRemove={f.lines.length > 1}
           onPatch={(p) => patchLine(i, p)}
-          onUnit={(j, p) => patchUnit(i, j, p)}
-          onUnits={(units) => patchLine(i, { units })}
           onRemove={() => set({ lines: f.lines.filter((_, k) => k !== i) })}
         />
       ))}
@@ -176,8 +149,6 @@ export function StepItems({ f, set, errors }: StepProps) {
           <Plus className="size-4" aria-hidden="true" /> Add another item
         </Button>
       </div>
-
-      {errors["f-items-sum"] && <Banner tone="error">{errors["f-items-sum"]}</Banner>}
 
       <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm">
         <span className="text-sm text-slate-600">
@@ -190,21 +161,19 @@ export function StepItems({ f, set, errors }: StepProps) {
 }
 
 function LineCard({
-  i, l, errors, canRemove, onPatch, onUnit, onUnits, onRemove,
+  i, l, errors, canRemove, onPatch, onRemove,
 }: {
   i: number;
   l: Line;
   errors: Record<string, string>;
   canRemove: boolean;
   onPatch: (p: Partial<Line>) => void;
-  onUnit: (j: number, p: Partial<Unit>) => void;
-  onUnits: (u: Unit[]) => void;
   onRemove: () => void;
 }) {
   const id = (k: string) => `line-${i}-${k}`;
   const type = findType(l.group, l.type);
   const types = typesForGroup(l.group);
-  const asset = isAssetLine(l);
+  const requiresMakeModel = needsMakeModel(l);
 
   return (
     <Card
@@ -247,7 +216,7 @@ function LineCard({
         <ComboField
           id={id("brand")}
           label="Make / Brand"
-          required={asset}
+          required={requiresMakeModel}
           value={l.brand}
           onChange={(v) => onPatch({ brand: v })}
           options={BRANDS.map((b) => ({ value: b }))}
@@ -258,7 +227,7 @@ function LineCard({
         <TextField
           id={id("model")}
           label="Model Name / No."
-          required={asset}
+          required={requiresMakeModel}
           value={l.model}
           onChange={(v) => onPatch({ model: v })}
           maxLength={100}
@@ -314,185 +283,7 @@ function LineCard({
           source="quantity × unit price"
         />
       </Grid>
-
-      {asset && type && (
-        <UnitRows i={i} l={l} serial={type.serial} spec={type.spec} errors={errors} onUnit={onUnit} onUnits={onUnits} />
-      )}
     </Card>
-  );
-}
-
-// ---------------------------------------------------------------------
-// Asset rows: one per unit
-// ---------------------------------------------------------------------
-
-function UnitRows({
-  i, l, serial, spec, errors, onUnit, onUnits,
-}: {
-  i: number;
-  l: Line;
-  serial: boolean;
-  spec?: string;
-  errors: Record<string, string>;
-  onUnit: (j: number, p: Partial<Unit>) => void;
-  onUnits: (u: Unit[]) => void;
-}) {
-  const [paste, setPaste] = useState("");
-  const specFields = spec ? SPEC_PROFILES[spec] ?? [] : [];
-  const n = l.units.length;
-  if (n === 0) return null;
-
-  const applyPaste = () => {
-    const serials = paste.split(/[\n,;\t]+/).map((s) => s.trim()).filter(Boolean);
-    onUnits(l.units.map((u, j) => (serials[j] ? { ...u, serial: serials[j] } : u)));
-    setPaste("");
-  };
-
-  const copyFirst = () => {
-    const [first, ...rest] = l.units;
-    onUnits([first, ...rest.map((u) => ({ ...u, ...first, serial: u.serial }))]);
-  };
-
-  return (
-    <div className="mt-8 border-t border-slate-200 pt-6">
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h3 className="text-sm font-semibold text-slate-900">Asset details · {n} unit{n === 1 ? "" : "s"}</h3>
-          <p className="mt-0.5 text-xs text-slate-500">
-            This item is tracked as an asset, so each unit needs its own details and where it is placed.
-          </p>
-        </div>
-        {n > 1 && (
-          <Button variant="outline" className="h-8 text-xs" onClick={copyFirst}>
-            <Copy className="size-3.5" aria-hidden="true" /> Copy Unit 1 details to all
-          </Button>
-        )}
-      </div>
-
-      {serial && n > 1 && (
-        <div className="mb-5 rounded-lg border border-slate-200 bg-slate-50 p-4">
-          <label htmlFor={`line-${i}-paste`} className="mb-1.5 block text-sm font-medium text-slate-800">
-            Paste serial numbers
-          </label>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <textarea
-              id={`line-${i}-paste`}
-              rows={2}
-              value={paste}
-              onChange={(e) => setPaste(e.target.value)}
-              placeholder="One per line, in unit order"
-              className="min-h-10 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm outline-none focus:border-blue-700 focus:ring-2 focus:ring-blue-700/25"
-            />
-            <Button variant="outline" disabled={!paste.trim()} onClick={applyPaste} className="shrink-0 sm:self-start">
-              Fill serials
-            </Button>
-          </div>
-        </div>
-      )}
-
-      <div className="space-y-5">
-        {l.units.map((u, j) => {
-          const uid = (k: string) => `line-${i}-unit-${j}-${k}`;
-          return (
-            <div key={j} className="rounded-lg border border-slate-200 p-4">
-              <p className="mb-4 text-sm font-semibold text-slate-800">Unit {j + 1}</p>
-              <Grid>
-                <ComboField
-                  id={uid("make")}
-                  label="Make / Brand"
-                  required
-                  value={u.make}
-                  onChange={(v) => onUnit(j, { make: v })}
-                  options={BRANDS.map((b) => ({ value: b }))}
-                  allowCustom
-                  error={errors[uid("make")]}
-                />
-                <TextField
-                  id={uid("model")}
-                  label="Model"
-                  required
-                  value={u.model}
-                  onChange={(v) => onUnit(j, { model: v })}
-                  error={errors[uid("model")]}
-                />
-                {serial && (
-                  <TextField
-                    id={uid("serial")}
-                    label="Serial Number"
-                    required
-                    value={u.serial}
-                    onChange={(v) => onUnit(j, { serial: v })}
-                    error={errors[uid("serial")]}
-                    autoComplete="off"
-                  />
-                )}
-                <ReadOnlyField id={uid("tag")} label="Asset Tag / ID" value="Generated on submission" source="the asset register" />
-                {specFields.map((sf) =>
-                  sf.options ? (
-                    <SelectField
-                      key={sf.key}
-                      id={uid(`spec-${sf.key}`)}
-                      label={sf.label}
-                      value={u.specs[sf.key] ?? ""}
-                      onChange={(v) => onUnit(j, { specs: { ...u.specs, [sf.key]: v } })}
-                      options={sf.options.map((o) => ({ value: o }))}
-                    />
-                  ) : (
-                    <TextField
-                      key={sf.key}
-                      id={uid(`spec-${sf.key}`)}
-                      label={sf.label}
-                      value={u.specs[sf.key] ?? ""}
-                      onChange={(v) => onUnit(j, { specs: { ...u.specs, [sf.key]: v } })}
-                    />
-                  )
-                )}
-                <SelectField
-                  id={uid("warranty")}
-                  label="Warranty (months)"
-                  required
-                  value={u.warranty}
-                  onChange={(v) => onUnit(j, { warranty: v })}
-                  options={WARRANTY_MONTHS.map((w) => ({ value: w, label: w === "0" ? "No warranty" : `${w} months` }))}
-                  error={errors[uid("warranty")]}
-                />
-                <SelectField
-                  id={uid("condition")}
-                  label="Condition at Receipt"
-                  required
-                  value={u.condition}
-                  onChange={(v) => onUnit(j, { condition: v })}
-                  options={CONDITIONS.map((c) => ({ value: c }))}
-                  error={errors[uid("condition")]}
-                  hint={u.condition === "Damaged" ? "Stores will be alerted about damaged items." : undefined}
-                />
-                <TextField
-                  id={uid("custodian")}
-                  label="Custodian"
-                  required={l.group === "Computer & IT"}
-                  value={u.custodian}
-                  onChange={(v) => onUnit(j, { custodian: v })}
-                  error={errors[uid("custodian")]}
-                  hint="Employee ID or name of the person responsible for this item."
-                />
-                <Full>
-                  <LocationFields
-                    idPrefix={`line-${i}-unit-${j}`}
-                    label="Installed / Placed At"
-                    value={u}
-                    onChange={(p) => onUnit(j, p)}
-                    error={errors[uid("room")]}
-                  />
-                  <p className="mt-1.5 text-xs text-slate-500">
-                    Leave blank to use the default location chosen in the Funding and Stock step.
-                  </p>
-                </Full>
-              </Grid>
-            </div>
-          );
-        })}
-      </div>
-    </div>
   );
 }
 
@@ -543,14 +334,13 @@ export function StepFunding({ f, set, errors }: StepProps) {
                 source="the stock register"
               />
               <TextField
-                id={id("stock-page")}
-                label="Stock Register Page No."
+                id={id("custodian")}
+                label="Custodian"
                 required
-                inputMode="numeric"
-                value={l.stockPage}
-                onChange={(v) => patchLine(i, { stockPage: v })}
-                error={errors[id("stock-page")]}
-                hint={l.group ? `Page for ${l.group} in the stock register.` : undefined}
+                value={l.custodian}
+                onChange={(v) => patchLine(i, { custodian: v })}
+                error={errors[id("custodian")]}
+                hint="Employee ID or name of the person responsible for this item."
               />
               <NumberField
                 id={id("qty-issued")}
@@ -572,16 +362,14 @@ export function StepFunding({ f, set, errors }: StepProps) {
               <Full>
                 <LocationFields
                   idPrefix={`line-${i}`}
-                  label={isAssetLine(l) ? "Default Location" : "Location"}
+                  label="Placed At"
                   required
                   value={l}
                   onChange={(p) => patchLine(i, p)}
                   error={errors[id("room")]}
                 />
                 <p className="mt-1.5 text-xs text-slate-500">
-                  {isAssetLine(l)
-                    ? "Used for every unit that has no placement of its own."
-                    : "Where this batch is kept."}
+                  Where this item or batch is placed.
                 </p>
               </Full>
             </Grid>

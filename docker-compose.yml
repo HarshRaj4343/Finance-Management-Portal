@@ -39,10 +39,11 @@ services:
       # destroy the volume:  docker compose down -v  (DESTROYS DATA)
       - ./db/migrations/0001_schema.sql:/docker-entrypoint-initdb.d/0001_schema.sql:ro
       - ./db/migrations/0002_functions.sql:/docker-entrypoint-initdb.d/0002_functions.sql:ro
+      - ./db/migrations/0003_stock_entry.sql:/docker-entrypoint-initdb.d/0003_stock_entry.sql:ro
       # PILOT ONLY -- the demo dataset, and the demo accounts (Dean,
       # Finance Admin, Audit, SNP, ...) that the demo logins sign in as.
       # Delete this line before the portal is used for real bills.
-      - ./db/seed/0003_demo_data.sql:/docker-entrypoint-initdb.d/0003_demo_data.sql:ro
+      - ./db/seed/0003_demo_data.sql:/docker-entrypoint-initdb.d/0004_demo_data.sql:ro
     # No `ports:` -- the database is reachable only on the compose network,
     # as the institute asked. To inspect it:
     #   docker compose exec db psql -U ifmp -d ifmp

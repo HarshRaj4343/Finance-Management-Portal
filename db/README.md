@@ -7,6 +7,7 @@ db/
   migrations/
     0001_schema.sql       tables, constraints, append-only triggers
     0002_functions.sql    the workflow engine
+    0003_stock_entry.sql  system-generated, immutable stock references
   seed/
     0003_demo_data.sql    realistic IIT Mandi demo dataset
 ```
@@ -21,16 +22,27 @@ npm run db:setup -- --no-seed # schema + functions only
 ```
 
 `scripts/db-setup.sh` creates the database if it does not exist, then runs
-the three files **in order**. By hand, that is:
+the migrations and optional seed **in order**. By hand, that is:
 
 ```bash
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0001_schema.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0002_functions.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0003_stock_entry.sql
 psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/seed/0003_demo_data.sql   # optional
 ```
 
 With Docker, `docker compose up` starts a `db` service that runs the same
-three files the first time its volume is created.
+migrations and seed the first time its volume is created.
+
+For an existing database, apply only the additive stock-reference migration:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0003_stock_entry.sql
+```
+
+It assigns `STK/<financial year>/<bill counter>` to new bills on insertion,
+ignores manual stock-reference changes, and leaves historical references intact.
+The deployment script applies this migration to existing Docker volumes too.
 
 `0001` drops the tables it is about to create, so re-running it during
 development is safe — and destructive. `db:setup` refuses to run over a
@@ -106,10 +118,10 @@ rollback.
 
 ## Testing it
 
-`scripts/test_workflow.sql` runs 44 assertions against a real Postgres —
+`scripts/test_workflow.sql` checks the workflow against a real Postgres —
 routing at the ₹50,000 boundary, reservation and release, rejection being
 terminal, the append-only triggers, the allocation guard, financial-year
-arithmetic.
+arithmetic, automatic stock references, amendment protection and register propagation.
 
 ```bash
 # against a throwaway local cluster
@@ -118,6 +130,7 @@ pg_ctl -D /tmp/pgdata -o "-p 55999 -k /tmp" start
 psql -h /tmp -p 55999 -U postgres -v ON_ERROR_STOP=1 \
   -f db/migrations/0001_schema.sql \
   -f db/migrations/0002_functions.sql \
+  -f db/migrations/0003_stock_entry.sql \
   -f scripts/test_workflow.sql
 ```
 

@@ -75,6 +75,11 @@ export function homeFor(raw: string | null | undefined): string {
 export const APPROVAL_STAGES = ["Student Purchase", "Audit", "Finance Admin"] as const;
 export type Stage = (typeof APPROVAL_STAGES)[number];
 
+/** Public desk name; keep stored role/status values compatible with existing bills. */
+export function deskLabel(value: string | null | undefined): string {
+  return (value ?? "").replace(/Student Purchase/g, "Store & Purchase");
+}
+
 export function isApprover(role: Role): role is Stage {
   return (APPROVAL_STAGES as readonly string[]).includes(role);
 }

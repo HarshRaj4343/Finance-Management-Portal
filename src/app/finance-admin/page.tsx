@@ -4,7 +4,7 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { api, money } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
-import { normaliseRole } from "@/lib/roles";
+import { normaliseRole, deskLabel } from "@/lib/roles";
 import {
   IconArrowLeft,
   IconUsers,
@@ -494,7 +494,7 @@ export default function FinanceAdminDashboard() {
         totalValue: bill.po_value || 0,
       },
       workflowStatus: {
-        overall: bill.status,
+        overall: deskLabel(bill.status),
         snpStatus: bill.snp || "N/A",
         auditStatus: bill.audit || "N/A",
         financeAdminStatus: bill.finance_admin || "N/A",
@@ -691,7 +691,7 @@ export default function FinanceAdminDashboard() {
                                   <p className="text-sm font-medium mb-2">Previous Department Remarks:</p>
                                   {bill.remarks1 && (
                                     <p className="text-xs text-gray-700 mb-1">
-                                      <span className="font-medium">SNP:</span> {bill.remarks1}
+                                      <span className="font-medium">Store &amp; Purchase:</span> {bill.remarks1}
                                     </p>
                                   )}
                                   {bill.remarks2 && (
@@ -805,7 +805,7 @@ export default function FinanceAdminDashboard() {
                         const holdDepartment = 
                           bill.finance_admin === "Hold" ? "Finance Admin" :
                           bill.audit === "Hold" ? "Audit" :
-                          bill.snp === "Hold" ? "SNP" : "Unknown";
+                          bill.snp === "Hold" ? "Store & Purchase" : "Unknown";
                         
                         const holdRemark = 
                           bill.finance_admin === "Hold" ? bill.remarks :
@@ -1164,7 +1164,7 @@ export default function FinanceAdminDashboard() {
                         <h4 className="font-semibold mb-3">Workflow Status</h4>
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div><span className="font-medium">Overall Status:</span> {details.workflowStatus.overall}</div>
-                          <div><span className="font-medium">SNP Status:</span> {details.workflowStatus.snpStatus}</div>
+                          <div><span className="font-medium">Store &amp; Purchase Status:</span> {details.workflowStatus.snpStatus}</div>
                           <div><span className="font-medium">Audit Status:</span> {details.workflowStatus.auditStatus}</div>
                           <div><span className="font-medium">Finance Admin:</span> {details.workflowStatus.financeAdminStatus}</div>
                         </div>
@@ -1175,7 +1175,7 @@ export default function FinanceAdminDashboard() {
                         <h4 className="font-semibold mb-3">Department Remarks</h4>
                         <div className="space-y-2 text-sm">
                           <div className="bg-white p-2 rounded">
-                            <span className="font-medium">SNP:</span> {details.departmentRemarks.snp}
+                            <span className="font-medium">Store &amp; Purchase:</span> {details.departmentRemarks.snp}
                           </div>
                           <div className="bg-white p-2 rounded">
                             <span className="font-medium">Audit:</span> {details.departmentRemarks.audit}

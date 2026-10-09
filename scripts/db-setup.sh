@@ -64,6 +64,7 @@ echo "==> applying the schema"
 "${PSQL[@]}" -f db/migrations/0001_schema.sql
 echo "==> applying the workflow functions"
 "${PSQL[@]}" -f db/migrations/0002_functions.sql
+"${PSQL[@]}" -f db/migrations/0003_stock_entry.sql
 
 if [ "$SEED" = 1 ]; then
   echo "==> loading the demo data (this runs the real workflow, so it takes a moment)"

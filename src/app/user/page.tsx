@@ -1,5 +1,6 @@
 "use client";
 
+import { deskLabel } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
@@ -175,7 +176,7 @@ export default function UserPage() {
       statusType = "rejected";
       
       // Find which department rejected
-      if (bill.snp === "Reject") statusLabel += " by SNP";
+      if (bill.snp === "Reject") statusLabel += " by Store & Purchase";
       else if (bill.audit === "Reject") statusLabel += " by Audit";
       else if (bill.finance_admin === "Reject") statusLabel += " by Finance Admin";
       
@@ -188,7 +189,7 @@ export default function UserPage() {
       statusType = "hold";
       
       // Find which department put on hold
-      if (bill.snp === "Hold") statusLabel += " by SNP";
+      if (bill.snp === "Hold") statusLabel += " by Store & Purchase";
       else if (bill.audit === "Hold") statusLabel += " by Audit";
       else if (bill.finance_admin === "Hold") statusLabel += " by Finance Admin";
       
@@ -196,7 +197,7 @@ export default function UserPage() {
       statusType = "pending";
       // New workflow mapping: SNP only for Major/Minor; Consumables skip SNP
       if (bill.status === "Student Purchase" && bill.snp === "Pending") {
-        statusLabel = "Pending at SNP";
+        statusLabel = "Pending at Store & Purchase";
       } else if (bill.status === "Audit" && bill.audit === "Pending") {
         statusLabel = "Pending at Audit";
       } else if (bill.status === "Finance Admin" && bill.finance_admin === "Pending") {
@@ -212,7 +213,7 @@ export default function UserPage() {
   const getBillRemarks = (bill: Bill) => {
     const remarks: { department: string; remark: string }[] = [];
     
-    if (bill.remarks1) remarks.push({ department: "SNP", remark: bill.remarks1 });
+    if (bill.remarks1) remarks.push({ department: "Store & Purchase", remark: bill.remarks1 });
     if (bill.remarks2) remarks.push({ department: "Audit", remark: bill.remarks2 });
     if (bill.remarks) remarks.push({ department: "Finance Admin", remark: bill.remarks });
     if (bill.remarks3) remarks.push({ department: "Other", remark: bill.remarks3 });
@@ -241,7 +242,7 @@ export default function UserPage() {
         totalValue: bill.po_value,
       },
       currentStatus: {
-        overall: bill.status,
+        overall: deskLabel(bill.status),
         snpStatus: bill.snp || "NULL",
         auditStatus: bill.audit || "NULL",
         financeAdminStatus: bill.finance_admin || "NULL",
@@ -251,7 +252,7 @@ export default function UserPage() {
       departmentRemarks: remarks,
       workflowProgress: {
         step1_Submission: "Completed",
-        step2_SNP:
+        step2_StoreAndPurchase:
           bill.snp == null && (bill.status === "Audit" || bill.status === "Finance Admin")
             ? "Skipped"
             : bill.snp === "Approved"
@@ -685,7 +686,7 @@ export default function UserPage() {
                               const StepIcon = tone.icon;
                               return (
                                 <div key={step} className="flex justify-between items-center py-1">
-                                  <span className="font-medium">{step.replace(/_/g, ' ').replace(/step\d+/i, '').trim()}:</span>
+                                  <span className="font-medium">{step.replace(/_/g, ' ').replace(/step\d+/i, '').replace('StoreAndPurchase', 'Store & Purchase').trim()}:</span>
                                   <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${tone.className}`}>
                                     <StepIcon className="h-3.5 w-3.5 shrink-0" />
                                     {status}
@@ -725,7 +726,7 @@ export default function UserPage() {
                           <h3 className="text-lg font-semibold mb-3 text-gray-800">Current Status</h3>
                           <div className="space-y-2 text-sm">
                             <div><span className="font-medium">Overall Status:</span> {details.currentStatus.overall}</div>
-                            <div><span className="font-medium">SNP Status:</span> {details.currentStatus.snpStatus}</div>
+                            <div><span className="font-medium">Store &amp; Purchase Status:</span> {details.currentStatus.snpStatus}</div>
                             <div><span className="font-medium">Audit Status:</span> {details.currentStatus.auditStatus}</div>
                             <div><span className="font-medium">Finance Admin Status:</span> {details.currentStatus.financeAdminStatus}</div>
                             <div className="pt-2">

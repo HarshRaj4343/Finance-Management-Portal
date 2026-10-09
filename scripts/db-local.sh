@@ -44,6 +44,7 @@ build() {
   "${PSQL[@]}" -q -c 'drop schema if exists public cascade; create schema public;' >/dev/null
   "${PSQL[@]}" -q -f db/migrations/0001_schema.sql
   "${PSQL[@]}" -q -f db/migrations/0002_functions.sql
+  "${PSQL[@]}" -q -f db/migrations/0003_stock_entry.sql
 }
 
 case "${1:-test}" in

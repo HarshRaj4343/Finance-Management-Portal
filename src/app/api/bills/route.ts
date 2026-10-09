@@ -3,6 +3,7 @@ import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { canSeeAllBills } from "@/lib/roles";
+import { findEmployee } from "@/server/employee";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -109,6 +110,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (!body.employee_id) return badRequest("An employee ID is required.");
+    const employee = await findEmployee(String(body.employee_id));
+    if (!employee?.is_active) return badRequest("No active employee has this ID. Check the employee ID or student enrolment number.");
+    body.employee_id = employee.employee_code;
+    body.employee_name = employee.employee_name;
+    // Stock references are assigned by the database, never by the browser.
+    delete body.stock_entry;
     if (!body.item_category) return badRequest("Choose an item category.");
     const amount = Number(body.po_value);
     if (!Number.isFinite(amount) || amount <= 0) {

@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, money, when } from "@/lib/api";
-import { billScopeQuery, isUmbrellaDepartment } from "@/lib/roles";
+import { billScopeQuery, isUmbrellaDepartment, deskLabel } from "@/lib/roles";
 import { Bill } from "./types";
 
 /**
@@ -75,7 +75,7 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">{money(b.po_value)}</td>
                 <td className="px-4 py-3">
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900">{b.status}</span>
+                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900">{deskLabel(b.status)}</span>
                   <p className="mt-1 text-xs text-slate-500">{heldAt(b)}</p>
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">{when(b.created_at)}</td>

@@ -240,5 +240,33 @@ begin
     perform pg_temp.check('every bill number is unique', n, (select count(*)::int from public.bills));
 end $$;
 
+-- ============================================================ 9. system stock references
+do $$
+declare b jsonb; v_id uuid; reference text;
+begin
+    b := public.fn_submit_bill(
+        '{"employee_id":"B24102","po_value":1000,"item_category":"Minor","qty":1,"stock_entry":"manual page 42"}'::jsonb,
+        '{"code":"F1201","name":"Dr Meera Nair","role":"Bill Employee"}'::jsonb);
+    v_id := (b->>'id')::uuid;
+    reference := regexp_replace(b->>'bill_number', '^IITM/', 'STK/');
+    perform pg_temp.check('stock reference generated on submission', b->>'stock_entry', reference);
+
+    update public.bills set stock_entry = 'manual replacement' where id = v_id;
+    perform pg_temp.check('stock reference cannot be manually updated',
+        (select stock_entry from public.bills where id = v_id), reference);
+
+    b := public.fn_amend_bill(v_id, '{"po_value":2000,"stock_entry":"manual amendment"}'::jsonb,
+        '{"code":"F1201","name":"Dr Meera Nair","role":"Bill Employee"}'::jsonb);
+    perform pg_temp.check('amendment preserves stock reference', b->>'stock_entry', reference);
+    perform pg_temp.check('amendment still adjusts reservation',
+        (select committed from public.pda_balances where employee_id = 'B24102'), 2000::numeric(12,2));
+    perform pg_temp.invariant();
+
+    perform public.fn_bill_action(v_id, 'S3001', 'Rakesh Verma', 'Student Purchase', 'Approved', 'Verified');
+    perform public.fn_bill_action(v_id, 'FA5001', 'Sanjay Kaul', 'Finance Admin', 'Approved', 'Passed');
+    perform pg_temp.check('purchase register receives stock reference',
+        (select stock_entry from public.purchase_register where bill_id = v_id), reference);
+end $$;
+
 \echo ''
 \echo '================ ALL WORKFLOW TESTS PASSED ================'

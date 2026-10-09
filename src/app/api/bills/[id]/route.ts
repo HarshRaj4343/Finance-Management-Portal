@@ -74,6 +74,7 @@ export async function PATCH(
     const actor = await requireActor();
     const { id } = await params;
     const body = (await req.json()) as Record<string, unknown>;
+    delete body.stock_entry;
 
     const bill = isUuid(id)
       ? await queryOne<{ employee_id: string }>(

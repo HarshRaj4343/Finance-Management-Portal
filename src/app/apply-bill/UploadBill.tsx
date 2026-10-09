@@ -15,7 +15,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Check, CheckCircle2, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
-import { isUmbrellaDepartment, routeAfter } from "@/lib/roles";
+import { isUmbrellaDepartment, routeAfter, deskLabel } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import type { BillRow } from "@/types/database";
 import { Banner, Button } from "./bill-form/ui";
@@ -61,41 +61,35 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
 
   const set = useCallback((patch: Partial<FormState>) => setF((p) => ({ ...p, ...patch })), []);
 
-  const submitter = {
-    id: session?.user?.employee_code ?? session?.user?.username ?? "",
-    name: session?.user?.name ?? "",
-    department: department ?? session?.user?.department ?? "",
-  };
-
-  // ---- the person who placed the order: looked up as the ID is typed ----
+  // ---- single submitter identity, looked up as the ID is typed ----
   useEffect(() => {
-    const code = f.requesterCode.trim();
+    const code = f.requesterCode.trim().toUpperCase();
     if (!code) {
       setLookup({ state: "idle" });
       return;
     }
-    setLookup((l) => ({ ...l, state: "looking" }));
+    let cancelled = false;
+    setLookup({ state: "looking" });
     const t = setTimeout(async () => {
       const { data, error } = await api.get<{
         found: boolean;
-        employee?: { employee_name: string; department: string };
-        pda?: { balance: number | string; committed: number | string } | null;
+        employee?: { employee_code: string; employee_name: string; department: string };
         message?: string | null;
-      }>(`/api/lookup/employee?code=${encodeURIComponent(code)}`);
+      }>(`/api/lookup/employee?code=${encodeURIComponent(code)}&profile=only`);
+      if (cancelled) return;
       if (error || !data?.found || !data.employee) {
         setLookup({ state: "missing", message: error ?? data?.message ?? "That employee ID could not be found." });
         return;
       }
       setLookup({
         state: "found",
+        code: data.employee.employee_code,
         name: data.employee.employee_name,
         department: data.employee.department,
-        balance: data.pda ? Number(data.pda.balance) : null,
-        committed: data.pda ? Number(data.pda.committed) : null,
         message: data.message,
       });
     }, 350);
-    return () => clearTimeout(t);
+    return () => { cancelled = true; clearTimeout(t); };
   }, [f.requesterCode]);
 
   const ctx = {
@@ -103,8 +97,6 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
     requesterDepartment: lookup.department ?? null,
     // Store and Purchase files for every school, so no department lock.
     filingDepartment: isUmbrellaDepartment(department) ? null : (department ?? null),
-    pdaBalance: lookup.balance ?? null,
-    hasPda: lookup.state === "found" && lookup.balance != null,
   };
 
   // ---- errors: shown once a field is left, or after a failed Next ----
@@ -214,12 +206,14 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
     setSubmitError(null);
     const { data, error } = await api.post<{ bill: BillRow }>(
       "/api/bills",
-      toPayload({ ...f, requesterName: lookup.name ?? f.requesterName })
+      toPayload({ ...f, requesterCode: lookup.code ?? f.requesterCode, requesterName: lookup.name ?? f.requesterName })
     );
     setSubmitting(false);
 
     if (error || !data) {
-      setSubmitError(error ?? "The bill could not be filed.");
+      setSubmitError(error && /PDA/i.test(error)
+        ? "This bill cannot be filed against the selected employee account. Please contact Finance and Accounts."
+        : error ?? "The bill could not be filed.");
       requestAnimationFrame(() => top.current?.scrollTo({ top: 0, behavior: "smooth" }));
       return;
     }
@@ -263,8 +257,8 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
             <div>
               <h1 className="text-xl font-semibold text-slate-900">Bill submitted</h1>
               <p className="mt-1 text-sm text-slate-600">
-                {inr(done.total)} is reserved against the PDA of {f.requesterCode.trim() || "the employee"}.
-                The bill is now with <strong>{done.status}</strong>.
+                The bill of {inr(done.total)} has been submitted.
+                It is now with <strong>{deskLabel(done.status)}</strong>.
               </p>
             </div>
           </div>
@@ -404,7 +398,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
                 if (id) setTouched((t) => (t.has(id) ? t : new Set(t).add(id)));
               }}
             >
-              {step === 0 && <StepSubmitter {...stepProps} submitter={submitter} lookup={lookup} />}
+              {step === 0 && <StepSubmitter {...stepProps} lookup={lookup} />}
               {step === 1 && <StepSupplier {...stepProps} />}
               {step === 2 && <StepBill {...stepProps} />}
               {step === 3 && <StepItems {...stepProps} />}
@@ -414,21 +408,20 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
                   {...stepProps}
                   goTo={goTo}
                   lookup={lookup}
-                  submitter={submitter}
                 />
               )}
             </div>
           </div>
 
           <div className="hidden lg:block">
-            <SummaryPanel f={f} lookup={lookup} variant="side" />
+            <SummaryPanel f={f} variant="side" />
           </div>
         </div>
       </div>
 
       {/* mobile summary + sticky actions */}
       <div className="shrink-0 lg:hidden">
-        <SummaryPanel f={f} lookup={lookup} variant="bar" />
+        <SummaryPanel f={f} variant="bar" />
       </div>
       <div className="shrink-0 border-t border-slate-200 bg-white/95 py-3 backdrop-blur">
         {confirmCancel ? (
@@ -457,7 +450,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
             </Button>
             <div className="flex flex-wrap items-center justify-end gap-2">
               {step === LAST && route && canSubmit && (
-                <span className="hidden text-xs text-slate-500 sm:inline">First stop: {route}</span>
+                <span className="hidden text-xs text-slate-500 sm:inline">First stop: {deskLabel(route)}</span>
               )}
               <Button variant="outline" onClick={persist} disabled={!hasContent}>
                 Save Draft
