@@ -1,0 +1,2 @@
+# Treat generated PDF documents as binary, preserving their exact bytes.
+*.pdf binary
