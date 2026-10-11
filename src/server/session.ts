@@ -1,6 +1,7 @@
 import "server-only";
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth-options";
+import { queryOne } from "./db";
 import { normaliseRole, isApprover, type Role, type Stage } from "@/lib/roles";
 
 /** Who is making this request, as far as the server is concerned. */
@@ -17,16 +18,21 @@ export async function currentActor(): Promise<Actor | null> {
   const session = await getServerSession(authOptions);
   const u = session?.user as Record<string, unknown> | undefined;
   if (!u?.employee_code) return null;
+  const employee = await queryOne<{
+    employee_code: string; employee_name: string; email: string | null;
+    employee_type: string; department: string | null; is_active: boolean;
+  }>("select * from public.employees where employee_code = $1", [u.employee_code]);
+  if (!employee?.is_active) return null;
 
   return {
-    code: String(u.employee_code),
-    name: String(u.name ?? u.employee_code),
-    email: (u.email as string) ?? null,
+    code: employee.employee_code,
+    name: employee.employee_name,
+    email: employee.email,
     // Normalise again here: a JWT minted before a role was renamed could
     // still be carrying the old spelling.
-    role: normaliseRole(u.employee_type as string),
-    department: (u.department as string) ?? null,
-    provisioned: Boolean(u.provisioned),
+    role: normaliseRole(employee.employee_type),
+    department: employee.department,
+    provisioned: true,
   };
 }
 

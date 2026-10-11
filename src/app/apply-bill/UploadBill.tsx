@@ -6,8 +6,8 @@
  *
  * Step logic and validation live in ./bill-form/model.ts; this file owns the
  * wizard: stepper, draft autosave, the sticky action bar, submission and the
- * confirmation screen. Nothing here changes what /api/bills accepts --
- * toPayload() folds the richer form into the existing columns.
+ * confirmation screen. The server validates and retains the structured
+ * form, derives flat display fields, and calculates the amount itself.
  */
 
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -20,7 +20,7 @@ import { cn } from "@/lib/utils";
 import type { BillRow } from "@/types/database";
 import { Banner, Button } from "./bill-form/ui";
 import {
-  Draft, FormState, STEPS, clearDraft, emptyForm, inr, loadDraft, saveDraft, stepOfField, toPayload, totals, validateStep,
+  Draft, FormState, STEPS, clearDraft, emptyForm, inr, loadDraft, saveDraft, stepOfField, totals, validateStep,
 } from "./bill-form/model";
 import { Lookup, StepBill, StepSubmitter, StepSupplier } from "./bill-form/steps-basic";
 import { StepFunding, StepItems } from "./bill-form/steps-items";
@@ -29,6 +29,7 @@ import { StepReview, SummaryPanel } from "./bill-form/review";
 interface UploadBillProps {
   onBillSubmitted: () => void;
   department?: string | null;
+  initialBill?: BillRow;
 }
 
 type Done = { id: string; number: string; total: number; status: string; supplier: string; at: Date };
@@ -37,11 +38,16 @@ const LAST = STEPS.length - 1;
 /** Errors on these only make sense once the person has tried to submit. */
 const DECLARATIONS = ["f-declaration", "f-total-confirmed"];
 
-const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) => {
+const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, initialBill }) => {
   const { data: session } = useSession();
-  const draftKey = `iitm-bill-draft:${session?.user?.id ?? "anon"}`;
+  const draftKey = `iitm-bill-draft:${session?.user?.id ?? "anon"}:${initialBill ? `${initialBill.id}:${initialBill.revision}` : "new"}`;
 
-  const [f, setF] = useState<FormState>(emptyForm);
+  const [f, setF] = useState<FormState>(() => initialBill?.form_data ?? {
+    ...emptyForm(), ...(initialBill ? { requesterCode: initialBill.employee_id, requesterName: initialBill.employee_name ?? "",
+      supplierName: initialBill.supplier_name ?? "", supplierAddress: initialBill.supplier_address ?? "", category: initialBill.item_category,
+      fund: initialBill.source_of_fund ?? "", billNo: initialBill.invoice_no ?? "", billDate: initialBill.invoice_date ?? "" } : {}),
+  });
+  const submission = useRef<{ fingerprint: string; key: string } | null>(null);
   const [step, setStep] = useState(0);
   const [reached, setReached] = useState(0);
   const [touched, setTouched] = useState<Set<string>>(new Set());
@@ -64,6 +70,13 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
   // ---- single submitter identity, looked up as the ID is typed ----
   useEffect(() => {
     const code = f.requesterCode.trim().toUpperCase();
+    // Corrections retain the original applicant, including a person who
+    // has since been deactivated or moved department. The API rechecks scope.
+    if (initialBill && code === initialBill.employee_id.toUpperCase()) {
+      setLookup({ state: "found", code: initialBill.employee_id, name: initialBill.employee_name ?? initialBill.employee_id,
+        department: initialBill.employee_department ?? "", message: null });
+      return;
+    }
     if (!code) {
       setLookup({ state: "idle" });
       return;
@@ -90,7 +103,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
       });
     }, 350);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [f.requesterCode]);
+  }, [f.requesterCode, initialBill]);
 
   const ctx = {
     requesterFound: lookup.state === "found",
@@ -204,10 +217,12 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department }) 
 
     setSubmitting(true);
     setSubmitError(null);
-    const { data, error } = await api.post<{ bill: BillRow }>(
-      "/api/bills",
-      toPayload({ ...f, requesterCode: lookup.code ?? f.requesterCode, requesterName: lookup.name ?? f.requesterName })
-    );
+    const form = { ...f, requesterCode: lookup.code ?? f.requesterCode, requesterName: lookup.name ?? f.requesterName };
+    const fingerprint = JSON.stringify(form);
+    if (submission.current?.fingerprint !== fingerprint) submission.current = { fingerprint, key: crypto.randomUUID() };
+    const { data, error } = initialBill
+      ? await api.patch<{ bill: BillRow }>(`/api/bills/${initialBill.id}`, { form_data: form, expected_revision: initialBill.revision })
+      : await api.post<{ bill: BillRow }>("/api/bills", { form_data: form, submission_key: submission.current!.key });
     setSubmitting(false);
 
     if (error || !data) {

@@ -22,40 +22,25 @@ const ldapConfig = {
     : ["students_ug", "Faculty", "Staff"],
 };
 
-/**
- * Fixed accounts for demonstrating the portal away from the institute
- * network, where no LDAP server is reachable. Every one of these exists as
- * a real row in `employees`, so the role still comes from the database.
- *
- * These bypass LDAP entirely, and the list includes "Dean", so leaving
- * them on in production hands anybody who guesses the password the run of
- * the portal. They are therefore OFF in production unless somebody turns
- * them on deliberately AND sets a password: no default, no "123".
- */
+// Retained for branch demonstrations away from the institute LDAP network.
+// Demo login never supplies a role: active employee records remain authoritative.
 const IS_PRODUCTION = process.env.NODE_ENV === "production";
 const DEMO_PASSWORD = process.env.DEMO_PASSWORD ?? (IS_PRODUCTION ? null : "123");
 const DEMO_LOGIN_ENABLED =
-  DEMO_PASSWORD !== null &&
+  Boolean(DEMO_PASSWORD) &&
   (process.env.DEMO_LOGIN_ENABLED === "true" ||
     (!IS_PRODUCTION && process.env.DEMO_LOGIN_ENABLED !== "false"));
+const DEMO_ACCOUNTS = [
+  "Dean", "Finance Admin", "Audit", "SNP", "Bill-form", "Bill-edit",
+  "pda manager", "User", "E001", "E002", "E003", "E004", "E005", "E006", "E007", "E008",
+];
 
 if (IS_PRODUCTION && DEMO_LOGIN_ENABLED) {
   console.warn(
     "[auth] WARNING: demo logins are ENABLED in production. Anyone who knows " +
-      "DEMO_PASSWORD can sign in as Dean. Unset DEMO_LOGIN_ENABLED to disable them."
+    "DEMO_PASSWORD can sign in as Dean. Unset DEMO_LOGIN_ENABLED to disable them."
   );
 }
-const DEMO_ACCOUNTS = [
-  "Dean",
-  "Finance Admin",
-  "Audit",
-  "SNP",
-  "Bill-form",
-  "Bill-edit",
-  "pda manager",
-  "User",
-  "E001", "E002", "E003", "E004", "E005", "E006", "E007", "E008",
-];
 
 type LdapIdentity = { uid: string; cn: string; mail: string; ou: string };
 
@@ -128,38 +113,15 @@ async function loadEmployee(code: string): Promise<{
     employee_type: string;
     is_active: boolean;
   } | null = null;
-  let error: { code?: string; message: string } | null = null;
-
-  try {
-    data = await queryOne(
+  data = await queryOne(
       `select employee_code, employee_name, email, department, employee_type, is_active
-         from public.employees where employee_code = $1`,
+         from public.employees where upper(employee_code) = upper($1)`,
       [code.trim()]
-    );
-  } catch (err) {
-    error = err as { code?: string; message: string };
-  }
-
-  if (error) {
-    // A missing column or table here means the migrations have not been
-    // applied to this project. Without this line the only symptom is that
-    // everybody silently signs in as a plain User, which looks like a
-    // permissions bug rather than a deployment one.
-    if (error.code === "42703" || error.code === "42P01") {
-      console.error(
-        `[auth] SCHEMA MISMATCH -- ${error.message}. ` +
-          "Apply db/migrations/0001_schema.sql and 0002_functions.sql " +
-          "to this database (npm run db:setup). Until then every sign-in falls back to the User role."
-      );
-    } else {
-      console.error("[auth] employee lookup failed", error.message);
-    }
-  }
-
-  if (!data || data.is_active === false) {
-    // Authenticated, but nobody has given them a role yet. They get the
-    // plain user view, which only shows their own bills, and the UI tells
-    // them to contact the Dean's office.
+  );
+  if (data && !data.is_active) throw new Error("This account is inactive.");
+  if (!data) {
+    // authorize() rejects unprovisioned accounts; this metadata does not
+    // grant an API actor or an authenticated employee role.
     return {
       code: code.trim(),
       name: code.trim(),
@@ -196,21 +158,17 @@ export const authOptions: AuthOptions = {
           throw new Error("Enter both a username and a password.");
         }
 
-        const isDemo =
-          DEMO_LOGIN_ENABLED && DEMO_ACCOUNTS.includes(username);
-
+        // Restrict DN input to institute identifier characters; no LDAP DN injection.
+        if (!/^[a-zA-Z0-9._ -]{1,100}$/.test(username)) throw new Error("Invalid credentials");
+        const isDemo = DEMO_LOGIN_ENABLED && DEMO_ACCOUNTS.includes(username);
         if (isDemo) {
-          if (password !== DEMO_PASSWORD) {
-            throw new Error("Invalid credentials");
-          }
+          if (password !== DEMO_PASSWORD) throw new Error("Invalid credentials");
         } else {
           const identity = await authenticateWithLDAP(username, password);
-          if (!identity) {
-            throw new Error("Invalid credentials");
-          }
+          if (!identity) throw new Error("Invalid credentials");
         }
-
         const employee = await loadEmployee(username);
+        if (!employee.provisioned) throw new Error("Your account has not been provisioned. Contact the Dean's office.");
 
         return {
           id: employee.code,
@@ -227,12 +185,13 @@ export const authOptions: AuthOptions = {
     }),
   ],
 
-  session: { strategy: "jwt" },
+  session: { strategy: "jwt", maxAge: 60 * 60 * 8 },
   jwt: { maxAge: 60 * 60 * 8 },
 
   callbacks: {
-    async jwt({ token, user, trigger }) {
+    async jwt({ token, user }) {
       if (user) {
+        token.signedInAt = Date.now();
         const u = user as unknown as Record<string, unknown>;
         token.id = u.id as string;
         token.username = u.username as string;
@@ -244,10 +203,15 @@ export const authOptions: AuthOptions = {
       }
 
       // If the Dean changes someone's role, they should not have to wait
-      // eight hours for it to take effect. Re-read on an explicit update.
-      if (trigger === "update" && token.employee_code) {
-        const fresh = await loadEmployee(token.employee_code as string);
+      // eight hours for it to take effect. Re-read on every session access.
+      if (token.employee_code) {
+        if (typeof token.signedInAt !== "number" || Date.now() - token.signedInAt >= 8 * 60 * 60 * 1000) return {};
+        let fresh;
+        try { fresh = await loadEmployee(token.employee_code as string); } catch { return {}; }
+
         token.employee_type = fresh.role;
+        token.name = fresh.name;
+        token.email = fresh.email;
         token.department = fresh.department;
         token.provisioned = fresh.provisioned;
       }

@@ -141,9 +141,7 @@ export const shortDate = (iso: string) => {
 };
 
 export const todayISO = () => {
-  const d = new Date();
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 };
 
 export const placeLabel = (p: Place) =>
@@ -317,10 +315,9 @@ export function stepOfField(id: string): number {
 // ---------------------------------------------------------------------
 
 /**
- * The database still stores one flat row per bill (see db/migrations
- * 0001_schema.sql: "one item per bill, by design decision"). Until the
- * structured tables of Bill-form.md §11 exist, the richer form is folded
- * into the existing text columns. Nothing here sends `indenter_name`.
+ * Derive the bill's display columns and amount. The server separately
+ * retains the complete form in bills.form_data, including individual
+ * prices, issued quantities and custodians. No manual total is trusted.
  */
 export function toPayload(f: FormState) {
   const T = totals(f);

@@ -1,26 +1,24 @@
 "use client";
-import { signOut, useSession, signIn } from "next-auth/react";
+import { signOut, useSession } from "next-auth/react";
 import React, { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { api, money } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import { normaliseRole, deskLabel } from "@/lib/roles";
 import {
+  IconEye,
   IconArrowLeft,
   IconUsers,
   IconList,
-  IconHome,
   IconClockPause,
   IconFileText,
   IconCheck,
   IconX,
-  IconEye,
   IconEdit,
   IconTrash,
   IconPlus,
-  IconLock,
 } from "@tabler/icons-react";
-import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
+import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import EditEmployeeForm from "@/components/EditEmployeeForm";
 import BillCard from "@/components/BillCard";
@@ -124,14 +122,8 @@ export default function FinanceAdminDashboard() {
   const [activePage, setActivePage] = useState<PageView>("dashboard");
 
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
-  const [showPasswordModal, setShowPasswordModal] = useState(false);
-  const [passwordAction, setPasswordAction] = useState<string>("");
-  const [enteredPassword, setEnteredPassword] = useState("");
-  const [targetEmployeeId, setTargetEmployeeId] = useState("");
-  const [isVerifying, setIsVerifying] = useState(false);
 
   // for bill actions
-  const [expandedBill, setExpandedBill] = useState<string | null>(null);
   const [remarks, setRemarks] = useState<{ [key: string]: string }>({});
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedBillDetails, setSelectedBillDetails] = useState<Bill | null>(null);
@@ -157,7 +149,7 @@ export default function FinanceAdminDashboard() {
         return;
       }
   
-      if (session && normaliseRole((session as any).user?.employee_type) !== "Finance Admin") {
+      if (session && normaliseRole(session.user?.employee_type) !== "Finance Admin") {
         window.location.href = "/";
       }
     }, [status, session]);
@@ -168,7 +160,7 @@ export default function FinanceAdminDashboard() {
   useEffect(() => {
     const fetchBills = async () => {
       setLoading(true);
-      const { data, error } = await api.get<{ bills: Bill[] }>("/api/bills?limit=500");
+      const { data, error } = await api.bills<{ bills: Bill[] }>("/api/bills?limit=500");
       setLoading(false);
       if (error) {
         setNotice({ kind: "bad", text: error });
@@ -200,10 +192,6 @@ export default function FinanceAdminDashboard() {
     if (activePage === "employees") fetchEmployees();
   }, [activePage]);
 
-  const handleEditEmployee = (employee: Employee) => {
-    setEditingEmployee(employee);
-  };
-
   const handleSaveEmployee = async (updatedEmployee: Employee) => {
     if (!updatedEmployee?.employee_code) {
       setNotice({ kind: "bad", text: "That record has no employee code, so it cannot be saved." });
@@ -216,7 +204,6 @@ export default function FinanceAdminDashboard() {
         employee_name: updatedEmployee.employee_name,
         email: updatedEmployee.email,
         department: normalizeDepartment(updatedEmployee.department),
-        employee_type: updatedEmployee.employee_type,
       }
     );
 
@@ -234,76 +221,11 @@ export default function FinanceAdminDashboard() {
     setNotice({ kind: "ok", text: `${data!.employee.employee_name} updated.` });
   };
 
-  /* ---------- Password Protection ---------- */
-  const handlePasswordAction = (action: string, employeeId?: string) => {
-    setPasswordAction(action);
-    setTargetEmployeeId(employeeId || "");
-    setShowPasswordModal(true);
-    setEnteredPassword("");
-  };
-
-  const verifyPassword = async () => {
-      // We need the user's username to re-authenticate.
-      // This assumes the username is stored in the session.
-      const loginIdentifier = session?.user?.username || session?.user?.email;
-
-      if (!loginIdentifier) {
-        setNotice({
-          kind: "bad",
-          text: "Your session does not carry a username. Sign out and sign in again.",
-        });
-        return false;
-      }
-
-      setIsVerifying(true);
-
-      // Use the exact same 'signIn' method as the login page
-      const res = await signIn("credentials", {
-        redirect: false, // Tells NextAuth not to redirect the page
-        username: loginIdentifier, // Use the logged-in user's username/email
-        password: enteredPassword, // Use the password from the modal
-      });
-
-      setIsVerifying(false);
-
-      if (res?.error) {
-        console.error("Re-authentication failed:", res.error);
-        setNotice({ kind: "bad", text: "That password was not accepted." });
-        return false;
-      }
-
-      // Password is correct
-      setShowPasswordModal(false);
-      setEnteredPassword("");
-      return true;
-    };
-  const executePasswordProtectedAction = async () => {
-    const isVerified = await verifyPassword();
-    if (!isVerified) return;
-
-    switch (passwordAction) {
-      case "delete":
-        if (targetEmployeeId) {
-          await handleDeleteEmployee(targetEmployeeId);
-        }
-        break;
-      case "add":
-        setShowAddEmployeeForm(true);
-        break;
-      case "edit":
-        if (targetEmployeeId) {
-          const employeeToEdit = employees.find((e) => e.id === targetEmployeeId);
-          if (employeeToEdit) {
-            setEditingEmployee(employeeToEdit);
-          }
-        }
-        break;
-    }
-    // Clear password modal state
-    setShowPasswordModal(false);
-    setEnteredPassword("");
-    setPasswordAction("");
-    setTargetEmployeeId("");
+  /* ---------- Directory actions: server permissions are authoritative ---------- */
+  const handleDirectoryAction = (action: string, code?: string) => {
+    if (action === "add") setShowAddEmployeeForm(true);
+    if (action === "edit") setEditingEmployee(employees.find((e) => e.employee_code === code) ?? null);
+    if (action === "delete" && code) void handleDeleteEmployee(code);
   };
 
   /* ---------- Bill Actions ---------- */
@@ -330,7 +252,7 @@ export default function FinanceAdminDashboard() {
     setNotice(null);
     const { data, error } = await api.post<{ bill: Bill }>(
       `/api/bills/${bill.id}/action`,
-      { action, remark: remark || undefined }
+      { action, remark: remark || undefined, expected_revision: bill.revision }
     );
     setBusy(null);
 
@@ -347,8 +269,8 @@ export default function FinanceAdminDashboard() {
         action === "Approved"
           ? `Bill ${data!.bill.bill_number ?? ""} approved. ${money(Number(bill.po_value))} has been debited and the purchase is now in the register.`
           : action === "Rejected"
-          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and they have been emailed.`
-          : "Bill put on hold. The applicant has been emailed.",
+          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and the decision is recorded.`
+          : "Bill put on hold. The decision is recorded on the bill timeline.",
     });
   };
 
@@ -363,6 +285,7 @@ export default function FinanceAdminDashboard() {
    * would orphan records that are meant to be permanent.
    */
   const handleDeleteEmployee = async (code: string) => {
+    if (!confirm("Deactivate this employee? Their financial history will be kept.")) return;
     const { data, error } = await api.del<{ employee: Employee; note: string }>(
       `/api/admin/employees/${encodeURIComponent(code)}`
     );
@@ -374,22 +297,6 @@ export default function FinanceAdminDashboard() {
       prev.map((e) => (e.employee_code === code ? { ...e, is_active: false } : e))
     );
     setNotice({ kind: "ok", text: data!.note });
-  };
-
-  const handleUpdateEmployee = async (code: string, updates: Partial<Employee>) => {
-    const { data, error } = await api.patch<{ employee: Employee }>(
-      `/api/admin/employees/${encodeURIComponent(code)}`,
-      updates
-    );
-    if (error) {
-      setNotice({ kind: "bad", text: error });
-      return;
-    }
-    setEmployees((prev) =>
-      prev.map((e) => (e.employee_code === code ? data!.employee : e))
-    );
-    setEditingEmployee(null);
-    setNotice({ kind: "ok", text: `${data!.employee.employee_name} updated.` });
   };
 
   const handleNewEmployeeChange = (
@@ -729,21 +636,21 @@ export default function FinanceAdminDashboard() {
                               {/* Action Buttons */}
                               <div className="flex gap-3 pt-2">
                                 <button
-                                  onClick={() => handleApprove(bill)}
+                                  disabled={busy === bill.id} onClick={() => handleApprove(bill)}
                                   className="flex items-center gap-1 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
                                 >
                                   <IconCheck size={16} />
                                   Approve
                                 </button>
                                 <button
-                                  onClick={() => handleHold(bill)}
+                                  disabled={busy === bill.id} onClick={() => handleHold(bill)}
                                   className="flex items-center gap-1 px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-colors"
                                 >
                                   <IconClockPause size={16} />
                                   Hold
                                 </button>
                                 <button
-                                  onClick={() => handleReject(bill)}
+                                  disabled={busy === bill.id} onClick={() => handleReject(bill)}
                                   className="flex items-center gap-1 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
                                 >
                                   <IconX size={16} />
@@ -864,7 +771,7 @@ export default function FinanceAdminDashboard() {
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-semibold">Manage Employees</h2>
               <button
-                onClick={() => handlePasswordAction("add")}
+                onClick={() => handleDirectoryAction("add")}
                 className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
               >
                 <IconPlus size={20} />
@@ -921,14 +828,14 @@ export default function FinanceAdminDashboard() {
                         ) : (
                           <>
                             <button
-                              onClick={() => handlePasswordAction("edit", emp.id)}
+                              onClick={() => handleDirectoryAction("edit", emp.employee_code)}
                               className="text-blue-600 hover:text-blue-900 flex items-center gap-1"
                             >
                               <IconEdit size={16} />
                               Edit
                             </button>
                             <button
-                              onClick={() => handlePasswordAction("delete", emp.id)}
+                              onClick={() => handleDirectoryAction("delete", emp.employee_code)}
                               className="text-red-600 hover:text-red-900 flex items-center gap-1 ml-2"
                             >
                               <IconTrash size={16} />
@@ -945,58 +852,6 @@ export default function FinanceAdminDashboard() {
           </div>
         )}
       </div>
-
-      {/* Password Modal */}
-      <AnimatePresence>
-        {showPasswordModal && (
-          <motion.div
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="bg-white p-6 rounded-lg shadow-lg max-w-sm w-full mx-4"
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.9 }}
-            >
-              <div className="flex items-center gap-3 mb-4">
-                <IconLock className="text-red-600" />
-                <h3 className="text-lg font-semibold">Enter Finance Admin Password</h3>
-              </div>
-              <p className="text-sm text-gray-600 mb-4">
-                This action requires Finance Admin authorization.
-              </p>
-              <input
-                type="password"
-                value={enteredPassword}
-                onChange={(e) => setEnteredPassword(e.target.value)}
-                placeholder="Enter password"
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 mb-4"
-                onKeyPress={(e) => e.key === "Enter" && executePasswordProtectedAction()}
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={executePasswordProtectedAction}
-                  className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
-                >
-                  Confirm
-                </button>
-                <button
-                  onClick={() => {
-                    setShowPasswordModal(false);
-                    setEnteredPassword("");
-                  }}
-                  className="flex-1 px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400"
-                >
-                  Cancel
-                </button>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       {/* Add Employee Modal */}
       <AnimatePresence>
@@ -1041,20 +896,8 @@ export default function FinanceAdminDashboard() {
                 </div>
                 <div>
                   <label htmlFor="employee_type" className="block text-sm font-medium text-gray-700">Employee Type</label>
-                  <select
-                    id="employee_type"
-                    name="employee_type"
-                    value={newEmployee.employee_type}
-                    onChange={handleNewEmployeeChange}
-                    className="mt-1 block w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  >
-                    <option value="Finance Admin">Finance Admin</option>
-                    <option value="Audit">Audit</option>
-                    <option value="Student Purchase">Stores and Purchase</option>
-                    <option value="bill_employee_edit">bill_employee_edit</option>
-                    <option value="bill_employee_fill">bill_employee_fill</option>
-                    <option value="pda-manager">pda-manager</option>
-                  </select>
+                  <input id="employee_type" value="User" readOnly className="mt-1 block w-full p-3 bg-gray-50 border rounded-md" />
+                  <p className="text-xs text-gray-500 mt-1">Only the Dean can assign workflow roles.</p>
                 </div>
                 <div>
                   <label htmlFor="department" className="block text-sm font-medium text-gray-700">Department</label>

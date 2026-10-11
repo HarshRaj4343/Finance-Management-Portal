@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
 
     const pda = await queryOne(
       `select allocated, balance, committed, spent, updated_at
-         from public.pda_balances where employee_id = $1`,
+         from public.pda_balances where employee_id = $1 and is_active`,
       [employee.employee_code]
     );
 

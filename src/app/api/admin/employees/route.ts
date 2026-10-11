@@ -1,8 +1,9 @@
 import { NextRequest } from "next/server";
-import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
+import { query, actorQueryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireRole } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { ROLES, normaliseRole } from "@/lib/roles";
+import { isMoney } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -53,7 +54,7 @@ export async function GET(req: NextRequest) {
                 'updated_at',  pda.updated_at
               ) end as pda
          from public.employees e
-         left join public.pda_balances pda on pda.employee_id = e.employee_code
+         left join public.pda_balances pda on pda.employee_id = e.employee_code and pda.is_active
          ${whereClause(where)}
         order by e.employee_type, e.employee_code`,
       params.values
@@ -93,7 +94,10 @@ export async function POST(req: NextRequest) {
     // Open a PDA account at the same time if an allocation was given. One
     // statement, so a failed PDA insert does not leave the person half-added.
     const allocated = Number(b.allocated ?? 0);
-    const data = await queryOne(
+    if (!isMoney(allocated)) return badRequest("Enter a finite allocation of zero or more, with at most two decimal places.");
+    if (allocated > 0 && actor.role !== "Dean") return badRequest("Only the Dean or PDA Manager may allocate funds. Add the employee without an allocation first.");
+    if (b.employee_type !== undefined && !ROLES.includes(String(b.employee_type) as (typeof ROLES)[number])) return badRequest("Choose a recognised role.");
+    const data = await actorQueryOne(actor.code,
       `with person as (
          insert into public.employees
            (employee_code, employee_name, email, department, employee_type, is_active)

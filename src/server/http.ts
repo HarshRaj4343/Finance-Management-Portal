@@ -24,13 +24,14 @@ export function fail(err: unknown, fallback = "Something went wrong."): NextResp
   }
 
   // Constraint violations we can phrase better than Postgres does.
+  if (e?.code === "40001") return NextResponse.json({ error: e.message ?? "The record changed. Reload and retry." }, { status: 409 });
   if (e?.code === "23505") {
     return NextResponse.json(
       { error: "That record already exists." },
       { status: 409 }
     );
   }
-  if (e?.code === "23514" && /pda_conserved|pda_non_negative/.test(e.message ?? "")) {
+  if (e?.code === "23514" || e?.code === "22P02" || e?.code === "22003" || e?.code === "22007" || e?.code === "22008") {
     return NextResponse.json(
       { error: "That change would leave the PDA account inconsistent. Nothing was saved." },
       { status: 400 }
@@ -47,9 +48,7 @@ export function fail(err: unknown, fallback = "Something went wrong."): NextResp
     return NextResponse.json(
       {
         error:
-          "This database is missing part of the schema this app expects (" +
-          (e.message ?? "unknown object") +
-          "). Apply db/migrations/0001_schema.sql and 0002_functions.sql to it (npm run db:setup).",
+          "This database needs an upgrade. Ask the administrator to back it up and run npm run db:upgrade. Do not rebuild an existing database.",
       },
       { status: 503 }
     );

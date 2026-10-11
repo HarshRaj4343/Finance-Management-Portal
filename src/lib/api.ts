@@ -44,6 +44,24 @@ async function request<T>(
 }
 
 export const api = {
+  /** Follow keyset pages so an old pending bill is never hidden by a fixed cap. */
+  bills: async <T extends { bills: unknown[] }>(url: string): Promise<Result<T>> => {
+    const all: unknown[] = [];
+    let cursor: string | null = null;
+    let first: T | null = null;
+    do {
+      const target = new URL(url, "http://portal.invalid");
+      target.searchParams.set("limit", "500");
+      target.searchParams.delete("offset");
+      if (cursor) target.searchParams.set("cursor", cursor);
+      const result = await request<T & { nextCursor: string | null }>(target.pathname + target.search, { method: "GET", cache: "no-store" });
+      if (result.error || !result.data) return { data: null, error: result.error ?? "Could not load all bills." };
+      first ??= result.data;
+      all.push(...result.data.bills);
+      cursor = result.data.nextCursor;
+    } while (cursor);
+    return { data: { ...first!, bills: all } as T, error: null };
+  },
   get: <T>(url: string) => request<T>(url, { method: "GET", cache: "no-store" }),
   post: <T>(url: string, body: unknown) =>
     request<T>(url, { method: "POST", body: JSON.stringify(body) }),

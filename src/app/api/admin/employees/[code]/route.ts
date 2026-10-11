@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { queryOne, Params } from "@/server/db";
+import { queryOne, actorQueryOne, Params } from "@/server/db";
 import { requireRole } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { ROLES, normaliseRole } from "@/lib/roles";
@@ -17,14 +17,14 @@ export async function PATCH(
   try {
     const actor = await requireRole("Dean", "Finance Admin");
     const { code } = await params;
-    const target = decodeURIComponent(code).trim();
+    const target = code.trim();
     const b = (await req.json()) as Record<string, unknown>;
 
     const patch: Record<string, unknown> = {};
 
     if (b.employee_type !== undefined) {
       const role = normaliseRole(String(b.employee_type));
-      if (!ROLES.includes(role)) return badRequest("That is not a role we recognise.");
+      if (!ROLES.includes(String(b.employee_type) as (typeof ROLES)[number])) return badRequest("That is not a role we recognise.");
 
       // architecture.jpeg puts one person in charge of who is what. This is
       // that gate: a Finance Admin can correct a name or an email, but only
@@ -60,7 +60,8 @@ export async function PATCH(
     if (b.department !== undefined) patch.department = String(b.department).trim();
 
     if (b.is_active !== undefined) {
-      const active = Boolean(b.is_active);
+      if (typeof b.is_active !== "boolean") return badRequest("Active status must be true or false.");
+      const active = b.is_active;
       if (target === actor.code && !active) {
         return badRequest("You cannot deactivate your own account.");
       }
@@ -72,7 +73,7 @@ export async function PATCH(
     // Column names come from the fixed set above, never from the request.
     const values = new Params();
     const sets = Object.entries(patch).map(([column, value]) => `${column} = ${values.add(value)}`);
-    const data = await queryOne(
+    const data = await actorQueryOne(actor.code,
       `update public.employees set ${sets.join(", ")}
         where employee_code = ${values.add(target)}
         returning *`,
@@ -103,13 +104,13 @@ export async function DELETE(
   try {
     const actor = await requireRole("Dean", "Finance Admin");
     const { code } = await params;
-    const target = decodeURIComponent(code).trim();
+    const target = code.trim();
 
     if (target === actor.code) {
       return badRequest("You cannot deactivate your own account.");
     }
 
-    const data = await queryOne<{ employee_code: string; employee_name: string; is_active: boolean }>(
+    const data = await actorQueryOne<{ employee_code: string; employee_name: string; is_active: boolean }>(actor.code,
       `update public.employees set is_active = false
         where employee_code = $1
         returning employee_code, employee_name, is_active`,

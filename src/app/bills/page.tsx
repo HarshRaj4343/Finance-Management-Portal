@@ -123,7 +123,7 @@ export default function AllBillsPage() {
     // approver gets the lot. The browser is not trusted to filter this.
     async function fetchBills() {
       setLoading(true);
-      const { data, error: err } = await api.get<{ bills: BillWithEmployee[] }>(
+      const { data, error: err } = await api.bills<{ bills: BillWithEmployee[] }>(
         "/api/bills?limit=500"
       );
       setLoading(false);

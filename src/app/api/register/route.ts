@@ -3,6 +3,7 @@ import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok } from "@/server/http";
 import { canSeeAllBills } from "@/lib/roles";
+import { pagination } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,8 +23,7 @@ export async function GET(req: NextRequest) {
     const actor = await requireActor();
     const p = req.nextUrl.searchParams;
 
-    const limit = Math.min(Number(p.get("limit") ?? 100) || 100, 500);
-    const offset = Math.max(Number(p.get("offset") ?? 0) || 0, 0);
+    const { limit, offset } = pagination(p);
 
     const params = new Params();
     const where: string[] = [];
@@ -52,27 +52,27 @@ export async function GET(req: NextRequest) {
     const filterValues = [...params.values];
     const page = `limit ${params.add(limit)} offset ${params.add(offset)}`;
 
-    const [entries, counted, totals] = await Promise.all([
+    const [entries, counted, totals, years] = await Promise.all([
       query(
         `select * from public.purchase_register ${filter}
-         order by recorded_at desc ${page}`,
+         order by recorded_at desc, id desc ${page}`,
         params.values
       ),
       queryOne<{ total: number }>(
         `select count(*) as total from public.purchase_register ${filter}`,
         filterValues
       ),
-      // Totals for the filtered set, computed in the database rather than by
-      // adding up one page of rows in the browser.
-      // A department name that is not in the enum makes the cast inside
-      // fn_register_totals fail; the entries still load, without totals.
       queryOne<{ totals: unknown }>(
-        "select public.fn_register_totals($1, $2) as totals",
-        [p.get("department"), p.get("fy")]
-      ).catch((err) => {
-        console.error("[register] totals failed", err.message);
-        return null;
-      }),
+        `select jsonb_build_object('entries', count(*), 'amount', coalesce(sum(amount),0),
+          'departments', count(distinct department), 'financial_year', $${filterValues.length + 1}::text,
+          'current_year', public.fn_financial_year()) as totals
+          from public.purchase_register ${filter}`,
+        [...filterValues, p.get("fy")]
+      ),
+      query<{ financial_year: string }>(
+        `select distinct financial_year from public.purchase_register ${!canSeeAllBills(actor.role) ? 'where employee_code = $1' : ''} order by financial_year desc`,
+        !canSeeAllBills(actor.role) ? [actor.code] : []
+      ),
     ]);
 
     return ok({
@@ -81,6 +81,7 @@ export async function GET(req: NextRequest) {
       limit,
       offset,
       totals: totals?.totals ?? null,
+      financialYears: years.map((row) => row.financial_year),
     });
   } catch (err) {
     return fail(err, "Could not load the purchase register.");

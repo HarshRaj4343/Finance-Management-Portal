@@ -1,11 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // --- ADD THIS LINE ---
   output: 'standalone',
-  // ---------------------
 
-  /* other config options here */
   // Type errors now fail the build. They used to be ignored, which is how a
   // types file describing a schema that no longer existed survived in the
   // repository, and why so much of the app was cast through `any`.
@@ -16,7 +13,7 @@ const nextConfig: NextConfig = {
   // Lint warnings are still not worth failing a deployment over; `npm run
   // lint` reports them.
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
 
   // The version banner tells an attacker which advisories to try.
@@ -40,7 +37,7 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              process.env.NODE_ENV === "development" ? "script-src 'self' 'unsafe-inline' 'unsafe-eval'" : "script-src 'self' 'unsafe-inline'",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob:",
               "font-src 'self' data:",

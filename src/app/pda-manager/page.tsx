@@ -1,6 +1,7 @@
 
 "use client";
 
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { api, money } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
@@ -12,14 +13,6 @@ import { useSession, signOut } from "next-auth/react";
  * Small local Sidebar implementation (drop-in).
  * If you already have a Sidebar component, you can replace these exports/imports.
  */
-function IconArrowLeft(props: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
-      <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
 function IconClose(props: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
@@ -51,7 +44,7 @@ function Sidebar({
       <div className="flex items-center justify-between px-3 py-3 border-b border-neutral-100">
         <div className="flex items-center gap-2">
           <div className="h-8 w-8 rounded bg-neutral-100" >
-            <img src='./iit.png'/>
+            <Image width={80} height={80} src='/iit.png' alt='IIT Mandi'/>
             </div>
           {open && <span className="font-semibold text-neutral-800">IIT Mandi</span>}
         </div>
@@ -199,7 +192,7 @@ export default function PdaManagerPage() {
       return;
     }
 
-    const role = normaliseRole((session as any)?.user?.employee_type);
+    const role = normaliseRole(session?.user?.employee_type);
     if (session && role !== "PDA Manager" && role !== "Dean") {
       window.location.href = "/";
     }
@@ -279,7 +272,7 @@ export default function PdaManagerPage() {
     setLoading(true);
     const { data, error } = await api.patch<{ account: PdaBalance }>("/api/admin/pda", {
       employee_id: editing.employee_id.trim(),
-      allocated: Number.isFinite(editing.balance) ? Number(editing.balance) : 0,
+      allocated: Number(editing.allocated),
     });
     setLoading(false);
 
@@ -594,9 +587,9 @@ export default function PdaManagerPage() {
                 </div>
 
                 <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <input type="text" placeholder="Employee ID" value={editing.employee_id} onChange={(e) => setEditing((prev) => (prev ? { ...prev, employee_id: e.target.value } : prev))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
-                  <input type="number" placeholder="Balance" value={String(editing.balance)} onChange={(e) => setEditing((prev) => (prev ? { ...prev, balance: e.target.value === "" ? 0 : parseFloat(e.target.value) } : prev))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
-                  <select value={editing.department} onChange={(e) => setEditing((prev) => (prev ? { ...prev, department: e.target.value } : prev))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none">
+                  <input type="text" aria-label="Employee ID" readOnly value={editing.employee_id} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
+                  <input type="number" aria-label="Total allocation" placeholder="Total allocation" value={String(editing.allocated)} onChange={(e) => setEditing((prev) => (prev ? { ...prev, allocated: e.target.value === "" ? 0 : parseFloat(e.target.value) } : prev))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
+                  <select aria-label="Department (managed in the employee directory)" disabled value={editing.department} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none">
                     <option value="">Select Department</option>
                     {DEPARTMENTS.map((d) => (
                       <option key={d} value={d}>
@@ -604,7 +597,7 @@ export default function PdaManagerPage() {
                       </option>
                     ))}
                   </select>
-                  <input type="email" placeholder="Email" value={editing.email ?? ""} onChange={(e) => setEditing((prev) => (prev ? { ...prev, email: e.target.value } : prev))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
+                  <input type="email" aria-label="Email (managed in the employee directory)" readOnly value={editing.email ?? ""} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
                 </div>
 
                 <div className="mt-6 flex items-center justify-end gap-2">

@@ -1,12 +1,12 @@
 /**
  * Master data for the bill form (Bill-form.md §4, §5, §6).
  *
- * These are STATIC PLACEHOLDERS. The spec wants every dropdown backed by a
+ * These are static configured choices. The spec wants every dropdown backed by a
  * master table managed by Stores / Accounts; none of those tables exist yet.
  * Each export below is the one place to swap for an API call when they do.
  *
  * Purchase orders and buildings are empty until their masters exist.
- * Suppliers below are demo fixtures; the comboboxes also accept typed values.
+ * Supplier suggestions are empty; the comboboxes accept real typed values.
  */
 
 export const PURCHASE_TYPES = [
@@ -37,17 +37,9 @@ export const BUILDINGS: string[] = [];
 export type Supplier = { name: string; address: string };
 
 /**
- * DEMO suppliers, all fictional, for trying the form. Replace with the real
- * Supplier Master (Purchase / Accounts).
+ * Populate only from the real Supplier Master (Purchase / Accounts).
  */
-export const SUPPLIERS: Supplier[] = [
-  { name: "Demo Computers & Peripherals", address: "12 Industrial Area, Mandi, Himachal Pradesh 175001" },
-  { name: "Demo Office Furniture House", address: "45 Bypass Road, Sundernagar, Himachal Pradesh 175018" },
-  { name: "Demo Lab Instruments Pvt Ltd", address: "Plot 7, Sector 18, Gurugram, Haryana 122015" },
-  { name: "Demo Electricals & Appliances", address: "SCO 21, Sector 9, Chandigarh 160009" },
-  { name: "Demo Stationery Mart", address: "Main Bazaar, Mandi, Himachal Pradesh 175001" },
-  { name: "Demo Local Hardware Store", address: "Purani Mandi, Mandi, Himachal Pradesh 175001" },
-];
+export const SUPPLIERS: Supplier[] = [];
 
 export type Fund = { code: string; description: string; group: string };
 
@@ -89,6 +81,8 @@ export const ITEM_GROUPS = [FU, IT, EL, BO, "Lab Equipment", "Miscellaneous"] as
 
 /** Every item type has its own entry; combined labels are not selectable. */
 export const ITEM_TYPES: ItemType[] = [
+  t("Lab Equipment", "Lab equipment (specify in description)"),
+  t("Miscellaneous", "Other item (specify in description)"),
   ...[
     "Visitor Chair", "Revolving Chair", "Lab Table", "Office Table", "Centre Table", "Stool",
     "Desk", "Bench", "Wooden Almirah", "Book case", "Wooden Workstation", "Sofa set", "Bed",

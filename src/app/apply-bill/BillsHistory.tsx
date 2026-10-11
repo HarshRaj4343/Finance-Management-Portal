@@ -9,8 +9,7 @@ interface BillsHistoryProps {
   bills: Bill[];
   loading: boolean;
   onBillUpdated: () => void;
-  alwaysEditable?: boolean; // if true, show Edit for all rows
-  allowDelete?: boolean;    // if true, show Delete for each row
+  allowNote?: boolean;      // acknowledge a rejected bill; never delete it
   enableEdit?: boolean;     // if false, hide Edit UI completely
   onBillNoted?: (billId: string) => void; // Callback when a bill is noted
 }
@@ -19,8 +18,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
   bills, 
   loading, 
   onBillUpdated,
-  alwaysEditable = false,
-  allowDelete = false,
+  allowNote = false,
   enableEdit = true,
   onBillNoted,
 }) => {
@@ -29,9 +27,8 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
   const [noteError, setNoteError] = useState<string | null>(null);
 
   const canEditBill = (bill: Bill) => {
-    if (alwaysEditable) return true;
     // Otherwise only when on hold in any dept
-    return bill.snp === "Hold" || bill.audit === "Hold";
+    return !["Accepted", "Rejected"].includes(bill.status) && (bill.snp === "Hold" || bill.audit === "Hold" || bill.finance_admin === "Hold");
   };
 
   /**
@@ -43,7 +40,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
    * doing it here as well would credit the same amount twice.
    */
   const handleNoted = async (billId: string) => {
-    if (!allowDelete || !onBillNoted) return;
+    if (!allowNote || !onBillNoted) return;
 
     const confirmed = window.confirm(
       "Note this rejected bill? It will be cleared from this list. The bill and its history will remain in the portal."
@@ -148,7 +145,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
                   Edit
                 </th>
               )}
-              {allowDelete && (
+              {allowNote && (
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Noted
                 </th>
@@ -225,7 +222,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
                     </button>
                   </td>
                 )}
-                {allowDelete && (
+                {allowNote && (
                   <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       onClick={() => handleNoted(bill.id)}

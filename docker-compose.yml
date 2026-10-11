@@ -1,28 +1,7 @@
-# PILOT deployment: two containers, one private network.
-#
-# The database is NOT reachable from outside this compose network -- it
-# publishes no port on the host, so the only thing that can talk to it is
-# the app container. Back it up with scripts/db-backup.sh.
-#
-# ---------------------------------------------------------------------
-# THIS IS SET UP FOR PILOT TESTING, NOT FOR REAL MONEY:
-#   * the demo dataset is loaded into the database (59 people, 151 bills)
-#   * demo logins are on, so Dean / Finance Admin / Audit / SNP /
-#     Bill-form / Bill-edit / "pda manager" / User sign in with
-#     DEMO_PASSWORD and no LDAP
-# Before the portal handles real bills, do both of these:
-#   1. delete the 0003_demo_data.sql line below, and recreate the
-#      database:  docker compose down -v && docker compose up -d
-#   2. remove DEMO_LOGIN_ENABLED and DEMO_PASSWORD from .env
-# ---------------------------------------------------------------------
-#
-# Required in .env (see .env.example):
-#   POSTGRES_PASSWORD   database password, generated, not a word
-#   NEXTAUTH_SECRET     openssl rand -base64 32
-#   NEXTAUTH_URL        https://<the portal's public URL>
-#   DEMO_LOGIN_ENABLED=true and DEMO_PASSWORD   (pilot only)
-#   LDAP_URL, LDAP_BASE_DN, OU                  (if LDAP is reachable)
-#
+# Self-hosted deployment. Demo accounts are not seeded automatically.
+# Demo login requires explicit production enablement/password in .env.
+# Existing volumes are upgraded with npm run db:upgrade; never delete a volume
+# to apply a migration. See README.md for backups and initial Dean provisioning.
 services:
   db:
     image: postgres:17-alpine
@@ -40,10 +19,7 @@ services:
       - ./db/migrations/0001_schema.sql:/docker-entrypoint-initdb.d/0001_schema.sql:ro
       - ./db/migrations/0002_functions.sql:/docker-entrypoint-initdb.d/0002_functions.sql:ro
       - ./db/migrations/0003_stock_entry.sql:/docker-entrypoint-initdb.d/0003_stock_entry.sql:ro
-      # PILOT ONLY -- the demo dataset, and the demo accounts (Dean,
-      # Finance Admin, Audit, SNP, ...) that the demo logins sign in as.
-      # Delete this line before the portal is used for real bills.
-      - ./db/seed/0003_demo_data.sql:/docker-entrypoint-initdb.d/0004_demo_data.sql:ro
+      - ./db/migrations/0004_integrity.sql:/docker-entrypoint-initdb.d/0004_integrity.sql:ro
     # No `ports:` -- the database is reachable only on the compose network,
     # as the institute asked. To inspect it:
     #   docker compose exec db psql -U ifmp -d ifmp

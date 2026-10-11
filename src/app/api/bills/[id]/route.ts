@@ -4,6 +4,7 @@ import { requireActor } from "@/server/session";
 import { fail, ok } from "@/server/http";
 import { canSeeAllBills, plannedRoute } from "@/lib/roles";
 import { isUuid } from "@/lib/utils";
+import { assertBillWriter, billPayload } from "@/server/bill-validation";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export async function GET(
       return ok({ error: "This bill belongs to somebody else." }, 403);
     }
 
-    const [events, register, applicant] = await Promise.all([
+    const [events, register, applicant, revisions] = await Promise.all([
       query("select * from public.bill_approvals where bill_id = $1 order by seq", [id]),
       queryOne("select * from public.purchase_register where bill_id = $1", [id]),
       queryOne(
@@ -43,6 +44,7 @@ export async function GET(
            from public.employees where employee_code = $1`,
         [bill.employee_id]
       ),
+      query("select actor_code, old_data, new_data, recorded_at from public.change_log where entity = 'bills' and entity_id = $1 order by id", [id]),
     ]);
 
     return ok({
@@ -50,6 +52,7 @@ export async function GET(
       events,
       register,
       applicant,
+      revisions,
       // The desks this bill was always going to visit, so the timeline can
       // show what is still ahead of it as well as what is behind.
       route: plannedRoute(bill.item_category, Number(bill.po_value)),
@@ -63,8 +66,8 @@ export async function GET(
  * PATCH /api/bills/:id — correct a bill that came back on hold.
  *
  * fn_amend_bill moves the PDA reservation with the amount, in the same
- * transaction, and puts the bill back into the queue at whichever desk is
- * holding it. It refuses to touch a bill that has already been decided.
+ * transaction, invalidates previous approvals, and restarts the required
+ * route. It rejects non-held bills and stale correction versions.
  */
 export async function PATCH(
   req: NextRequest,
@@ -73,26 +76,25 @@ export async function PATCH(
   try {
     const actor = await requireActor();
     const { id } = await params;
-    const body = (await req.json()) as Record<string, unknown>;
-    delete body.stock_entry;
+    const input = (await req.json()) as Record<string, unknown>;
+    const body = billPayload(input.form_data);
 
     const bill = isUuid(id)
-      ? await queryOne<{ employee_id: string }>(
-          "select employee_id from public.bills where id = $1",
+      ? await queryOne<{ employee_id: string; employee_department: string | null }>(
+          "select employee_id, employee_department from public.bills where id = $1",
           [id]
         )
       : null;
     if (!bill) return ok({ error: "No such bill." }, 404);
 
-    if (!canSeeAllBills(actor.role) && bill.employee_id !== actor.code) {
-      return ok({ error: "That bill belongs to somebody else." }, 403);
-    }
+    assertBillWriter(actor, bill.employee_id, bill.employee_department, true);
+    if (body.employee_id.toUpperCase() !== bill.employee_id.toUpperCase()) return ok({ error: "The applicant cannot be changed." }, 400);
 
     const row = await queryOne<{ bill: unknown }>(
       "select public.fn_amend_bill($1::uuid, $2::jsonb, $3::jsonb) as bill",
       [
         id,
-        JSON.stringify(body),
+        JSON.stringify({ ...body, employee_id: bill.employee_id, expected_revision: input.expected_revision }),
         JSON.stringify({ code: actor.code, name: actor.name, role: actor.role }),
       ]
     );

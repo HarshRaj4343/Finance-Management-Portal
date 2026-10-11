@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
+import { billScopeQuery } from "@/lib/roles";
 import Notice, { NoticeState } from "@/components/Notice";
 import BillsHistory from "../apply-bill/BillsHistory";
 import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
@@ -22,8 +23,8 @@ export default function BillEditorPage() {
   // This desk corrects bills for its own department. The department comes
   // from /api/me; the bills come back already scoped by the server.
   const loadBills = async (dept: string) => {
-    const { data, error } = await api.get<{ bills: Bill[] }>(
-      `/api/bills?department=${encodeURIComponent(dept)}&limit=500`
+    const { data, error } = await api.bills<{ bills: Bill[] }>(
+      `/api/bills?${billScopeQuery(dept)}`
     );
     if (error) {
       setNotice({ kind: "bad", text: error });
@@ -96,7 +97,7 @@ export default function BillEditorPage() {
       <div className="flex flex-1 p-6 overflow-y-auto bg-gray-50">
         <div className="w-full">
           <h2 className="text-2xl font-semibold mb-6">Bill Editor</h2>
-          <BillsHistory bills={billsOnHold} loading={loading} onBillUpdated={handleBillUpdated} alwaysEditable allowDelete={false} />
+          <BillsHistory bills={billsOnHold} loading={loading} onBillUpdated={handleBillUpdated} allowNote={false} />
         </div>
       </div>
     </div>

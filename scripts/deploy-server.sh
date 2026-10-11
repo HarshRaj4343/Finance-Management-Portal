@@ -120,7 +120,6 @@ if [ -f .env ]; then
   say ".env already exists -- leaving its values alone"
 else
   say "writing .env"
-  DEMO_PW=${DEMO_PASSWORD:-$(openssl rand -base64 12 | tr -d '/+=' | cut -c1-12)}
   cat > .env <<EOF
 # Written by scripts/deploy-server.sh on $(date -u +%Y-%m-%dT%H:%MZ)
 
@@ -140,17 +139,15 @@ NEXTAUTH_URL=https://$PORTAL_HOST:$PORTAL_PORT
 SSL_CERT_FILE=$CERT
 SSL_KEY_FILE=$KEY
 
-# Pilot testing: demo accounts sign in without LDAP. Remove both lines
-# (and the demo data) before the portal handles real bills.
-DEMO_LOGIN_ENABLED=true
-DEMO_PASSWORD=$DEMO_PW
 
-# The demo employees have realistic @iitmandi.ac.in addresses, so mail is
-# off until a real SMTP relay is configured -- otherwise a pilot run can
-# email people who have nothing to do with it.
+# Enable only after configuring the institute SMTP relay.
 MAIL_ENABLED=false
 
-# LDAP, for real sign-ins. Demo logins work without it.
+# LDAP is required for non-demo sign-ins.
+# Demo login is retained but must be explicitly enabled for a demonstration.
+# Never enable shared-password Dean access on a live financial deployment.
+# DEMO_LOGIN_ENABLED=true
+# DEMO_PASSWORD=<shared-demo-password>
 # LDAP_URL=ldaps://<ldap-host>:636
 # LDAP_BASE_DN=dc=iitmandi,dc=ac,dc=in
 # OU=["students_ug","Faculty","Staff"]
@@ -176,9 +173,17 @@ say "building the image (first run takes a few minutes)"
 
 say "starting the database"
 "${DOCKER[@]}" compose up -d --wait db
-say "applying the additive stock-reference migration"
+say "backing up the database before additive migrations"
+mkdir -p backups
+UPGRADE_BACKUP_DIR=$(mktemp -d backups/pre-upgrade.XXXXXX)
+"${DOCKER[@]}" compose exec -T db pg_dump -U ifmp -d ifmp -Fc > "$UPGRADE_BACKUP_DIR/database.dump"
+[ -s "$UPGRADE_BACKUP_DIR/database.dump" ] || { warn "Backup failed; refusing to upgrade"; exit 1; }
+say "backup saved to $UPGRADE_BACKUP_DIR/database.dump"
+say "applying additive migrations"
 "${DOCKER[@]}" compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 \
   < db/migrations/0003_stock_entry.sql
+"${DOCKER[@]}" compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 \
+  < db/migrations/0004_integrity.sql
 
 say "starting the containers"
 "${DOCKER[@]}" compose up -d
@@ -199,7 +204,7 @@ if [ "${code:-}" = "200" ]; then
   say "the portal is up at https://$PORTAL_HOST:$PORTAL_PORT"
   BILLS=$("${DOCKER[@]}" compose exec -T db psql -U ifmp -d ifmp -tAc 'select count(*) from bills' 2>/dev/null | tr -d ' \r' || echo '?')
   say "database holds $BILLS bills"
-  say "sign in as 'Dean' with DEMO_PASSWORD from .env:  grep DEMO_PASSWORD .env"
+  say "Configure LDAP and provision the first Dean as described in README.md."
   echo
   say "next: schedule a backup"
   echo "    (crontab -l 2>/dev/null; echo \"0 2 * * *  cd $PWD && ./scripts/db-backup.sh >> /tmp/ifmp-backup.log 2>&1\") | crontab -"

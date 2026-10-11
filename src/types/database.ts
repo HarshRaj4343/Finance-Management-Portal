@@ -67,6 +67,11 @@ export interface PdaBalanceRow {
 
 export interface BillRow {
   id: string;
+  revision: number;
+  created_by: string | null;
+  invoice_no: string | null;
+  invoice_date: string | null;
+  form_data: import("@/app/apply-bill/bill-form/model").FormState | null;
   bill_number: string | null;
 
   employee_id: string;

@@ -4,12 +4,14 @@ import { requireActor } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { canSeeAllBills } from "@/lib/roles";
 import { findEmployee } from "@/server/employee";
+import { assertBillWriter, billPayload } from "@/server/bill-validation";
+import { pagination } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const BILL_COLUMNS = `
-  id, bill_number, employee_id, employee_name, employee_department,
+  id, revision, created_by, invoice_no, invoice_date, form_data, bill_number, employee_id, employee_name, employee_department,
   po_details, po_value, supplier_name, supplier_address,
   item_category, item_description, qty, qty_issued, bill_details,
   indenter_name, source_of_fund, stock_entry, location,
@@ -17,7 +19,7 @@ const BILL_COLUMNS = `
   date_of_installation, date_of_delivery,
   status, snp, audit, finance_admin, noted,
   remarks, remarks1, remarks2, remarks3, remarks4,
-  decided_at, created_at, updated_at
+  decided_at, created_at::text, updated_at::text
 `;
 
 /**
@@ -38,8 +40,7 @@ export async function GET(req: NextRequest) {
     const actor = await requireActor();
     const p = req.nextUrl.searchParams;
 
-    const limit = Math.min(Number(p.get("limit") ?? 100) || 100, 500);
-    const offset = Math.max(Number(p.get("offset") ?? 0) || 0, 0);
+    const { limit, offset } = pagination(p);
 
     const params = new Params();
     const where: string[] = [];
@@ -68,6 +69,12 @@ export async function GET(req: NextRequest) {
       );
     }
 
+    if (p.get("cursor")) {
+      const [date, id] = p.get("cursor")!.split("|");
+      if (!date || Number.isNaN(Date.parse(date)) || !/^[0-9a-f-]{36}$/i.test(id ?? "")) return badRequest("Invalid page cursor.");
+      where.push(`(created_at, id) < (${params.add(date)}::timestamptz, ${params.add(id)}::uuid)`);
+    }
+
     const filter = whereClause(where);
     const filterValues = [...params.values];
     const page = `limit ${params.add(limit)} offset ${params.add(offset)}`;
@@ -75,7 +82,7 @@ export async function GET(req: NextRequest) {
     const [data, counted] = await Promise.all([
       query(
         `select ${BILL_COLUMNS} from public.bills ${filter}
-         order by created_at desc ${page}`,
+         order by bills.created_at desc, bills.id desc ${page}`,
         params.values
       ),
       queryOne<{ total: number }>(
@@ -84,7 +91,9 @@ export async function GET(req: NextRequest) {
       ),
     ]);
 
-    return ok({ bills: data, total: counted?.total ?? 0, limit, offset });
+    const last = data[data.length - 1];
+    return ok({ bills: data, total: counted?.total ?? 0, limit, offset,
+      nextCursor: data.length === limit && last ? `${last.created_at}|${last.id}` : null });
   } catch (err) {
     return fail(err, "Could not load bills.");
   }
@@ -104,18 +113,16 @@ export async function POST(req: NextRequest) {
     const actor = await requireActor();
 
     // A plain user cannot file a bill for somebody else.
-    const body = (await req.json()) as Record<string, unknown>;
-    if (!canSeeAllBills(actor.role)) {
-      body.employee_id = actor.code;
-    }
+    const input = (await req.json()) as Record<string, unknown>;
+    const body = billPayload(input.form_data);
 
     if (!body.employee_id) return badRequest("An employee ID is required.");
     const employee = await findEmployee(String(body.employee_id));
     if (!employee?.is_active) return badRequest("No active employee has this ID. Check the employee ID or student enrolment number.");
+    assertBillWriter(actor, employee.employee_code, employee.department);
     body.employee_id = employee.employee_code;
     body.employee_name = employee.employee_name;
     // Stock references are assigned by the database, never by the browser.
-    delete body.stock_entry;
     if (!body.item_category) return badRequest("Choose an item category.");
     const amount = Number(body.po_value);
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -125,7 +132,7 @@ export async function POST(req: NextRequest) {
     const row = await queryOne<{ bill: unknown }>(
       "select public.fn_submit_bill($1::jsonb, $2::jsonb) as bill",
       [
-        JSON.stringify({ ...body, po_value: amount }),
+        JSON.stringify({ ...body, po_value: amount, submission_key: input.submission_key }),
         JSON.stringify({ code: actor.code, name: actor.name, role: actor.role }),
       ]
     );

@@ -1,6 +1,7 @@
 "use client";
+import Image from "next/image";
 import React, { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { api, money } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import { normaliseRole, deskLabel } from "@/lib/roles";
@@ -10,9 +11,7 @@ import {
   IconCheck,
   IconX,
   IconClockPause,
-  IconHome,
   IconListDetails,
-  IconEye,
   IconClock,
   IconAlertCircle,
   IconSearch,
@@ -22,7 +21,7 @@ import {
   IconMapPin,
   IconCategory,
 } from "@tabler/icons-react";
-import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
+import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import BillCard from "@/components/BillCard";
 
@@ -35,7 +34,6 @@ export default function AuditDashboard() {
   const [bills, setBills] = useState<Bill[]>([]);
   const [filteredBills, setFilteredBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedBillId, setExpandedBillId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<
     "All" | "Approved" | "Hold" | "Reject" | "Pending"
   >("Pending");
@@ -64,7 +62,7 @@ export default function AuditDashboard() {
       return;
     }
 
-    if (session && normaliseRole((session as any).user?.employee_type) !== "Audit") {
+    if (session && normaliseRole(session.user?.employee_type) !== "Audit") {
       // Not this desk. Send them back to the portal rather than signing
       // them out, which used to lose their session for a mis-click.
       window.location.href = "/";
@@ -76,11 +74,11 @@ export default function AuditDashboard() {
   // role may see; the browser no longer asks for the whole table.
   useEffect(() => {
     if (status !== "authenticated") return;
-    if (normaliseRole((session as any)?.user?.employee_type) !== "Audit") return;
+    if (normaliseRole(session?.user?.employee_type) !== "Audit") return;
 
     const fetchBills = async () => {
       setLoading(true);
-      const { data, error } = await api.get<{ bills: Bill[] }>("/api/bills?limit=500");
+      const { data, error } = await api.bills<{ bills: Bill[] }>("/api/bills?limit=500");
       setLoading(false);
       if (error) {
         setNotice({ kind: "bad", text: error });
@@ -176,7 +174,7 @@ export default function AuditDashboard() {
     setNotice(null);
     const { data, error } = await api.post<{ bill: Bill }>(
       `/api/bills/${bill.id}/action`,
-      { action, remark: remark || undefined }
+      { action, remark: remark || undefined, expected_revision: bill.revision }
     );
     setBusy(null);
 
@@ -193,8 +191,8 @@ export default function AuditDashboard() {
         action === "Approved"
           ? `Approved and sent to ${deskLabel(data!.bill.status)}.`
           : action === "Rejected"
-          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and they have been emailed.`
-          : "Bill put on hold. The applicant has been emailed.",
+          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and the decision is recorded.`
+          : "Bill put on hold. The decision is recorded on the bill timeline.",
     });
   };
 
@@ -283,7 +281,7 @@ export default function AuditDashboard() {
   ];
 
   // Block render for non-authorized users after hooks have initialized
-  if (status !== "authenticated" || (session as any)?.user?.employee_type !== "Audit") {
+  if (status !== "authenticated" || session?.user?.employee_type !== "Audit") {
     return null;
   }
 
@@ -588,7 +586,7 @@ export default function AuditDashboard() {
 
                               <div className="flex gap-3">
                                 <button
-                                  onClick={() => handleApprove(bill)}
+                                  disabled={busy === bill.id} onClick={() => handleApprove(bill)}
                                   className="flex items-center gap-1 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
                                 >
                                   <IconCheck size={16} />
@@ -596,7 +594,7 @@ export default function AuditDashboard() {
                                 </button>
                                 
                                 <button
-                                  onClick={() => handleHold(bill)}
+                                  disabled={busy === bill.id} onClick={() => handleHold(bill)}
                                   className="flex items-center gap-1 px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-colors"
                                 >
                                   <IconClockPause size={16} />
@@ -604,7 +602,7 @@ export default function AuditDashboard() {
                                 </button>
                                 
                                 <button
-                                  onClick={() => handleReject(bill)}
+                                  disabled={busy === bill.id} onClick={() => handleReject(bill)}
                                   className="flex items-center gap-1 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
                                 >
                                   <IconX size={16} />
@@ -795,7 +793,7 @@ const Logo = () => (
     href="#"
     className="relative z-20 flex items-center space-x-2 py-1 text-base font-semibold text-black"
   >
-    <img src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
     <motion.span
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -811,6 +809,6 @@ const LogoIcon = () => (
     href="#"
     className="relative z-20 flex items-center py-1 text-sm font-semibold text-black"
   >
-    <img src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
   </a>
 );

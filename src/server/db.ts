@@ -81,6 +81,23 @@ export async function queryOne<T extends QueryResultRow = QueryResultRow>(
   return rows[0] ?? null;
 }
 
+/** Administrative writes and their database audit triggers share one transaction. */
+export async function actorQueryOne<T extends QueryResultRow = QueryResultRow>(
+  actorCode: string, sql: string, params: unknown[] = []
+): Promise<T | null> {
+  const client = await pool().connect();
+  try {
+    await client.query("begin");
+    await client.query("select set_config('app.actor_code', $1, true)", [actorCode]);
+    const { rows } = await client.query<T>(sql, params);
+    await client.query("commit");
+    return rows[0] ?? null;
+  } catch (err) {
+    await client.query("rollback");
+    throw err;
+  } finally { client.release(); }
+}
+
 /**
  * Collects the parameters for a query assembled from optional filters.
  *

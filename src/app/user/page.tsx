@@ -1,9 +1,9 @@
 "use client";
 
+import Image from "next/image";
 import { deskLabel } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { api } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import { signOut, useSession } from "next-auth/react";
@@ -13,7 +13,6 @@ import {
   IconEye,
   IconX,
   IconArrowLeft,
-  IconChevronLeft,
   IconChevronRight,
   IconCheck,
   IconClock,
@@ -26,13 +25,10 @@ import {
   IconArrowRight,
 } from "@tabler/icons-react";
 import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 
 import type { Bill } from "@/types/database";
 
 import type { Employee } from "@/types/database";
-
-type PdaBalanceRow = { balance: number };
 
 interface BillStats {
   total: number;
@@ -57,7 +53,6 @@ const STEP_TONE: Record<string, { icon: typeof IconCheck; className: string }> =
 
 export default function UserPage() {
   const { data: session } = useSession();
-  const router = useRouter();
 
   const [open, setOpen] = useState(false);
   const [employee, setEmployee] = useState<Employee | null>(null);
@@ -98,7 +93,7 @@ export default function UserPage() {
           provisioned: boolean;
           pda: { allocated: number; balance: number; committed: number; spent: number } | null;
         }>("/api/me"),
-        api.get<{ bills: Bill[] }>("/api/bills?limit=500"),
+        api.bills<{ bills: Bill[] }>(`/api/bills?employee=${encodeURIComponent(session.user.employee_code ?? session.user.username)}`),
       ]);
 
       setLoading(false);
@@ -348,7 +343,7 @@ export default function UserPage() {
                     label: employee?.employee_name || session?.user?.username || "User",
                     href: "#",
                     icon: (
-                      <img
+                      <Image
                         src="/iit.png"
                         className="h-7 w-7 shrink-0 rounded-full"
                         width={50}
@@ -368,7 +363,7 @@ export default function UserPage() {
               </>
             ) : (
               <div className="flex items-center gap-2">
-                <img
+                <Image
                   src="/iit.png"
                   className="h-7 w-7 rounded-full"
                   width={40}
@@ -757,7 +752,7 @@ export default function UserPage() {
 /* Sidebar Logos */
 const Logo = () => (
   <a href="#" className="flex items-center space-x-2 py-1 text-sm font-semibold text-black">
-    <img src="/iit.png" alt="IIT Mandi" className="h-7 w-7" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-7 w-7" />
     <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="whitespace-pre text-black">
       IIT Mandi Finance
     </motion.span>
@@ -766,6 +761,6 @@ const Logo = () => (
 
 const LogoIcon = () => (
   <a href="#" className="flex items-center space-x-2 py-1 text-sm font-semibold text-black">
-    <img src="/iit.png" alt="IIT Mandi" className="h-7 w-7" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-7 w-7" />
   </a>
 );

@@ -24,7 +24,7 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
     }
     (async () => {
       setLoading(true);
-      const { data, error } = await api.get<{ bills: Bill[] }>(
+      const { data, error } = await api.bills<{ bills: Bill[] }>(
         `/api/bills?${billScopeQuery(department)}`
       );
       setLoading(false);

@@ -1,18 +1,19 @@
 "use client";
 
+import Image from "next/image";
 import React, { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { api, money } from "@/lib/api";
-import Notice, { NoticeState } from "@/components/Notice";
+import Notice from "@/components/Notice";
 import { normaliseRole, deskLabel } from "@/lib/roles";
 import { signOut, useSession } from "next-auth/react";
 import {
+  IconEye,
   IconArrowLeft,
   IconCheck,
   IconX,
   IconPlayerPause,
   IconClockPause,
-  IconHome,
   IconListDetails,
   IconCode,
   IconClock,
@@ -22,10 +23,9 @@ import {
   IconCurrencyRupee,
   IconMapPin,
   IconCategory,
-  IconEye,
   IconAlertCircle,
 } from "@tabler/icons-react";
-import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
+import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 
 /* ---------- Interfaces ---------- */
@@ -43,8 +43,6 @@ export default function SnpDashboard() {
   >("All");
   const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [jsonViewId, setJsonViewId] = useState<string | null>(null);
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedBillDetails, setSelectedBillDetails] = useState<Bill | null>(null);
   
 
   // Bank guarantee state variables
@@ -52,8 +50,6 @@ export default function SnpDashboard() {
     hasBankGuarantee: boolean;
     bankGuaranteeDetails: string;
     bankGuaranteeAmount: string;
-    dateOfInstallation: string;
-    dateOfDelivery: string;
   }>>({});
 
   // Search and filter states
@@ -75,7 +71,7 @@ export default function SnpDashboard() {
       return;
     }
 
-    if (session && normaliseRole((session as any).user?.employee_type) !== "Student Purchase") {
+    if (session && normaliseRole(session.user?.employee_type) !== "Student Purchase") {
       // Not this desk. Send them back to the portal rather than signing
       // them out, which used to lose their session for a mis-click.
       window.location.href = "/";
@@ -85,7 +81,7 @@ export default function SnpDashboard() {
   useEffect(() => {
     const fetchBills = async () => {
       setLoading(true);
-      const { data, error } = await api.get<{ bills: Bill[] }>("/api/bills");
+      const { data, error } = await api.bills<{ bills: Bill[] }>("/api/bills");
       setLoading(false);
       if (error) {
         setNotice({ kind: "bad", text: error });
@@ -105,15 +101,13 @@ export default function SnpDashboard() {
         [billId]: {
           hasBankGuarantee: false,
           bankGuaranteeDetails: '',
-          bankGuaranteeAmount: '',
-          dateOfInstallation: '',
-          dateOfDelivery: ''
+          bankGuaranteeAmount: ''
         }
       }));
     }
   };
 
-  const updateBankGuaranteeData = (billId: string, field: string, value: any) => {
+  const updateBankGuaranteeData = (billId: string, field: "hasBankGuarantee" | "bankGuaranteeDetails" | "bankGuaranteeAmount", value: string | boolean) => {
     setBankGuaranteeData(prev => ({
       ...prev,
       [billId]: {
@@ -153,7 +147,7 @@ export default function SnpDashboard() {
     setNotice(null);
     const { data, error } = await api.post<{ bill: Bill }>(
       `/api/bills/${bill.id}/action`,
-      { action, remark: remark || undefined, extra }
+      { action, remark: remark || undefined, expected_revision: bill.revision, extra }
     );
     setBusy(null);
 
@@ -171,8 +165,8 @@ export default function SnpDashboard() {
         action === "Approved"
           ? `Bill ${data!.bill.bill_number ?? ""} approved and forwarded to ${deskLabel(data!.bill.status)}.`
           : action === "Rejected"
-          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and they have been emailed.`
-          : "Bill put on hold. The applicant has been emailed.",
+          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and the decision is recorded.`
+          : "Bill put on hold. The decision is recorded on the bill timeline.",
     });
   };
 
@@ -184,8 +178,6 @@ export default function SnpDashboard() {
       has_bank_guarantee: bg?.hasBankGuarantee ?? false,
       bank_guarantee_details: bg?.hasBankGuarantee ? bg.bankGuaranteeDetails : null,
       bank_guarantee_amount: bg?.hasBankGuarantee ? bg.bankGuaranteeAmount : null,
-      date_of_installation: bg?.dateOfInstallation || null,
-      date_of_delivery: bg?.dateOfDelivery || null,
     });
   };
 
@@ -598,10 +590,7 @@ export default function SnpDashboard() {
 
                           <div className="flex items-center gap-2 ml-4">
                             <button
-                              onClick={() => {
-                                setSelectedBillDetails(bill);
-                                setShowDetailModal(true);
-                              }}
+                              onClick={() => { window.location.href = `/bill/${encodeURIComponent(bill.id)}`; }}
                               className="p-2 rounded bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors"
                               title="View Details"
                             >
@@ -710,8 +699,8 @@ export default function SnpDashboard() {
                                         </label>
                                         <input
                                           type="date"
-                                          value={bankGuaranteeData[bill.id]?.dateOfInstallation || ''}
-                                          onChange={(e) => updateBankGuaranteeData(bill.id, 'dateOfInstallation', e.target.value)}
+                                          readOnly aria-label="Installation date recorded by the applicant"
+                                          value={bill.date_of_installation ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(bill.date_of_installation)) : ""}
                                           className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                                         />
                                       </div>
@@ -722,8 +711,8 @@ export default function SnpDashboard() {
                                         </label>
                                         <input
                                           type="date"
-                                          value={bankGuaranteeData[bill.id]?.dateOfDelivery || ''}
-                                          onChange={(e) => updateBankGuaranteeData(bill.id, 'dateOfDelivery', e.target.value)}
+                                          readOnly aria-label="Delivery date recorded by the applicant"
+                                          value={bill.date_of_delivery ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(bill.date_of_delivery)) : ""}
                                           className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
                                         />
                                       </div>
@@ -755,7 +744,7 @@ export default function SnpDashboard() {
 
                                   <div className="flex gap-3">
                                     <button
-                                      onClick={() => handleApprove(bill)}
+                                      disabled={busy === bill.id} onClick={() => handleApprove(bill)}
                                       className="flex items-center gap-1 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
                                     >
                                       <IconCheck size={16} />
@@ -763,7 +752,7 @@ export default function SnpDashboard() {
                                     </button>
                                     
                                     <button
-                                      onClick={() => handleHold(bill)}
+                                      disabled={busy === bill.id} onClick={() => handleHold(bill)}
                                       className="flex items-center gap-1 px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-colors"
                                     >
                                       <IconClockPause size={16} />
@@ -771,7 +760,7 @@ export default function SnpDashboard() {
                                     </button>
                                     
                                     <button
-                                      onClick={() => handleReject(bill)}
+                                      disabled={busy === bill.id} onClick={() => handleReject(bill)}
                                       className="flex items-center gap-1 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
                                     >
                                       <IconX size={16} />
@@ -833,7 +822,7 @@ const Logo = () => (
     href="#"
     className="relative z-20 flex items-center space-x-2 py-1 text-base font-semibold text-black"
   >
-    <img src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
     <motion.span
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -849,6 +838,6 @@ const LogoIcon = () => (
     href="#"
     className="relative z-20 flex items-center py-1 text-sm font-semibold text-black"
   >
-    <img src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
   </a>
 );

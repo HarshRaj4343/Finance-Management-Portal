@@ -1,7 +1,8 @@
 import { NextRequest } from "next/server";
-import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
+import { query, queryOne, actorQueryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireRole } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
+import { isMoney } from "@/lib/security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,7 +26,7 @@ export async function GET(req: NextRequest) {
     const p = req.nextUrl.searchParams;
 
     const params = new Params();
-    const where: string[] = [];
+    const where: string[] = ["pda.is_active"];
 
     if (p.get("department")) where.push(`pda.department::text = ${params.add(p.get("department"))}`);
 
@@ -54,13 +55,13 @@ export async function GET(req: NextRequest) {
 /** POST — open a PDA account for somebody who does not have one. */
 export async function POST(req: NextRequest) {
   try {
-    await requireRole("PDA Manager", "Dean");
+    const actor = await requireRole("PDA Manager", "Dean");
     const b = (await req.json()) as Record<string, unknown>;
 
     const code = String(b.employee_id ?? "").trim();
     const allocated = Number(b.allocated ?? 0);
     if (!code) return badRequest("An employee code is required.");
-    if (!Number.isFinite(allocated) || allocated < 0) {
+    if (!isMoney(allocated)) {
       return badRequest("Enter an allocation of zero or more.");
     }
 
@@ -74,13 +75,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const account = await queryOne(
+    const account = await actorQueryOne(actor.code,
       `insert into public.pda_balances (employee_id, email, department, allocated, balance)
        values ($1, $2, $3, $4, $4)
+       on conflict (employee_id) do update set is_active = true, allocated = excluded.allocated,
+         email = excluded.email, department = excluded.department,
+         balance = excluded.allocated, updated_at = now()
+         where not pda_balances.is_active and pda_balances.committed = 0 and pda_balances.spent = 0
        returning *`,
       [emp.employee_code, emp.email, emp.department, allocated]
     );
 
+    if (!account) return badRequest("This employee already has an active PDA account.");
     return ok({ account }, 201);
   } catch (err) {
     return fail(err, "Could not open that PDA account.");
@@ -101,26 +107,12 @@ export async function PATCH(req: NextRequest) {
     const code = String(b.employee_id ?? "").trim();
     if (!code) return badRequest("An employee code is required.");
 
-    let target: number;
-    if (b.top_up !== undefined) {
-      const add = Number(b.top_up);
-      if (!Number.isFinite(add)) return badRequest("Enter a valid amount.");
-      const cur = await queryOne<{ allocated: number }>(
-        "select allocated from public.pda_balances where employee_id = $1",
-        [code]
-      );
-      if (!cur) return badRequest(`No PDA account for "${code}".`);
-      target = Number(cur.allocated) + add;
-    } else {
-      target = Number(b.allocated);
-      if (!Number.isFinite(target) || target < 0) {
-        return badRequest("Enter an allocation of zero or more.");
-      }
-    }
-
+    const topUp = b.top_up !== undefined;
+    const amount = Number(topUp ? b.top_up : b.allocated);
+    if (!isMoney(amount) || (topUp && amount === 0)) return badRequest("Enter a finite valid amount with at most two decimal places.");
     const row = await queryOne<{ account: unknown }>(
-      "select public.fn_set_pda_allocation($1, $2, $3) as account",
-      [code, target, actor.code]
+      topUp ? "select public.fn_top_up_pda($1, $2, $3) as account" : "select public.fn_set_pda_allocation($1, $2, $3) as account",
+      [code, amount, actor.code]
     );
 
     return ok({ account: row?.account });
@@ -138,23 +130,11 @@ export async function PATCH(req: NextRequest) {
  */
 export async function DELETE(req: NextRequest) {
   try {
-    await requireRole("PDA Manager", "Dean");
+    const actor = await requireRole("PDA Manager", "Dean");
     const code = req.nextUrl.searchParams.get("employee_id")?.trim();
     if (!code) return badRequest("Which account? Pass employee_id.");
 
-    const acc = await queryOne<{ committed: number; spent: number }>(
-      "select committed, spent from public.pda_balances where employee_id = $1",
-      [code]
-    );
-    if (!acc) return badRequest(`No PDA account for "${code}".`);
-
-    if (Number(acc.committed) > 0 || Number(acc.spent) > 0) {
-      return badRequest(
-        `This account cannot be closed: ₹${Number(acc.committed).toLocaleString("en-IN")} is committed to bills still in progress and ₹${Number(acc.spent).toLocaleString("en-IN")} has been spent. Set the allocation to zero instead.`
-      );
-    }
-
-    await query("delete from public.pda_balances where employee_id = $1", [code]);
+    await query("select public.fn_close_pda($1, $2)", [code, actor.code]);
 
     return ok({ closed: code });
   } catch (err) {

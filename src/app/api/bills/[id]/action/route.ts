@@ -33,6 +33,7 @@ export async function POST(
       action?: string;
       remark?: string;
       extra?: Record<string, unknown>;
+      expected_revision?: number;
     };
 
     const action = body.action as Action;
@@ -65,7 +66,7 @@ export async function POST(
         actor.role,
         action,
         body.remark ?? null,
-        JSON.stringify(body.extra ?? {}),
+        JSON.stringify({ ...body.extra, expected_revision: body.expected_revision }),
       ]
     );
     const bill = row?.bill;

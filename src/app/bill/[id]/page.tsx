@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import QRCode from "react-qr-code";
+import BillItems from "@/components/BillItems";
 import { api, money, when } from "@/lib/api";
 import type { Bill, BillApproval, RegisterEntry, Employee } from "@/types/database";
 
@@ -24,6 +25,7 @@ import type { Bill, BillApproval, RegisterEntry, Employee } from "@/types/databa
 type Payload = {
   bill: Bill;
   events: BillApproval[];
+  revisions: { actor_code: string | null; old_data: Bill | null; new_data: Bill; recorded_at: string }[];
   register: RegisterEntry | null;
   applicant: Pick<Employee, "employee_code" | "employee_name" | "email" | "department"> | null;
   route: string[];
@@ -112,10 +114,10 @@ export default function BillDetailsPage() {
       </div>
     );
 
-  const { bill, events, register, applicant, route } = payload;
+  const { bill, events, register, applicant, route, revisions } = payload;
 
   // helper for pretty formatting
-  const formatValue = (val: any) => {
+  const formatValue = (val: string | number | boolean | null | undefined) => {
     if (val === null || val === undefined || val === "NULL") return "—";
     if (typeof val === "boolean") return val ? "Yes" : "No";
     if (typeof val === "string" && val.trim() === "") return "—";
@@ -161,6 +163,14 @@ export default function BillDetailsPage() {
         </span>
       </div>
 
+      <BillItems bill={bill} />
+      <details className="mb-6 border rounded p-3">
+        <summary className="cursor-pointer font-medium">Revision history ({revisions.length} changes)</summary>
+        {revisions.map((revision, index) => <details key={index} className="mt-3 border-t pt-2">
+          <summary>Revision {revision.new_data.revision} — {revision.actor_code ?? "System"} — {when(revision.recorded_at)}</summary>
+          <pre className="text-xs overflow-x-auto whitespace-pre-wrap mt-2">{JSON.stringify({ before: revision.old_data, after: revision.new_data }, null, 2)}</pre>
+        </details>)}
+      </details>
       {/* Approval route */}
       <div className="mb-6 print:hidden">
         <p className="text-sm font-medium text-gray-700 mb-2">
@@ -171,8 +181,8 @@ export default function BillDetailsPage() {
           <span className="px-2.5 py-1 rounded bg-gray-100 text-gray-600">Filed</span>
           {route.map((stop) => {
             const passed =
-              events.some((e) => e.stage === stop && e.action === "Approved") ||
-              bill.status === "Accepted";
+              events.some((e) => e.stage === stop && e.action === "Approved" && e.seq >
+                Math.max(0, ...events.filter((event) => event.stage === "Applicant" && event.action === "Forwarded").map((event) => event.seq)));
             const here = bill.status === stop;
             const rejectedHere = events.some(
               (e) => e.stage === stop && e.action === "Rejected"

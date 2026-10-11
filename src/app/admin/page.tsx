@@ -1,7 +1,9 @@
 "use client";
 
+import Image from "next/image";
+import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { signOut, useSession } from "next-auth/react";
 import {
   IconArrowLeft,
@@ -58,7 +60,7 @@ const Logo = () => (
     href="#"
     className="relative z-20 flex items-center space-x-2 py-1 text-base font-semibold text-black"
   >
-    <img src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
     <motion.span
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -74,7 +76,7 @@ const LogoIcon = () => (
     href="#"
     className="relative z-20 flex items-center py-1 text-sm font-semibold text-black"
   >
-    <img src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
   </a>
 );
 
@@ -292,12 +294,12 @@ export default function AdminPage() {
             This page is for the Dean of Finance
           </h1>
           <p className="text-gray-600 mb-4">You are signed in as {myRole}.</p>
-          <a
+          <Link
             href="/"
             className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
           >
             Back to the portal
-          </a>
+          </Link>
         </div>
       </div>
     );

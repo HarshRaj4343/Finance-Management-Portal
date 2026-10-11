@@ -1,5 +1,15 @@
 # Architecture & Engineering Decisions
 
+> Historical decision log, retained for context. Earlier sections describe
+> superseded Supabase clients, destructive demo seeding, Vercel deployment, relaxed build
+> checks, and workflows that kept approvals after amendments. Those are not
+> the current implementation. README.md is the current operational guide.
+> On `after-midsem`, migration 0004 adds revision checks, complete server-side
+> form validation, invoice deduplication, transactional PDA management and
+> immutable before/after change records. Corrected bills restart approval.
+> Demo login is retained for now alongside LDAP. Demo accounts still require
+> active database records; the optional seed no longer erases financial history.
+
 This document records the major decisions taken while building the **Integrated Finance
 Management Portal for IIT Mandi**, the reasoning behind each one, and the trade-offs
 accepted.

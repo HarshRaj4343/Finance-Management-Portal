@@ -23,7 +23,7 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
 
     const fetchApprovedBills = async () => {
       setLoading(true);
-      const { data, error } = await api.get<{ bills: Bill[] }>(
+      const { data, error } = await api.bills<{ bills: Bill[] }>(
         `/api/bills?${billScopeQuery(department)}`
       );
       setLoading(false);

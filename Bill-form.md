@@ -18,7 +18,7 @@ its conflicting identity, balance, amount, stock-page and asset-field requiremen
 **Portal:** Integrated Finance Management Portal, IIT Mandi
 **Page:** Upload Bill for Store and Purchase Section
 **Route (proposed):** `/bills/new` (edit draft: `/bills/[id]/edit`)
-**Stack assumed:** Next.js + React + TypeScript, Tailwind + Radix UI, Supabase (Postgres), NextAuth + institutional LDAP
+**Current stack:** Next.js + React + TypeScript, Tailwind + Radix UI, plain PostgreSQL, NextAuth + institutional LDAP. This document includes historical design proposals; README.md describes the implemented workflow. Structured form data is retained in bills.form_data, not a separate asset subsystem.
 
 ---
 

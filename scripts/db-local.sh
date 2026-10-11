@@ -1,82 +1,20 @@
 #!/usr/bin/env bash
-#
-# Spin up a throwaway Postgres, build the schema, run the workflow tests,
-# and optionally load the demo data. Nothing here touches your development database, and
-# the cluster lives in a temp directory you can delete.
-#
-#   ./scripts/db-local.sh test     schema + functions + the 44 assertions
-#   ./scripts/db-local.sh seed     schema + functions + demo data, left running
-#   ./scripts/db-local.sh psql     open a shell on the running cluster
-#   ./scripts/db-local.sh stop     shut it down and delete it
-#
+# Isolated test cluster. Never reuses or drops an existing database.
 set -euo pipefail
-
-PORT=55999
-SOCK=/tmp                       # short path: Postgres sockets cap at ~103 bytes
-DATA="${TMPDIR:-/tmp}/ifmp-pgdata"
-PSQL=(psql -h "$SOCK" -p "$PORT" -U postgres -v ON_ERROR_STOP=1)
-
-# Homebrew keeps these off the default PATH.
+cd "$(dirname "$0")/.."
+[ "${1:-test}" = test ] || { echo "Usage: $0 test" >&2; exit 1; }
 for v in 17 16; do
-  [ -d "/opt/homebrew/opt/postgresql@$v/bin" ] && \
-    export PATH="/opt/homebrew/opt/postgresql@$v/bin:$PATH" && break
+  if [ -d "/opt/homebrew/opt/postgresql@$v/bin" ]; then export PATH="/opt/homebrew/opt/postgresql@$v/bin:$PATH"; break; fi
 done
-
-command -v initdb >/dev/null || {
-  echo "Postgres not found. Install it with:  brew install postgresql@17" >&2
-  exit 1
-}
-
-running() { pg_isready -h "$SOCK" -p "$PORT" -q 2>/dev/null; }
-
-start() {
-  if running; then return; fi
-  rm -rf "$DATA"
-  echo "==> starting a throwaway Postgres on port $PORT"
-  initdb -D "$DATA" -U postgres --auth=trust >/dev/null
-  pg_ctl -D "$DATA" -o "-p $PORT -k $SOCK" -l "$DATA/log" start >/dev/null
-  for _ in $(seq 1 20); do running && break; sleep 0.3; done
-  running || { echo "Postgres would not start; see $DATA/log" >&2; exit 1; }
-}
-
-build() {
-  echo "==> applying the schema"
-  "${PSQL[@]}" -q -c 'drop schema if exists public cascade; create schema public;' >/dev/null
-  "${PSQL[@]}" -q -f db/migrations/0001_schema.sql
-  "${PSQL[@]}" -q -f db/migrations/0002_functions.sql
-  "${PSQL[@]}" -q -f db/migrations/0003_stock_entry.sql
-}
-
-case "${1:-test}" in
-  test)
-    start; build
-    echo "==> running the workflow tests"
-    # Assertions announce themselves as NOTICEs; a failure aborts the file.
-    "${PSQL[@]}" -q -f scripts/test_workflow.sql 2>&1 \
-      | sed -n 's/^psql[^ ]* NOTICE:  /  /p; /ALL WORKFLOW/p; /FAIL/p'
-    ;;
-
-  seed)
-    start; build
-    echo "==> loading the demo data (this runs the real workflow, so it takes a moment)"
-    "${PSQL[@]}" -q -f db/seed/0003_demo_data.sql
-    echo
-    echo "Cluster is still running. Inspect it with:  ./scripts/db-local.sh psql"
-    ;;
-
-  psql)
-    running || { echo "Nothing running. Start it with:  ./scripts/db-local.sh seed" >&2; exit 1; }
-    exec psql -h "$SOCK" -p "$PORT" -U postgres
-    ;;
-
-  stop)
-    running && pg_ctl -D "$DATA" stop >/dev/null 2>&1 || true
-    rm -rf "$DATA"
-    echo "stopped and removed"
-    ;;
-
-  *)
-    sed -n '3,12p' "$0" >&2
-    exit 1
-    ;;
-esac
+command -v initdb >/dev/null || { echo "Install PostgreSQL 17 to run database tests." >&2; exit 1; }
+TEST_ROOT=$(mktemp -d /tmp/ifmp-tests.XXXXXX)
+TEST_PORT="${IFMP_TEST_PORT:-55999}"
+cleanup() { pg_ctl -D "$TEST_ROOT/data" -m fast stop >/dev/null 2>&1 || true; }
+trap cleanup EXIT
+initdb -D "$TEST_ROOT/data" -U postgres --auth=trust >/dev/null
+pg_ctl -D "$TEST_ROOT/data" -o "-p $TEST_PORT -k $TEST_ROOT -h 127.0.0.1" -l "$TEST_ROOT/log" start >/dev/null
+PSQL=(psql -h "$TEST_ROOT" -p "$TEST_PORT" -U postgres -d postgres -v ON_ERROR_STOP=1 -q)
+"${PSQL[@]}" -f db/migrations/0001_schema.sql -f db/migrations/0002_functions.sql -f db/migrations/0003_stock_entry.sql
+"${PSQL[@]}" -f tests/migration-fixture.sql -f db/migrations/0004_integrity.sql
+TEST_DATABASE_URL="postgres://postgres@127.0.0.1:$TEST_PORT/postgres" npm test
+echo "Stopped isolated cluster. Diagnostic files retained at $TEST_ROOT."

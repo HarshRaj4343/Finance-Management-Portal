@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
+import React, { useCallback, useEffect, useState } from "react";
+import { motion, AnimatePresence } from "motion/react";
 import { signOut, useSession } from "next-auth/react";
 import {
   IconArrowLeft,
@@ -34,7 +35,8 @@ type Totals = {
   entries: number;
   amount: number;
   departments: number;
-  financial_year: string;
+  financial_year: string | null;
+  current_year: string;
 };
 
 const Logo = () => (
@@ -42,7 +44,7 @@ const Logo = () => (
     href="#"
     className="relative z-20 flex items-center space-x-2 py-1 text-base font-semibold text-black"
   >
-    <img src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
     <motion.span
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
@@ -58,7 +60,7 @@ const LogoIcon = () => (
     href="#"
     className="relative z-20 flex items-center py-1 text-sm font-semibold text-black"
   >
-    <img src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
+    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
   </a>
 );
 
@@ -70,6 +72,7 @@ export default function RegisterPage() {
   const [totals, setTotals] = useState<Totals | null>(null);
   const [departments, setDepartments] = useState<DepartmentRow[]>([]);
   const [total, setTotal] = useState(0);
+  const [years, setYears] = useState<string[]>([]);
 
   const [loading, setLoading] = useState(true);
   const [notice, setNotice] = useState<NoticeState>(null);
@@ -101,6 +104,7 @@ export default function RegisterPage() {
       entries: RegisterEntry[];
       total: number;
       totals: Totals;
+      financialYears: string[];
     }>(
       "/api/register" +
         qs({ q: searchQuery, department, fy, limit: pageSize, offset: page * pageSize })
@@ -114,6 +118,7 @@ export default function RegisterPage() {
     setEntries(data!.entries);
     setTotal(data!.total);
     setTotals(data!.totals);
+    setYears(data!.financialYears);
   }, [searchQuery, department, fy, page]);
 
   useEffect(() => {
@@ -122,12 +127,6 @@ export default function RegisterPage() {
     return () => clearTimeout(t);
   }, [status, load]);
 
-  // The financial years actually present, newest first.
-  const years = useMemo(() => {
-    const set = new Set(entries.map((e) => e.financial_year));
-    if (totals?.financial_year) set.add(totals.financial_year);
-    return [...set].sort().reverse();
-  }, [entries, totals]);
 
   const pages = Math.ceil(total / pageSize);
 
@@ -147,7 +146,7 @@ export default function RegisterPage() {
       icon: <IconCalendar className="h-5 w-5 shrink-0 text-green-600" />,
       onClick: () => {
         setActiveFilter("This Year");
-        setFy(totals?.financial_year ?? "");
+        setFy(totals?.current_year ?? "");
         setPage(0);
       },
     },

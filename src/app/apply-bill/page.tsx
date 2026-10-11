@@ -8,7 +8,6 @@ import { signOut, useSession } from "next-auth/react";
 import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { IconArrowLeft } from "@tabler/icons-react";
 import { Logo, LogoIcon } from "./Logo";
-import SidebarLinks from "./SidebarLinks";
 import UploadBill from "./UploadBill";
 import BillsHistory from "./BillsHistory";
 import ApprovedBills from "./ApprovedBills";
@@ -40,7 +39,7 @@ export default function EmployeeDashboard() {
       return;
     }
 
-    if (session && normaliseRole((session as any).user?.employee_type) !== "Bill Employee") {
+    if (session && normaliseRole(session.user?.employee_type) !== "Bill Employee") {
       window.location.href = "/";
     }
   }, [status, session]);
@@ -55,7 +54,7 @@ export default function EmployeeDashboard() {
    * so there is nothing left to guess at.
    */
   const loadBills = async (dept: string) => {
-    const { data, error } = await api.get<{ bills: Bill[] }>(
+    const { data, error } = await api.bills<{ bills: Bill[] }>(
       `/api/bills?${billScopeQuery(dept)}`
     );
     if (error) {
@@ -198,7 +197,7 @@ export default function EmployeeDashboard() {
             bills={bills}
             loading={loading}
             onBillUpdated={handleBillUpdated}
-            allowDelete
+            allowNote
             enableEdit={false}
             onBillNoted={handleBillNoted}
           />
