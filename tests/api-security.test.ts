@@ -21,6 +21,7 @@ import { GET as register } from "@/app/api/register/route";
 import { POST as addEmployee } from "@/app/api/admin/employees/route";
 import { PATCH as updateEmployee } from "@/app/api/admin/employees/[code]/route";
 import { PATCH as pda } from "@/app/api/admin/pda/route";
+import { GET as funding } from "@/app/api/bills/funding/route";
 const req = (path: string, body?: unknown) => new NextRequest(`http://localhost${path}`, body ? { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } } : undefined);
 beforeEach(() => { vi.clearAllMocks(); mocks.actor.role = "Bill Employee"; mocks.actor.code = "TEST-C"; mocks.actor.department = "A"; mocks.findEmployee.mockResolvedValue({ employee_code: "TEST-U", employee_name: "Applicant", department: "A", is_active: true }); });
 describe("API authority and financial boundaries", () => {
@@ -37,6 +38,33 @@ describe("API authority and financial boundaries", () => {
     mocks.queryOne.mockResolvedValue({ bill: {} });
     expect((await submit(req("/api/bills", { form_data: billForm(), po_value: 1, submission_key: "key" }))).status).toBe(201);
     expect(JSON.parse(mocks.queryOne.mock.calls[0][1][0]).po_value).toBe(1000);
+  });
+  it("rejects a mismatch and reversed delivery date before any write", async () => {
+    const f = billForm(); f.poValue = "1001";
+    expect((await submit(req("/api/bills", { form_data: f }))).status).toBe(400);
+    f.poValue = "1000"; f.deliveryDate = "2025-12-31";
+    expect((await submit(req("/api/bills", { form_data: f }))).status).toBe(400);
+    expect(mocks.queryOne).not.toHaveBeenCalled();
+  });
+  it("allows PDA as a validated source of fund", async () => {
+    const f = billForm(); f.fund = "PDA";
+    mocks.queryOne.mockResolvedValue({ bill: {} });
+    expect((await submit(req("/api/bills", { form_data: f }))).status).toBe(201);
+    expect(JSON.parse(mocks.queryOne.mock.calls[0][1][0]).source_of_fund).toBe("PDA");
+  });
+  it("restricts funding snapshots to the applicant or their authorised departmental filer", async () => {
+    mocks.queryOne.mockResolvedValue({ employee_id: "TEST-U", balance: "1000" });
+    expect((await funding(req("/api/bills/funding?employee=TEST-U"))).status).toBe(200);
+    mocks.actor.department = "B";
+    expect((await funding(req("/api/bills/funding?employee=TEST-U"))).status).toBe(403);
+    mocks.actor.role = "User"; mocks.actor.code = "TEST-U";
+    expect((await funding(req("/api/bills/funding?employee=TEST-U"))).status).toBe(200);
+    mocks.actor.code = "TEST-X";
+    expect((await funding(req("/api/bills/funding?employee=TEST-U"))).status).toBe(403);
+    mocks.actor.role = "Audit";
+    expect((await funding(req("/api/bills/funding?employee=TEST-U"))).status).toBe(403);
+    expect((await funding(req("/api/bills/funding"))).status).toBe(400);
+    expect(mocks.queryOne).toHaveBeenCalledTimes(2);
   });
   it("blocks allocations via employee creation and rejects NaN before any write", async () => {
     mocks.actor.role = "Finance Admin";

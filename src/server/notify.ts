@@ -1,6 +1,7 @@
 import "server-only";
 import nodemailer from "nodemailer";
 import { query, queryOne } from "./db";
+import { deskLabel } from "@/lib/roles";
 
 /**
  * Outbound mail.
@@ -121,12 +122,12 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
     <div style="font-size:12px;letter-spacing:.08em;text-transform:uppercase;opacity:.85">
       IIT Mandi &middot; Finance Management Portal
     </div>
-    <h1 style="margin:6px 0 0;font-size:19px;font-weight:600">${esc(HEADLINE[n.outcome](n.stage))}</h1>
+    <h1 style="margin:6px 0 0;font-size:19px;font-weight:600">${esc(HEADLINE[n.outcome](deskLabel(n.stage)))}</h1>
   </div>
 
   <div style="border:1px solid #e5e7eb;border-top:0;border-radius:0 0 8px 8px;padding:20px">
     <p style="margin:0 0 16px;line-height:1.55">
-      Dear ${esc(bill.employee_name ?? bill.employee_id)},<br/>${esc(LEAD[n.outcome](n.stage))}
+      Dear ${esc(bill.employee_name ?? bill.employee_id)},<br/>${esc(LEAD[n.outcome](deskLabel(n.stage)))}
     </p>
 
     <table style="width:100%;border-collapse:collapse;font-size:14px">
@@ -136,7 +137,7 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
         ["Supplier", esc(bill.supplier_name ?? "—")],
         ["Amount", money(Number(bill.po_value))],
         ["PO details", esc(bill.po_details ?? "—")],
-        ["Current status", esc(bill.status)],
+        ["Current status", esc(deskLabel(bill.status))],
       ]
         .map(
           ([k, v]) => `<tr>
@@ -151,7 +152,7 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
       n.remark
         ? `<div style="margin-top:16px;padding:12px 14px;background:#f9fafb;border-left:3px solid #217093;border-radius:0 4px 4px 0">
              <div style="font-size:12px;color:#6b7280;margin-bottom:4px">
-               Remark from ${esc(n.actorName ?? n.stage)}
+               Remark from ${esc(n.actorName ?? deskLabel(n.stage))}
              </div>
              <div style="line-height:1.5">${esc(n.remark)}</div>
            </div>`
@@ -178,7 +179,7 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
     await post.sendMail({
       from: process.env.EMAIL,
       to,
-      subject: `[IIT Mandi Finance] ${HEADLINE[n.outcome](n.stage)} — ${bill.bill_number ?? bill.id.slice(0, 8)}`,
+      subject: `[IIT Mandi Finance] ${HEADLINE[n.outcome](deskLabel(n.stage))} — ${bill.bill_number ?? bill.id.slice(0, 8)}`,
       html,
     });
 

@@ -6,7 +6,7 @@ import { AUDIT_THRESHOLD, routeAfter, deskLabel } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import { Banner, Button, Card } from "./ui";
 import { FUNDS } from "./masters";
-import { FormState, inr, lineQty, lineTotal, placeLabel, shortDate, toNum, totals } from "./model";
+import { FormState, inr, lineQty, lineTotal, placeLabel, shortDate, toNum, totals, purchaseMatchesTotal } from "./model";
 import type { Lookup, StepProps } from "./steps-basic";
 
 // ---------------------------------------------------------------------
@@ -214,7 +214,7 @@ export function SummaryPanel({
   const route = hasTotal ? routeAfter("Submit", f.category, T.total) : null;
 
   const rows: { k: string; v: string }[] = [
-    { k: "PO value", v: toNum(f.poValue) > 0 ? inr(toNum(f.poValue)) : "—" },
+    { k: "PO / purchase value", v: toNum(f.poValue) > 0 ? inr(toNum(f.poValue)) : "—" },
     { k: "Bill total", v: hasTotal ? inr(T.total) : "—" },
     { k: "Units", v: T.units ? String(T.units) : "—" },
     { k: "Fund", v: fund ? fund.code : "—" },
@@ -232,6 +232,9 @@ export function SummaryPanel({
           </div>
         ))}
       </dl>
+      {hasTotal && T.poValue > 0 && <p className={`mt-3 text-xs font-medium ${purchaseMatchesTotal(f) ? "text-green-700" : "text-red-700"}`}>
+        {purchaseMatchesTotal(f) ? "Purchase value and bill total match." : "Mismatch: include every quantity and extra charge in the purchase value."}
+      </p>}
       {route && (
         <p className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-600">
           First stop: <strong className="text-slate-900">{deskLabel(route)}</strong>

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
 import QRCode from "react-qr-code";
 import BillItems from "@/components/BillItems";
+import SnpReviewPanel from "@/components/SnpReviewPanel";
 import { api, money, when } from "@/lib/api";
 import type { Bill, BillApproval, RegisterEntry, Employee } from "@/types/database";
 
@@ -68,7 +69,7 @@ const dotColor = (action: string) => {
 
 export default function BillDetailsPage() {
   const { id } = useParams<{ id: string }>();
-  const { status: authStatus } = useSession();
+  const { data: session, status: authStatus } = useSession();
 
   const [payload, setPayload] = useState<Payload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -164,6 +165,14 @@ export default function BillDetailsPage() {
       </div>
 
       <BillItems bill={bill} />
+      <div className="my-6">
+        <SnpReviewPanel key={`${bill.id}:${bill.revision}`} bill={bill} actorCode={session?.user?.employee_code}
+          actorRole={session?.user?.employee_type} onDecided={async (updated) => {
+            setPayload((current) => current ? { ...current, bill: updated } : current);
+            const { data, error: refreshError } = await api.get<Payload>(`/api/bills/${id}`);
+            if (refreshError) setError(refreshError); else setPayload(data);
+          }} />
+      </div>
       <details className="mb-6 border rounded p-3">
         <summary className="cursor-pointer font-medium">Revision history ({revisions.length} changes)</summary>
         {revisions.map((revision, index) => <details key={index} className="mt-3 border-t pt-2">
@@ -231,7 +240,7 @@ export default function BillDetailsPage() {
         <p><strong>Stock Entry:</strong> {formatValue(bill.stock_entry)}</p>
         <p><strong>Location:</strong> {formatValue(bill.location)}</p>
         <p><strong>Status:</strong> {formatValue(deskLabel(bill.status))}</p>
-        <p><strong>Store &amp; Purchase:</strong> {formatValue(bill.snp)}</p>
+        <p><strong>Store and Purchase Department:</strong> {formatValue(bill.snp)}</p>
         <p><strong>Audit:</strong> {formatValue(bill.audit)}</p>
         <p><strong>Finance Admin:</strong> {formatValue(bill.finance_admin)}</p>
         <p><strong>Noted:</strong> {formatValue(bill.noted)}</p>

@@ -253,7 +253,7 @@ export default function AllBillsPage() {
                   <TableHead className="py-3">PO Value</TableHead>
                   <TableHead className="py-3">Category</TableHead>
                   <TableHead className="py-3">Status</TableHead>
-                  <TableHead className="py-3">Store &amp; Purchase</TableHead>
+                  <TableHead className="py-3">Store and Purchase Department</TableHead>
                   <TableHead className="py-3">Audit</TableHead>
                   <TableHead className="py-3">Finance Admin</TableHead>
                   <TableHead className="py-3">Created At</TableHead>

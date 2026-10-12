@@ -77,7 +77,7 @@ export type Stage = (typeof APPROVAL_STAGES)[number];
 
 /** Public desk name; keep stored role/status values compatible with existing bills. */
 export function deskLabel(value: string | null | undefined): string {
-  return (value ?? "").replace(/Student Purchase/g, "Store & Purchase");
+  return (value ?? "").replace(/Student Purchase|Store & Purchase/g, "Store and Purchase Department");
 }
 
 export function isApprover(role: Role): role is Stage {

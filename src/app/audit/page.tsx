@@ -239,7 +239,7 @@ export default function AuditDashboard() {
         financeAdminStatus: bill.finance_admin || "NULL",
       },
       departmentRemarks: {
-        snp: bill.remarks1 || "No remark from Store & Purchase",
+        snp: bill.remarks1 || "No remark from Store and Purchase Department",
         audit: bill.remarks2 || "No remark yet",
         financeAdmin: bill.remarks3 || "Not reached Finance Admin yet",
         other: bill.remarks4 || "No additional remark",
@@ -714,7 +714,7 @@ export default function AuditDashboard() {
                         <h4 className="font-semibold mb-3 text-gray-800">Workflow Status</h4>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
                           <div><span className="font-medium">Current Stage:</span> {details.workflowStatus.overall}</div>
-                          <div><span className="font-medium">Store &amp; Purchase Status:</span> {details.workflowStatus.snpStatus}</div>
+                          <div><span className="font-medium">Store and Purchase Department Status:</span> {details.workflowStatus.snpStatus}</div>
                           <div><span className="font-medium">Audit Status:</span> 
                             <span className={`ml-2 px-2 py-1 rounded text-xs font-medium ${
                               details.workflowStatus.auditStatus === "Approved" ? "bg-green-100 text-green-800" :
@@ -733,9 +733,9 @@ export default function AuditDashboard() {
                       <div className="bg-yellow-50 rounded-lg p-4">
                         <h4 className="font-semibold mb-3 text-gray-800">Department Remarks</h4>
                         <div className="space-y-3">
-                          {details.departmentRemarks.snp !== "No remark from Store & Purchase" && (
+                          {details.departmentRemarks.snp !== "No remark from Store and Purchase Department" && (
                             <div className="bg-white p-3 rounded border-l-4 border-purple-500">
-                              <div className="font-medium text-purple-800">Store &amp; Purchase Department:</div>
+                              <div className="font-medium text-purple-800">Store and Purchase Department:</div>
                               <div className="text-gray-700 mt-1">{details.departmentRemarks.snp}</div>
                             </div>
                           )}

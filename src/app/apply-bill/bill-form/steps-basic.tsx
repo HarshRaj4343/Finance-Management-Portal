@@ -127,7 +127,7 @@ export function StepSupplier({ f, set, errors }: StepProps) {
             allowCustom
             placeholder="Search or type a supplier"
             emptyText="Not in the list. Press Enter to use the name you typed."
-            hint="Choosing a listed supplier fills in the address."
+            hint="Listed suppliers are fictional demo examples. You can also type a real supplier and address."
             error={errors["f-supplier"]}
           />
           <Full>
@@ -227,6 +227,7 @@ export function StepBill({ f, set, errors }: StepProps) {
               required
               type="date"
               max={todayISO()}
+              min={f.billDate || undefined}
               value={f.deliveryDate}
               onChange={(v) => set({ deliveryDate: v })}
               error={errors["f-delivery-date"]}
@@ -262,7 +263,7 @@ export function StepBill({ f, set, errors }: StepProps) {
               required
               type="date"
               max={todayISO()}
-              min={f.deliveryDate || undefined}
+              min={[f.billDate, f.deliveryDate].filter(Boolean).sort().at(-1)}
               value={f.installDate}
               onChange={(v) => set({ installDate: v })}
               error={errors["f-install-date"]}

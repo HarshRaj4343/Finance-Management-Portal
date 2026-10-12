@@ -20,7 +20,7 @@ import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { api, money, qs, when } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
-import { ROLES, normaliseRole, type Role } from "@/lib/roles";
+import { ROLES, normaliseRole, deskLabel, type Role } from "@/lib/roles";
 import type { Employee, PdaBalanceRow, DepartmentRow } from "@/types/database";
 
 /**
@@ -153,7 +153,7 @@ export default function AdminPage() {
     );
     setNotice({
       kind: "ok",
-      text: `${data!.employee.employee_name} is now ${role}. They will see the change the next time they sign in.`,
+      text: `${data!.employee.employee_name} is now ${deskLabel(role)}. They will see the change the next time they sign in.`,
     });
   };
 
@@ -481,7 +481,7 @@ export default function AdminPage() {
                     <option value="">All roles</option>
                     {ROLES.map((r) => (
                       <option key={r} value={r}>
-                        {r}
+                        {deskLabel(r)}
                       </option>
                     ))}
                   </select>
@@ -573,7 +573,7 @@ export default function AdminPage() {
                   >
                     {ROLES.map((r) => (
                       <option key={r} value={r}>
-                        {r}
+                        {deskLabel(r)}
                       </option>
                     ))}
                   </select>
@@ -671,7 +671,7 @@ export default function AdminPage() {
                           >
                             {ROLES.map((r) => (
                               <option key={r} value={r} className="bg-white text-gray-900">
-                                {r}
+                                {deskLabel(r)}
                               </option>
                             ))}
                           </select>
@@ -681,7 +681,7 @@ export default function AdminPage() {
                               ROLE_TONE[normaliseRole(p.employee_type)]
                             }`}
                           >
-                            {normaliseRole(p.employee_type)}
+                            {deskLabel(normaliseRole(p.employee_type))}
                           </span>
                         )}
                       </td>

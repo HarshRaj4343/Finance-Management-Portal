@@ -598,7 +598,7 @@ export default function FinanceAdminDashboard() {
                                   <p className="text-sm font-medium mb-2">Previous Department Remarks:</p>
                                   {bill.remarks1 && (
                                     <p className="text-xs text-gray-700 mb-1">
-                                      <span className="font-medium">Store &amp; Purchase:</span> {bill.remarks1}
+                                      <span className="font-medium">Store and Purchase Department:</span> {bill.remarks1}
                                     </p>
                                   )}
                                   {bill.remarks2 && (
@@ -712,7 +712,7 @@ export default function FinanceAdminDashboard() {
                         const holdDepartment = 
                           bill.finance_admin === "Hold" ? "Finance Admin" :
                           bill.audit === "Hold" ? "Audit" :
-                          bill.snp === "Hold" ? "Store & Purchase" : "Unknown";
+                          bill.snp === "Hold" ? "Store and Purchase Department" : "Unknown";
                         
                         const holdRemark = 
                           bill.finance_admin === "Hold" ? bill.remarks :
@@ -810,7 +810,7 @@ export default function FinanceAdminDashboard() {
                         {emp.email ?? "—"}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {emp.employee_type}
+                        {deskLabel(emp.employee_type)}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
@@ -1007,7 +1007,7 @@ export default function FinanceAdminDashboard() {
                         <h4 className="font-semibold mb-3">Workflow Status</h4>
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div><span className="font-medium">Overall Status:</span> {details.workflowStatus.overall}</div>
-                          <div><span className="font-medium">Store &amp; Purchase Status:</span> {details.workflowStatus.snpStatus}</div>
+                          <div><span className="font-medium">Store and Purchase Department Status:</span> {details.workflowStatus.snpStatus}</div>
                           <div><span className="font-medium">Audit Status:</span> {details.workflowStatus.auditStatus}</div>
                           <div><span className="font-medium">Finance Admin:</span> {details.workflowStatus.financeAdminStatus}</div>
                         </div>
@@ -1018,7 +1018,7 @@ export default function FinanceAdminDashboard() {
                         <h4 className="font-semibold mb-3">Department Remarks</h4>
                         <div className="space-y-2 text-sm">
                           <div className="bg-white p-2 rounded">
-                            <span className="font-medium">Store &amp; Purchase:</span> {details.departmentRemarks.snp}
+                            <span className="font-medium">Store and Purchase Department:</span> {details.departmentRemarks.snp}
                           </div>
                           <div className="bg-white p-2 rounded">
                             <span className="font-medium">Audit:</span> {details.departmentRemarks.audit}

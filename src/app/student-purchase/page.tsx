@@ -3,7 +3,8 @@
 import Image from "next/image";
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { api, money } from "@/lib/api";
+import { api } from "@/lib/api";
+import SnpReviewPanel from "@/components/SnpReviewPanel";
 import Notice from "@/components/Notice";
 import { normaliseRole, deskLabel } from "@/lib/roles";
 import { signOut, useSession } from "next-auth/react";
@@ -15,7 +16,6 @@ import {
   IconPlayerPause,
   IconClockPause,
   IconListDetails,
-  IconCode,
   IconClock,
   IconSearch,
   IconFilter,
@@ -41,17 +41,6 @@ export default function SnpDashboard() {
   const [activeFilter, setActiveFilter] = useState<
     "All" | "Approved" | "Hold" | "Reject" | "Pending"
   >("All");
-  const [remarks, setRemarks] = useState<Record<string, string>>({});
-  const [jsonViewId, setJsonViewId] = useState<string | null>(null);
-  
-
-  // Bank guarantee state variables
-  const [bankGuaranteeData, setBankGuaranteeData] = useState<Record<string, {
-    hasBankGuarantee: boolean;
-    bankGuaranteeDetails: string;
-    bankGuaranteeAmount: string;
-  }>>({});
-
   // Search and filter states
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("All");
@@ -81,7 +70,7 @@ export default function SnpDashboard() {
   useEffect(() => {
     const fetchBills = async () => {
       setLoading(true);
-      const { data, error } = await api.bills<{ bills: Bill[] }>("/api/bills");
+      const { data, error } = await api.bills<{ bills: Bill[] }>("/api/bills?limit=500");
       setLoading(false);
       if (error) {
         setNotice({ kind: "bad", text: error });
@@ -93,96 +82,7 @@ export default function SnpDashboard() {
     fetchBills();
   }, []);
 
-  // Bank guarantee data handlers
-  const initializeBankGuaranteeData = (billId: string) => {
-    if (!bankGuaranteeData[billId]) {
-      setBankGuaranteeData(prev => ({
-        ...prev,
-        [billId]: {
-          hasBankGuarantee: false,
-          bankGuaranteeDetails: '',
-          bankGuaranteeAmount: ''
-        }
-      }));
-    }
-  };
-
-  const updateBankGuaranteeData = (billId: string, field: "hasBankGuarantee" | "bankGuaranteeDetails" | "bankGuaranteeAmount", value: string | boolean) => {
-    setBankGuaranteeData(prev => ({
-      ...prev,
-      [billId]: {
-        ...prev[billId],
-        [field]: value
-      }
-    }));
-  };
-
-  /**
-   * Every decision goes to /api/bills/:id/action, which calls
-   * fn_bill_action. That one function checks this desk actually owns the
-   * bill, refuses a bill that has already been decided, moves the money,
-   * routes it onward and writes the event log -- in one transaction.
-   *
-   * The role is read from the session on the server, so nothing here can
-   * approve a bill this desk is not entitled to approve.
-   */
-  const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<{ kind: "ok" | "bad"; text: string } | null>(null);
-
-  const act = async (
-    bill: Bill,
-    action: "Approved" | "Rejected" | "Hold",
-    extra?: Record<string, unknown>
-  ) => {
-    const remark = (remarks[bill.id] ?? "").trim();
-    if (action !== "Approved" && !remark) {
-      setNotice({
-        kind: "bad",
-        text: `Write a remark before you ${action === "Rejected" ? "reject" : "hold"} this bill.`,
-      });
-      return;
-    }
-
-    setBusy(bill.id);
-    setNotice(null);
-    const { data, error } = await api.post<{ bill: Bill }>(
-      `/api/bills/${bill.id}/action`,
-      { action, remark: remark || undefined, expected_revision: bill.revision, extra }
-    );
-    setBusy(null);
-
-    if (error) {
-      setNotice({ kind: "bad", text: error });
-      return;
-    }
-
-    setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, ...data!.bill } : b)));
-    setRemarks((r) => ({ ...r, [bill.id]: "" }));
-
-    setNotice({
-      kind: "ok",
-      text:
-        action === "Approved"
-          ? `Bill ${data!.bill.bill_number ?? ""} approved and forwarded to ${deskLabel(data!.bill.status)}.`
-          : action === "Rejected"
-          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and the decision is recorded.`
-          : "Bill put on hold. The decision is recorded on the bill timeline.",
-    });
-  };
-
-  const handleApprove = async (bill: Bill) => {
-    // Bank guarantee details are collected here, at the Student Purchase
-    // desk. architecture.jpeg: "Enter Bank Guarantee".
-    const bg = bankGuaranteeData[bill.id];
-    await act(bill, "Approved", {
-      has_bank_guarantee: bg?.hasBankGuarantee ?? false,
-      bank_guarantee_details: bg?.hasBankGuarantee ? bg.bankGuaranteeDetails : null,
-      bank_guarantee_amount: bg?.hasBankGuarantee ? bg.bankGuaranteeAmount : null,
-    });
-  };
-
-  const handleReject = (bill: Bill) => act(bill, "Rejected");
-  const handleHold = (bill: Bill) => act(bill, "Hold");
 
   // Apply filters whenever search criteria change
   useEffect(() => {
@@ -551,7 +451,7 @@ export default function SnpDashboard() {
                 <div className="divide-y divide-gray-200">
                   {filteredBills.map((bill, index) => {
                     const isExpanded = expandedBillId === bill.id;
-                    const canTakeAction = bill.snp === "Pending" || bill.snp === "Hold";
+                    const canTakeAction = bill.status === "Student Purchase" && (bill.snp === "Pending" || bill.snp === "Hold");
 
                     return (
                       <motion.div
@@ -583,7 +483,7 @@ export default function SnpDashboard() {
                                 <span className="font-medium">Category:</span> {bill.item_category || "N/A"}
                               </div>
                               <div>
-                                <span className="font-medium">Status:</span> {bill.status || "N/A"}
+                                <span className="font-medium">Status:</span> {deskLabel(bill.status) || "N/A"}
                               </div>
                             </div>
                           </div>
@@ -643,139 +543,10 @@ export default function SnpDashboard() {
                                 </div>
                               </div>
 
-                              {/* Bank Guarantee Section */}
-                              {canTakeAction && (
-                                <div className="bg-purple-50 p-4 rounded-lg space-y-4">
-                                  <h4 className="font-medium text-purple-800 mb-3">Bank Guarantee Details</h4>
-                                  
-                                  <div className="flex items-center gap-2">
-                                    <input
-                                      type="checkbox"
-                                      id={`bank-guarantee-${bill.id}`}
-                                      checked={bankGuaranteeData[bill.id]?.hasBankGuarantee || false}
-                                      onChange={(e) => {
-                                        initializeBankGuaranteeData(bill.id);
-                                        updateBankGuaranteeData(bill.id, 'hasBankGuarantee', e.target.checked);
-                                      }}
-                                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
-                                    />
-                                    <label htmlFor={`bank-guarantee-${bill.id}`} className="text-sm font-medium text-gray-700">
-                                      Bank Guarantee Required
-                                    </label>
-                                  </div>
-
-                                  {bankGuaranteeData[bill.id]?.hasBankGuarantee && (
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                      <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                          Bank Guarantee Details
-                                        </label>
-                                        <textarea
-                                          rows={2}
-                                          placeholder="Enter bank guarantee details..."
-                                          value={bankGuaranteeData[bill.id]?.bankGuaranteeDetails || ''}
-                                          onChange={(e) => updateBankGuaranteeData(bill.id, 'bankGuaranteeDetails', e.target.value)}
-                                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
-                                        />
-                                      </div>
-                                      
-                                      <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                          Bank Guarantee Amount (₹)
-                                        </label>
-                                        <input
-                                          type="number"
-                                          step="0.01"
-                                          placeholder="0.00"
-                                          value={bankGuaranteeData[bill.id]?.bankGuaranteeAmount || ''}
-                                          onChange={(e) => updateBankGuaranteeData(bill.id, 'bankGuaranteeAmount', e.target.value)}
-                                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
-                                        />
-                                      </div>
-                                      
-                                      <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                          Date of Installation
-                                        </label>
-                                        <input
-                                          type="date"
-                                          readOnly aria-label="Installation date recorded by the applicant"
-                                          value={bill.date_of_installation ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(bill.date_of_installation)) : ""}
-                                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
-                                        />
-                                      </div>
-                                      
-                                      <div>
-                                        <label className="block text-sm font-medium text-gray-700 mb-1">
-                                          Date of Delivery
-                                        </label>
-                                        <input
-                                          type="date"
-                                          readOnly aria-label="Delivery date recorded by the applicant"
-                                          value={bill.date_of_delivery ? new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata" }).format(new Date(bill.date_of_delivery)) : ""}
-                                          className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm"
-                                        />
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Remark Input & Actions */}
-                              {canTakeAction && (
-                                <div className="space-y-3">
-                                  <div>
-                                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                                      Add Store &amp; Purchase Remark {bill.snp === "Hold" ? "(Update)" : "(Required for Hold/Reject)"}
-                                    </label>
-                                    <textarea
-                                      rows={2}
-                                      placeholder="Enter your remark here..."
-                                      value={remarks[bill.id] || ""}
-                                      onChange={(e) =>
-                                        setRemarks((prev) => ({
-                                          ...prev,
-                                          [bill.id]: e.target.value,
-                                        }))
-                                      }
-                                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                    />
-                                  </div>
-
-                                  <div className="flex gap-3">
-                                    <button
-                                      disabled={busy === bill.id} onClick={() => handleApprove(bill)}
-                                      className="flex items-center gap-1 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
-                                    >
-                                      <IconCheck size={16} />
-                                      Approve
-                                    </button>
-                                    
-                                    <button
-                                      disabled={busy === bill.id} onClick={() => handleHold(bill)}
-                                      className="flex items-center gap-1 px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-colors"
-                                    >
-                                      <IconClockPause size={16} />
-                                      Hold
-                                    </button>
-                                    
-                                    <button
-                                      disabled={busy === bill.id} onClick={() => handleReject(bill)}
-                                      className="flex items-center gap-1 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
-                                    >
-                                      <IconX size={16} />
-                                      Reject
-                                    </button>
-                                    
-                                    <button
-                                      onClick={() => setJsonViewId(jsonViewId === bill.id ? null : bill.id)}
-                                      className="flex items-center gap-1 px-4 py-2 rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
-                                    >
-                                      <IconCode size={16} /> JSON
-                                    </button>
-                                  </div>
-                                </div>
-                              )}
+                              <SnpReviewPanel bill={bill} actorCode={session?.user?.employee_code}
+                                actorRole={session?.user?.employee_type} onDecided={(updated) => {
+                                  setBills((current) => current.map((b) => b.id === updated.id ? updated : b));
+                                }} />
 
                               {/* Show actions result for approved/rejected bills */}
                               {!canTakeAction && (

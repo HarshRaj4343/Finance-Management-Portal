@@ -1,4 +1,4 @@
-import { findType, FUND_PATTERN, FUNDS, ITEM_CATEGORIES } from "./masters";
+import { findItemType, FUND_PATTERN, FUNDS, ITEM_CATEGORIES, groupsForCategory } from "./masters";
 
 // ---------------------------------------------------------------------
 // Shape of the form
@@ -178,7 +178,13 @@ export function totals(f: FormState) {
   return { itemsSum, basic, other, total, units, issued, poValue };
 }
 
-export const needsMakeModel = (l: Line) => Boolean(findType(l.group, l.type)?.requiresMakeModel);
+export const needsMakeModel = (l: Line, category = "Minor") => Boolean(findItemType(category, l.group, l.type)?.requiresMakeModel);
+
+/** Compare currency in paise, not raw binary floating-point values. */
+export const purchaseMatchesTotal = (f: FormState) => {
+  const T = totals(f);
+  return Number.isFinite(T.poValue) && Math.round(T.poValue * 100) === Math.round(T.total * 100);
+};
 
 // ---------------------------------------------------------------------
 // Validation
@@ -236,6 +242,7 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
     else if (f.delivered === "yes") {
       if (!f.deliveryDate) e["f-delivery-date"] = "Enter the delivery date.";
       else if (f.deliveryDate > todayISO()) e["f-delivery-date"] = "Delivery date cannot be in the future.";
+      else if (f.billDate && f.deliveryDate < f.billDate) e["f-delivery-date"] = "Delivery date must be on or after the bill date.";
     }
     if (!f.installRequired) e["f-install-required"] = "Say whether installation is required.";
     else if (f.installRequired === "yes") {
@@ -243,6 +250,7 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
       else if (f.installDone === "yes") {
         if (!f.installDate) e["f-install-date"] = "Enter the installation date.";
         else if (f.installDate > todayISO()) e["f-install-date"] = "Installation date cannot be in the future.";
+        else if (f.billDate && f.installDate < f.billDate) e["f-install-date"] = "Installation date must be on or after the bill date.";
         else if (f.deliveryDate && f.installDate < f.deliveryDate) e["f-install-date"] = "Installation cannot be before delivery.";
       }
     }
@@ -258,11 +266,12 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
     if (!(ITEM_CATEGORIES as readonly string[]).includes(f.category)) e["f-category"] = "Choose an item category.";
     f.lines.forEach((l, i) => {
       const id = (k: string) => `line-${i}-${k}`;
-      const type = findType(l.group, l.type);
+      const type = findItemType(f.category, l.group, l.type);
       if (!l.group) e[id("group")] = "Choose an item group.";
+      else if (!groupsForCategory(f.category).includes(l.group)) e[id("group")] = "Choose a group appropriate to this bill's category.";
       if (l.group && !type) e[id("type")] = "Choose an item type from the list.";
       if (type?.requiresMakeModel) {
-        if (!l.brand.trim()) e[id("brand")] = "Choose or enter the make.";
+        if (!l.brand.trim() || l.brand === "Miscellaneous") e[id("brand")] = "Choose a make or enter the custom brand.";
         if (!l.model.trim()) e[id("model")] = "Enter the model.";
       }
       if (l.model.length > 100) e[id("model")] = "Keep it to 100 characters.";
@@ -272,8 +281,11 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
       if (!Number.isInteger(q) || q < 1 || q > 999) e[id("qty")] = "Whole number from 1 to 999.";
       if (!l.uom) e[id("uom")] = "Choose a unit.";
       if (!(toNum(l.unitPrice) > 0)) e[id("price")] = "Enter a unit price above zero.";
+      if (l.brand === "Miscellaneous") e[id("brand")] = "Enter the custom brand, or leave the optional brand blank.";
+      if (l.type === "Miscellaneous" && (!l.descriptionEdited || l.description.trim() === "Miscellaneous")) e[id("description")] = "Describe your custom item.";
 
     });
+    if (T.total > 0 && !purchaseMatchesTotal(f)) e["f-total"] = `Bill total ${inr(T.total)} (quantities × unit prices + other charges) must match purchase value ${inr(T.poValue)}.`;
   }
 
   if (step === 4) {
@@ -294,6 +306,7 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
     if (!f.declaration) e["f-declaration"] = "Confirm the declaration to submit.";
     if (!f.totalConfirmed) e["f-total-confirmed"] = "Confirm the total matches the supplier's bill.";
     if (!(T.total > 0)) e["f-total"] = "The bill total must be greater than zero.";
+    else if (!purchaseMatchesTotal(f)) e["f-total"] = "Bill total including quantities and extra charges must match the PO / purchase value.";
 
   }
 
@@ -397,7 +410,7 @@ export function loadDraft(key: string): Draft | null {
         line.custodian = [...new Set((legacy.units ?? []).map((u) => u.custodian?.trim()).filter(Boolean))].join(", ");
       }
       // A former combined item type needs an explicit choice of the new type.
-      if (line.type && !findType(line.group, line.type)) line.type = "";
+      if (line.type && !findItemType(form.category, line.group, line.type)) line.type = "";
       return line;
     });
     if (!form.lines.length) form.lines = [emptyLine()];

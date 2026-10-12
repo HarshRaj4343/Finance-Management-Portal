@@ -90,7 +90,7 @@ export const BillCard: React.FC<BillCardProps> = ({
           <tr><td>Remarks3</td><td>${escapeHtml(bill.remarks3)}</td></tr>
           <tr><td>Remarks4</td><td>${escapeHtml(bill.remarks4)}</td></tr>
           <tr><td>Status</td><td>${escapeHtml(deskLabel(bill.status))}</td></tr>
-          <tr><td>Store &amp; Purchase</td><td>${escapeHtml(bill.snp)}</td></tr>
+          <tr><td>Store and Purchase Department</td><td>${escapeHtml(bill.snp)}</td></tr>
           <tr><td>Audit</td><td>${escapeHtml(bill.audit)}</td></tr>
           <tr><td>Finance Admin</td><td>${escapeHtml(bill.finance_admin)}</td></tr>
           <tr><td>Noted</td><td>${escapeHtml(bill.noted)}</td></tr>
@@ -121,7 +121,7 @@ export const BillCard: React.FC<BillCardProps> = ({
             <p><span className="font-medium">Supplier:</span> {bill.supplier_name || "N/A"}</p>
             <p><span className="font-medium">Amount:</span> {formatCurrency(bill.po_value)}</p>
             <p><span className="font-medium">Category:</span> {bill.item_category || "N/A"}</p>
-            <p><span className="font-medium">Status:</span> {bill.status || "N/A"}</p>
+            <p><span className="font-medium">Status:</span> {deskLabel(bill.status) || "N/A"}</p>
           </div>
         </div>
         
@@ -139,7 +139,7 @@ export const BillCard: React.FC<BillCardProps> = ({
           <h4 className="font-medium text-gray-700 mb-2">Workflow Status</h4>
           <div className="space-y-1 text-sm">
             <p>
-              <span className="font-medium">Store &amp; Purchase:</span>
+              <span className="font-medium">Store and Purchase Department:</span>
               <span className={`ml-1 px-2 py-1 rounded text-xs ${
                 bill.snp === 'Approved' ? 'bg-green-100 text-green-800' :
                 bill.snp === 'Reject' ? 'bg-red-100 text-red-800' :
@@ -245,7 +245,7 @@ export const BillCard: React.FC<BillCardProps> = ({
           <div className="space-y-2">
             {bill.remarks1 && (
               <div className="bg-purple-50 p-3 rounded">
-                <p className="text-sm font-medium text-purple-800">Store &amp; Purchase Remark</p>
+                <p className="text-sm font-medium text-purple-800">Store and Purchase Department Remark</p>
                 <p className="text-sm text-purple-700">{bill.remarks1}</p>
               </div>
             )}

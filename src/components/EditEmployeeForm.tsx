@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import { deskLabel } from "@/lib/roles";
 
 // allowed departments
 const DEPARTMENTS = [
@@ -150,7 +151,7 @@ const EditEmployeeForm: React.FC<EditEmployeeFormProps> = ({
           </div>
           <div>
             <label htmlFor="employee_type" className="block text-sm font-medium text-gray-700">Type</label>
-            <input id="employee_type" readOnly value={formData.employee_type} className="mt-1 block w-full border rounded-md p-2 bg-gray-50" />
+            <input id="employee_type" readOnly value={deskLabel(formData.employee_type)} className="mt-1 block w-full border rounded-md p-2 bg-gray-50" />
           </div>
           <div>
             <label htmlFor="department" className="block text-sm font-medium text-gray-700">Department</label>

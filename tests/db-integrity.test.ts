@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { toPayload, type FormState } from "@/app/apply-bill/bill-form/model";
 import { billForm } from "./fixtures";
+import { recordedBillDates } from "@/lib/bill-review";
 
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database only)", () => {
@@ -11,7 +12,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
   const filer = { code: "TEST-C", name: "Test clerk", role: "Bill Employee" };
   const department = "School of Computing & Electrical Engineering";
   const payload = (f: FormState) => ({ ...toPayload(f), form_data: f, invoice_no: f.billNo, invoice_date: f.billDate,
-    date_of_delivery: f.deliveryDate, date_of_installation: null, submission_key: randomUUID() });
+    date_of_delivery: f.deliveryDate, date_of_installation: f.installRequired === "yes" ? f.installDate : null, submission_key: randomUUID() });
   const submit = async (p: Record<string, unknown> = payload(billForm()), actor = filer) => (await db.query("select public.fn_submit_bill($1,$2) as bill", [p, actor])).rows[0].bill;
   const decide = async (b: { id: string; revision: number }, role = "Finance Admin", action = "Approved", extra = {}) => {
     const code = role === "Finance Admin" ? "TEST-F" : role === "Audit" ? "TEST-A" : "TEST-S";
@@ -49,7 +50,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     const amend = (body: object, version = b.revision) => db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...body, expected_revision: version }, filer]);
     await expect(amend(p)).rejects.toThrow(/hold/);
     b = await decide(b, "Finance Admin", "Hold");
-    const next = payload({ ...p.form_data, category: "Major", lines: [{ ...p.form_data.lines[0], unitPrice: "90000" }] });
+    const next = payload({ ...p.form_data, category: "Major", poValue: "90000", lines: [{ ...p.form_data.lines[0], unitPrice: "90000" }] });
     b = (await amend(next)).rows[0].bill;
     expect(b).toMatchObject({ status: "Student Purchase", snp: "Pending", audit: null, finance_admin: null, po_value: 90000 });
     await expect(decide(b)).rejects.toThrow(/not Finance Admin/);
@@ -159,9 +160,57 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
   it("preserves balances and bills on repeat upgrades; ledgers are immutable", async () => {
     const before = (await db.query("select sum(po_value) as total,count(*) as n from public.bills")).rows[0];
     await db.query(readFileSync("db/migrations/0004_integrity.sql", "utf8"));
+    await db.query(readFileSync("db/migrations/0005_bill_form_review.sql", "utf8"));
     expect((await db.query("select sum(po_value) as total,count(*) as n from public.bills")).rows[0]).toEqual(before);
     await expect(db.query("update public.change_log set actor_code='forged'")).rejects.toThrow(/append-only/);
     expect((await db.query("select count(*)::integer as n from public.pda_balances where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
+  });
+  it("matches purchase value to quantity times unit price plus charges without reserving invalid bills", async () => {
+    const before = (await db.query("select balance,committed,spent from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    const counts = (await db.query("select (select count(*) from public.bills) bills,(select count(*) from public.bill_approvals) events")).rows[0];
+    const f = billForm(); f.lines[0].qty = "3"; f.lines[0].unitPrice = "123.45"; f.otherCharges = "10.15";
+    for (const amount of ["380.49", "380.51"]) {
+      f.poValue = amount;
+      await expect(submit(payload(f))).rejects.toThrow(/purchase value/);
+    }
+    expect((await db.query("select balance,committed,spent from public.pda_balances where employee_id='TEST-U'")).rows[0]).toEqual(before);
+    expect((await db.query("select (select count(*) from public.bills) bills,(select count(*) from public.bill_approvals) events")).rows[0]).toEqual(counts);
+    f.poValue = "380.50";
+    const b = await submit(payload(f)); expect(Number(b.po_value)).toBe(380.5);
+  });
+  it("enforces invoice before delivery and installation even for direct SQL calls, allowing equality", async () => {
+    const f = billForm(); f.installRequired = "yes"; f.installDone = "yes"; f.installDate = "2026-01-03";
+    f.deliveryDate = "2025-12-31";
+    await expect(submit(payload(f))).rejects.toThrow(/Bill date/);
+    f.deliveryDate = "2026-01-02"; f.installDate = "2025-12-31";
+    await expect(submit(payload(f))).rejects.toThrow(/installation/);
+    f.installDate = "2026-01-01";
+    await expect(submit(payload(f))).rejects.toThrow(/installation/);
+    f.installDate = f.deliveryDate = f.billDate;
+    expect(recordedBillDates(await submit(payload(f))).delivery).toBe("2026-01-01");
+  });
+  it("connects PDA fund selection to reservation and settlement and preserves it in the register", async () => {
+    const f = billForm("TEST-U", 333); f.fund = "PDA";
+    const before = (await db.query("select balance,committed,spent from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    let b = await submit(payload(f));
+    const reserved = (await db.query("select balance,committed,spent from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    expect(Number(reserved.balance)).toBe(Number(before.balance) - 333);
+    expect(Number(reserved.committed)).toBe(Number(before.committed) + 333);
+    b = await decide(b);
+    const settled = (await db.query("select balance,committed,spent from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    expect(Number(settled.spent)).toBe(Number(before.spent) + 333);
+    expect(Number(settled.committed)).toBe(Number(before.committed));
+    expect((await db.query("select source_of_fund from public.purchase_register where bill_id=$1", [b.id])).rows[0].source_of_fund).toBe("PDA");
+  });
+  it("blocks durable equipment in consumables and keeps repeated review migrations data-neutral", async () => {
+    const f = billForm(); f.lines[0].type = "MacBook";
+    await expect(submit(payload(f))).rejects.toThrow(/consumable/);
+    for (const table of ["bills", "bill_approvals", "pda_balances", "purchase_register", "change_log"]) {
+      const sql = `select md5(coalesce(string_agg(row_to_json(t)::text, ',' order by row_to_json(t)::text),'')) fingerprint from public.${table} t`;
+      const before = (await db.query(sql)).rows[0];
+      await db.query(readFileSync("db/migrations/0005_bill_form_review.sql", "utf8"));
+      expect((await db.query(sql)).rows[0]).toEqual(before);
+    }
   });
   it("restores demo accounts without clearing history or resetting existing accounts on repeat seed", async () => {
     const seed = readFileSync("db/seed/0003_demo_data.sql", "utf8");

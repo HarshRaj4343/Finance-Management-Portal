@@ -1,13 +1,14 @@
 "use client";
 
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { api } from "@/lib/api";
 import { Plus, Trash2 } from "lucide-react";
 import { AreaField, Button, Card, ComboField, Full, Grid, MoneyField, NumberField, ReadOnlyField, SelectField, TextField } from "./ui";
 import {
-  BRANDS, BUILDINGS, FLOORS, FUNDS, ITEM_CATEGORIES, ITEM_GROUPS, UOMS,
-  findType, typesForGroup,
+  BUILDINGS, FLOORS, FUNDS, ITEM_CATEGORIES, UOMS,
+  findItemType, itemTypesFor, groupsForCategory, brandsFor,
 } from "./masters";
-import { FormState, Line, Place, emptyLine, inr, needsMakeModel, lineQty, lineTotal, toNum, totals } from "./model";
+import { FormState, Line, Place, emptyLine, inr, needsMakeModel, lineQty, lineTotal, toNum, totals, purchaseMatchesTotal } from "./model";
 import type { StepProps } from "./steps-basic";
 
 // ---------------------------------------------------------------------
@@ -105,8 +106,8 @@ export function StepItems({ f, set, errors }: StepProps) {
         next = { ...next, type: "", brand: "", model: "", description: "", descriptionEdited: false, uom: "Nos" };
       }
       if ("type" in patch && patch.type !== l.type) {
-        const t = findType(next.group, next.type);
-        next = { ...next, uom: t?.uom ?? next.uom, descriptionEdited: false };
+        const t = findItemType(f.category, next.group, next.type);
+        next = { ...next, brand: "", model: "", uom: t?.uom ?? next.uom, descriptionEdited: false };
       }
       if (!next.descriptionEdited && !("description" in patch)) next.description = suggest(next);
       if ("description" in patch) next.descriptionEdited = true;
@@ -124,7 +125,8 @@ export function StepItems({ f, set, errors }: StepProps) {
             label="Item Category"
             required
             value={f.category}
-            onChange={(v) => set({ category: v })}
+            onChange={(v) => set({ category: v, lines: f.lines.map((line) =>
+              findItemType(v, line.group, line.type) ? line : { ...line, group: "", type: "", brand: "", model: "", description: "", descriptionEdited: false }) })}
             options={ITEM_CATEGORIES.map((c) => ({ value: c }))}
             error={errors["f-category"]}
             hint="Applies to every item on this bill. It decides which desk sees the bill first."
@@ -137,6 +139,7 @@ export function StepItems({ f, set, errors }: StepProps) {
           key={l.key}
           i={i}
           l={l}
+          category={f.category}
           errors={errors}
           canRemove={f.lines.length > 1}
           onPatch={(p) => patchLine(i, p)}
@@ -156,24 +159,28 @@ export function StepItems({ f, set, errors }: StepProps) {
         </span>
         <span className="text-sm font-semibold tabular-nums text-slate-900">Items total {inr(T.itemsSum)}</span>
       </div>
+      {errors["f-total"] && <p id="f-total" role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{errors["f-total"]}</p>}
     </div>
   );
 }
 
 function LineCard({
-  i, l, errors, canRemove, onPatch, onRemove,
+  i, l, category, errors, canRemove, onPatch, onRemove,
 }: {
   i: number;
   l: Line;
+  category: string;
   errors: Record<string, string>;
   canRemove: boolean;
   onPatch: (p: Partial<Line>) => void;
   onRemove: () => void;
 }) {
   const id = (k: string) => `line-${i}-${k}`;
-  const type = findType(l.group, l.type);
-  const types = typesForGroup(l.group);
-  const requiresMakeModel = needsMakeModel(l);
+  const type = findItemType(category, l.group, l.type);
+  const types = itemTypesFor(category, l.group);
+  const requiresMakeModel = needsMakeModel(l, category);
+  const brands = brandsFor(category, l.group, l.type);
+  const customBrand = Boolean(l.brand && (l.brand === "Miscellaneous" || !brands.includes(l.brand)));
 
   return (
     <Card
@@ -193,7 +200,7 @@ function LineCard({
           required
           value={l.group}
           onChange={(v) => onPatch({ group: v })}
-          options={ITEM_GROUPS.map((g) => ({ value: g }))}
+          options={groupsForCategory(category).map((g) => ({ value: g }))}
           placeholder="Select item group"
           error={errors[id("group")]}
         />
@@ -213,17 +220,20 @@ function LineCard({
           }
           error={errors[id("type")]}
         />
-        <ComboField
+        <SelectField
           id={id("brand")}
           label="Make / Brand"
           required={requiresMakeModel}
-          value={l.brand}
+          value={customBrand ? "Miscellaneous" : l.brand}
           onChange={(v) => onPatch({ brand: v })}
-          options={BRANDS.map((b) => ({ value: b }))}
-          allowCustom
-          placeholder="Select or type a brand"
+          options={brands.map((b) => ({ value: b }))}
+          disabled={!type}
+          placeholder={type ? "Choose a brand or Miscellaneous" : "Choose an item type first"}
           error={errors[id("brand")]}
         />
+        {customBrand && <TextField id={id("brand-custom")} label="Custom Make / Brand" required
+          value={l.brand === "Miscellaneous" ? "" : l.brand} onChange={(v) => onPatch({ brand: v || "Miscellaneous" })}
+          maxLength={100} placeholder="Enter the actual brand (or Unbranded)" error={errors[id("brand")]} />}
         <TextField
           id={id("model")}
           label="Model Name / No."
@@ -294,6 +304,15 @@ function LineCard({
 export function StepFunding({ f, set, errors }: StepProps) {
   const T = totals(f);
   const fund = FUNDS.find((x) => x.code === f.fund);
+  const [funding, setFunding] = useState<{ code: string; account: { balance: number; allocated: number; committed: number; spent: number; is_active: boolean } | null; error?: string } | null>(null);
+  const code = f.requesterCode.trim();
+  useEffect(() => {
+    let cancelled = false;
+    if (code) api.get<{ account: NonNullable<typeof funding>["account"] }>(`/api/bills/funding?employee=${encodeURIComponent(code)}`)
+      .then(({ data, error }) => { if (!cancelled) setFunding({ code, account: data?.account ?? null, error: error ?? undefined }); });
+    return () => { cancelled = true; };
+  }, [code]);
+  const snapshot = funding?.code === code ? funding : null;
 
   const patchLine = (i: number, patch: Partial<Line>) =>
     set({ lines: f.lines.map((l, k) => (k === i ? { ...l, ...patch } : l)) });
@@ -311,9 +330,17 @@ export function StepFunding({ f, set, errors }: StepProps) {
             options={FUNDS.map((x) => ({ value: x.code, label: `${x.code} — ${x.description}`, group: x.group }))}
             placeholder="Search by code or description"
             error={errors["f-fund"]}
-            hint={fund ? `Charged to ${fund.code} — ${fund.description}.` : "Codes follow the OH-xx format."}
+            hint={fund ? `Source: ${fund.code} — ${fund.description}.` : "Choose OH-31, OH-35 or the applicant's PDA."}
           />
         </Grid>
+        <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-slate-700" aria-live="polite">
+          <p className="font-semibold">Applicant PDA · {code || "Choose an applicant"}</p>
+          {snapshot?.error ? <p className="mt-2 text-red-700">{snapshot.error}</p> : !snapshot ? <p>Loading account…</p> : snapshot.account?.is_active ?
+            <dl className="mt-2 grid grid-cols-2 gap-2"><div><dt>Free balance</dt><dd>{inr(snapshot.account.balance)}</dd></div>
+              <div><dt>Committed</dt><dd>{inr(snapshot.account.committed)}</dd></div><div><dt>Spent</dt><dd>{inr(snapshot.account.spent)}</dd></div>
+              <div><dt>This bill</dt><dd>{inr(T.total)}</dd></div></dl> : <p className="mt-2 text-red-700">No active PDA account. Ask the PDA Manager to open/fund it.</p>}
+          <p className="mt-3 text-xs">All three source choices currently reserve funds from this applicant&apos;s PDA. The server rechecks the available balance atomically on submission; corrections reserve only the amount difference.</p>
+        </div>
       </Card>
 
       {f.lines.map((l, i) => {
@@ -381,6 +408,7 @@ export function StepFunding({ f, set, errors }: StepProps) {
         <span className="text-sm text-slate-600">{T.units} units · {T.issued} issued</span>
         <span className="text-sm font-semibold tabular-nums">Bill total {inr(T.total)}</span>
       </div>
+      {T.total > 0 && !purchaseMatchesTotal(f) && <p className="text-sm text-red-700">Bill total must match the PO / purchase value, including all quantities and extra charges.</p>}
     </div>
   );
 }

@@ -2,7 +2,7 @@ import "server-only";
 import { getServerSession } from "next-auth";
 import { authOptions } from "./auth-options";
 import { queryOne } from "./db";
-import { normaliseRole, isApprover, type Role, type Stage } from "@/lib/roles";
+import { normaliseRole, isApprover, deskLabel, type Role, type Stage } from "@/lib/roles";
 
 /** Who is making this request, as far as the server is concerned. */
 export type Actor = {
@@ -55,7 +55,7 @@ export async function requireRole(...allowed: Role[]): Promise<Actor> {
   if (!allowed.includes(actor.role)) {
     throw new HttpError(
       403,
-      `This needs ${allowed.join(" or ")} access. You are signed in as ${actor.role}.`
+      `This needs ${allowed.map(deskLabel).join(" or ")} access. You are signed in as ${deskLabel(actor.role)}.`
     );
   }
   return actor;

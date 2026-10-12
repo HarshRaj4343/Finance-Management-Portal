@@ -6,7 +6,7 @@ This `after-midsem` branch runs Next.js 15, React 19, NextAuth and plain Postgre
 
 ## Local development
 
-Use Node.js 22+ and PostgreSQL 17. Copy `.env.example` to `.env` and configure the database, institutional LDAP and NextAuth secret. Never commit secrets.
+Use Node.js 22.22.2+ on the 22 series, 24.15.0+ on the 24 series, or 26+, with PostgreSQL 17. Copy `.env.example` to `.env` and configure the database, institutional LDAP and NextAuth secret. Never commit secrets.
 
 ```sh
 npm ci
@@ -42,13 +42,21 @@ The restored seed only inserts missing demo employees and ₹250,000 starter PDA
 
 ## Financial workflow and safeguards
 
-Major/minor bills start at Store & Purchase; consumables skip that desk. Amounts strictly above ₹50,000 require Audit. Every route ends at Finance Admin. Submission reserves funds, rejection releases them, and final approval spends them and creates one immutable register entry.
+Major/minor bills start at the Store and Purchase Department; consumables skip that desk. Amounts strictly above ₹50,000 require Audit. Every route ends at Finance Admin. Submission reserves funds, rejection releases them, and final approval spends them and creates one immutable register entry.
 
 Only applicants filing for themselves, or authorised departmental Bill Employees, may submit bills. Bill Editors can correct held bills in their department. The Store and Purchase Section is the explicitly designated umbrella filing department. Read access does not imply write access. Applicants and filers cannot decide their own bills, and different approval desks require different reviewers.
 
 Corrections require a current hold and the reviewed revision number. They restart the required route and invalidate previous approvals, including bank-guarantee details. The complete before/after record remains in the append-only change log; the bill detail page exposes its revision history. Every decision checks its revision, so an unseen amendment cannot be approved.
 
 The server validates the complete form and derives money from quantities, unit prices and other charges. Structured items, invoice details, delivery/installation facts and declarations are retained. Supplier + invoice number + invoice financial year is unique across non-rejected bills, with case/whitespace normalisation. Submission keys make repeated network submissions reserve money once. Rejected invoices may be refiled; accepted or in-progress invoices may not.
+
+The PO / purchase value remains a separate entered value representing the order amount. The computed bill total is the sum of **quantity × unit price for each line, plus other charges**. These values must match to the paise on submission and correction, checked in the form, API and database. This branch requires a full-order bill, not partial/multiple invoicing against one PO. The invoice date must be on or before delivery and installation; installation cannot precede delivery. Same-day dates are allowed.
+
+Consumables have their own twelve domain groups and examples, plus Miscellaneous. Durable equipment such as laptops/MacBooks is not offered as a consumable. Every item group offers a Miscellaneous item with a required custom description; the make selector offers Miscellaneous for an actual custom brand. Brands are filtered by item, not a global unrelated list.
+
+The source choices are OH-31, OH-35 and PDA. **All three currently reserve/settle the applicant's PDA account**, matching the existing financial ledger; OH codes are reporting classifications, not separate cash pools. The funding step shows a permission-scoped live PDA snapshot. The server checks balance atomically; the snapshot does not guarantee funds remain available.
+
+Store and Purchase review shows filed delivery/installation dates read-only, independently of bank guarantees. Older bills use an unambiguous generated date in their saved text when available; otherwise dates are explicitly marked missing, with no historical backfill. Approve, Hold and Reject are available on both its dashboard and Bill Details for eligible reviewers. Each action opens a summary/confirmation dialog; cancelling does not send a decision. This is double confirmation, **not OTP-based two-factor authentication**. JSON debugging controls are removed from the Store and Purchase UI. Internal role/status values and URLs remain unchanged to preserve existing records and permissions.
 
 PDA allocations, top-ups, closures, bill transitions and event sequences are transactional. Closed accounts are retained rather than deleted and cannot fund purchases. Administrative and PDA changes have durable before/after audit records. The last active Dean cannot be removed. Deactivation and role changes take effect on the next authenticated request; sessions have a hard eight-hour sign-in lifetime.
 
@@ -70,12 +78,15 @@ For Docker:
 ```sh
 ./scripts/db-backup.sh
 docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0004_integrity.sql
+docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0005_bill_form_review.sql
 docker compose up -d --build
 ```
 
 Migration 0004 is additive, transactional and repeatable. It retains existing bills, account balances and approvals. Conflicting case-insensitive employee IDs stop migration for administrator review; they are not silently merged. Legacy bills without structured invoice/form fields remain readable; their corrections require completing the new form. Historical supplier invoices cannot be deduplicated automatically without reliable invoice data. New finite/quantity constraints use `NOT VALID` to preserve old rows, but enforce correctness on new/changed rows. Administrators should reconcile legacy anomalies before validating these constraints.
 
-On first Docker database creation, migrations 0001–0004 run in order. Existing volumes do not rerun init scripts. `scripts/deploy-server.sh` takes a custom-format database backup before applying additive migrations; it does not reset volumes. Configure TLS, LDAP and mail in `.env`; see `docker-compose.yml` and `deploy/nginx/`.
+Migration 0005 replaces bill validation to enforce purchase-total reconciliation, date order, consumable groups and the PDA fund choice. It does not update any existing records. Run it after 0004; repeat upgrades must finish with 0005 so the current validator is retained.
+
+On first Docker database creation, migrations 0001–0005 run in order. Existing volumes do not rerun init scripts. `scripts/deploy-server.sh` takes a custom-format database backup before applying additive migrations; it does not reset volumes. Configure TLS, LDAP and mail in `.env`; see `docker-compose.yml` and `deploy/nginx/`.
 
 `DECISIONS.md` and `Bill-form.md` are retained design/history references, not deployment instructions. Earlier Supabase, destructive demo-dataset and Vercel instructions in the historical decision log are superseded.
 
@@ -93,4 +104,6 @@ npm run build
 
 ## Operational limits
 
-Supplier/building/PO master integrations are not implemented. Supplier and location inputs accept real typed values; fictitious supplier suggestions have been removed. OH-31/OH-35 are the currently configured fund codes. Invoice deduplication relies on consistent supplier identity; aliases require master-data governance. Mail delivery is best-effort and is not a condition of approval; decisions remain visible in the bill timeline even when mail is disabled or unavailable. Real LDAP/SMTP and institutional acceptance testing must be performed in the institute network before handling live money.
+Supplier/building/PO master integrations are not implemented. Five clearly labelled fictional demo supplier suggestions are provided; supplier/address and location inputs still accept real typed values. Demo names/addresses are not verified vendors. Invoice deduplication relies on consistent supplier identity; aliases require master-data governance. Mail delivery is best-effort and is not a condition of approval; decisions remain visible in the bill timeline even when mail is disabled or unavailable. Real LDAP/SMTP and institutional acceptance testing must be performed in the institute network before handling live money.
+
+Brand suggestions are examples, not procurement endorsements. Audio/electronics choices were checked against official catalogues: [Portronics](https://www.portronics.com/collections/portable-speakers), [boAt](https://www.boat-lifestyle.com/collections/all-speakers), [Zebronics](https://zebronics.com/), [JBL](https://www.jbl.com/bluetooth-speakers/) and [Sony](https://www.sony.co.in/wireless-speakers/portable). Fan/appliance choices: [Havells](https://consumer.havells.com/consumer), [Crompton](https://www.crompton.co.in/pages/product-guide), [Bajaj](https://www.bajajelectricals.com/), [Usha](https://www.usha.com/) and [Orient Electric](https://orientelectric.com/pages/fans). Wire choices also include [Polycab](https://polycab.com/cables), [RR Kabel](https://www.rrkabel.com/products-categories/wires-cables/) and [Finolex](https://www.finolex.com/).

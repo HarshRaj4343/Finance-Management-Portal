@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  emptyForm, emptyLine, financialYear, inr, loadDraft, toNum, toPayload, totals, validateStep,
+  emptyForm, emptyLine, financialYear, inr, loadDraft, toNum, toPayload, totals, validateStep, purchaseMatchesTotal,
 } from "../src/app/apply-bill/bill-form/model";
-import { ITEM_TYPES, typesForGroup } from "../src/app/apply-bill/bill-form/masters";
+import { ITEM_TYPES, typesForGroup, groupsForCategory, itemTypesFor, brandsFor, SUPPLIERS, FUNDS } from "../src/app/apply-bill/bill-form/masters";
 import { deskLabel } from "@/lib/roles";
 
 const ctx = { requesterFound: true, requesterDepartment: "SCEE", filingDepartment: "SCEE" };
@@ -11,8 +11,8 @@ function filled() {
   const f = emptyForm();
   Object.assign(f, {
     requesterCode: "E001", purchaseType: "po", poNumber: "PO/26/1", poDate: "2026-09-01",
-    poValue: "100000", supplierName: "Acme", supplierAddress: "Mandi", billNo: "INV-9",
-    billDate: "2026-09-10", fund: "OH-31", delivered: "yes", deliveryDate: "2026-09-05",
+    poValue: "80000", supplierName: "Acme", supplierAddress: "Mandi", billNo: "INV-9",
+    billDate: "2026-09-03", fund: "OH-31", delivered: "yes", deliveryDate: "2026-09-05",
     installRequired: "yes", installDone: "yes", installDate: "2026-09-08",
     declaration: true, totalConfirmed: true,
   });
@@ -53,10 +53,71 @@ describe("simplified bill formation", () => {
     for (let s = 0; s < 6; s++) expect(validateStep(s, f, ctx)).toEqual({});
   });
 
-  it("does not block review when the item total exceeds the PO value", () => {
+  it("blocks both a higher and a lower purchase value, including at review", () => {
     const f = filled();
-    f.poValue = "1000";
+    for (const purchase of ["1000", "90000"]) {
+      f.poValue = purchase;
+      expect(validateStep(3, f, ctx)["f-total"]).toBeTruthy();
+      expect(validateStep(5, f, ctx)["f-total"]).toBeTruthy();
+      expect(purchaseMatchesTotal(f)).toBe(false);
+    }
+    f.otherCharges = "1234.50";
+    f.poValue = "₹ 81,234.50";
+    expect(purchaseMatchesTotal(f)).toBe(true);
     expect(validateStep(5, f, ctx)).toEqual({});
+  });
+
+  it("permits same-day dates and rejects delivery/installation before the invoice or each other", () => {
+    const f = filled();
+    f.deliveryDate = f.installDate = f.billDate;
+    expect(validateStep(2, f, ctx)).toEqual({});
+    f.deliveryDate = "2026-09-02";
+    expect(validateStep(2, f, ctx)["f-delivery-date"]).toBeTruthy();
+    f.deliveryDate = "2026-09-05";
+    f.installDate = "2026-09-04";
+    expect(validateStep(2, f, ctx)["f-install-date"]).toBeTruthy();
+    f.installDate = "2026-09-02";
+    expect(validateStep(2, f, ctx)["f-install-date"]).toBeTruthy();
+  });
+
+  it("offers consumable-only examples and a described custom item in every group", () => {
+    const groups = groupsForCategory("Consumables");
+    expect(groups).toHaveLength(13);
+    expect(groups).toContain("Miscellaneous");
+    for (const group of groups) {
+      const names = itemTypesFor("Consumables", group).map((t) => t.name);
+      expect(names).toContain("Miscellaneous");
+      expect(names).not.toContain("Laptop");
+      expect(names).not.toContain("MacBook");
+    }
+    const f = filled();
+    f.category = "Consumables";
+    expect(validateStep(3, f, ctx)["line-0-group"]).toBeTruthy();
+    Object.assign(f.lines[0], { group: "Office and academic stationery", type: "Miscellaneous", description: "Miscellaneous", descriptionEdited: false });
+    expect(validateStep(3, f, ctx)["line-0-description"]).toBeTruthy();
+    Object.assign(f.lines[0], { description: "Custom adhesive labels", descriptionEdited: true });
+    expect(validateStep(3, f, ctx)).toEqual({});
+  });
+
+  it("filters makes by item/domain and allows a real custom brand", () => {
+    expect(brandsFor("Minor", "Computer & IT", "Speaker")).toEqual(["Portronics", "boAt", "Zebronics", "JBL", "Sony", "Miscellaneous"]);
+    expect(brandsFor("Minor", "Computer & IT", "MacBook")).toEqual(["Apple", "Miscellaneous"]);
+    expect(brandsFor("Consumables", "Electrical and electronic consumables", "Wires")).toContain("Polycab");
+    expect(brandsFor("Consumables", "Office and academic stationery", "Paper")).not.toContain("Dell");
+    expect(brandsFor("Minor", "Furniture", "Chair")).not.toContain("Portronics");
+    const f = filled(); f.lines[0].brand = "Miscellaneous";
+    expect(validateStep(3, f, ctx)["line-0-brand"]).toBeTruthy();
+    f.lines[0].brand = "Custom manufacturer";
+    expect(validateStep(3, f, ctx)).toEqual({});
+  });
+
+  it("keeps demo suppliers labelled and adds PDA without removing overhead funds", () => {
+    expect(SUPPLIERS.length).toBeGreaterThanOrEqual(5);
+    expect(SUPPLIERS.every((s) => s.name.startsWith("Demo "))).toBe(true);
+    expect(FUNDS.map((fund) => fund.code)).toEqual(expect.arrayContaining(["PDA", "OH-31", "OH-35"]));
+    const f = filled(); f.fund = "PDA";
+    expect(validateStep(4, f, ctx)).toEqual({});
+    expect(toPayload(f).source_of_fund).toBe("PDA");
   });
 
   it("retains employee lookup and department checks", () => {
@@ -136,9 +197,9 @@ describe("simplified bill formation", () => {
     expect(totals(draft!.form).total).toBe(80000);
   });
 
-  it("keeps workflow storage values but shows Store & Purchase to the user", () => {
-    expect(deskLabel("Student Purchase")).toBe("Store & Purchase");
-    expect(deskLabel("Routed to Student Purchase (Minor)")).toBe("Routed to Store & Purchase (Minor)");
+  it("keeps workflow storage values but shows the current department name to the user", () => {
+    expect(deskLabel("Student Purchase")).toBe("Store and Purchase Department");
+    expect(deskLabel("Routed to Student Purchase (Minor)")).toBe("Routed to Store and Purchase Department (Minor)");
     expect(deskLabel("Finance Admin")).toBe("Finance Admin");
   });
 });

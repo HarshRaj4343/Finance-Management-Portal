@@ -1,5 +1,6 @@
 import "server-only";
 import { NextResponse } from "next/server";
+import { deskLabel } from "@/lib/roles";
 
 /**
  * Turns whatever the database threw into something a person can read.
@@ -15,12 +16,12 @@ export function fail(err: unknown, fallback = "Something went wrong."): NextResp
 
   // An HttpError thrown by a session guard already knows its status code.
   if (typeof e?.status === "number" && e.status >= 400 && e.status < 500 && e.message) {
-    return NextResponse.json({ error: e.message }, { status: e.status });
+    return NextResponse.json({ error: deskLabel(e.message) }, { status: e.status });
   }
 
   // P0001 = raise_exception, i.e. a rule we wrote deliberately.
   if (e?.code === "P0001" && e.message) {
-    return NextResponse.json({ error: e.message }, { status: 400 });
+    return NextResponse.json({ error: deskLabel(e.message) }, { status: 400 });
   }
 
   // Constraint violations we can phrase better than Postgres does.

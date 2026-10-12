@@ -6,7 +6,7 @@
  * Each export below is the one place to swap for an API call when they do.
  *
  * Purchase orders and buildings are empty until their masters exist.
- * Supplier suggestions are empty; the comboboxes accept real typed values.
+ * Supplier suggestions below are clearly labelled demo fixtures; typed values remain available.
  */
 
 export const PURCHASE_TYPES = [
@@ -19,7 +19,6 @@ export const ITEM_CATEGORIES = ["Minor", "Major", "Consumables"] as const;
 
 export const UOMS = ["Nos", "Set", "Pair", "Metre", "Kg", "Litre", "Box", "Pack", "Licence"] as const;
 
-export const BRANDS = ["Dell", "HP", "Lenovo", "Apple"] as const;
 
 export const FLOORS = [
   "Basement",
@@ -37,9 +36,15 @@ export const BUILDINGS: string[] = [];
 export type Supplier = { name: string; address: string };
 
 /**
- * Populate only from the real Supplier Master (Purchase / Accounts).
+ * Fictional examples for branch demonstrations, not an approved supplier master.
  */
-export const SUPPLIERS: Supplier[] = [];
+export const SUPPLIERS: Supplier[] = [
+  { name: "Demo Computers & Peripherals", address: "Demo address: 12 Industrial Area, Mandi, Himachal Pradesh 175001" },
+  { name: "Demo Office Furniture House", address: "Demo address: 45 Bypass Road, Sundernagar, Himachal Pradesh 175018" },
+  { name: "Demo Lab Instruments", address: "Demo address: Plot 7, Industrial Area, Mandi, Himachal Pradesh 175001" },
+  { name: "Demo Electricals & Electronics", address: "Demo address: 21 Main Bazaar, Mandi, Himachal Pradesh 175001" },
+  { name: "Demo Stationery & Consumables", address: "Demo address: 8 Main Bazaar, Mandi, Himachal Pradesh 175001" },
+];
 
 export type Fund = { code: string; description: string; group: string };
 
@@ -50,9 +55,10 @@ export type Fund = { code: string; description: string; group: string };
 export const FUNDS: Fund[] = [
   { code: "OH-31", description: "Recurring consumable", group: "Institute / OH heads" },
   { code: "OH-35", description: "Non-recurring", group: "Institute / OH heads" },
+  { code: "PDA", description: "Applicant's PDA account", group: "Personal Development Account" },
 ];
 
-export const FUND_PATTERN = /^OH-\d{2,3}$/;
+export const FUND_PATTERN = /^(OH-\d{2,3}|PDA)$/;
 
 // ---------------------------------------------------------------------
 // Item master (Stock_Index.xlsx -> Bill-form.md §5)
@@ -106,3 +112,53 @@ export const ITEM_TYPES: ItemType[] = [
 export const typesForGroup = (group: string) => ITEM_TYPES.filter((i) => i.group === group);
 export const findType = (group: string, name: string) =>
   ITEM_TYPES.find((i) => i.group === group && i.name === name);
+
+/** Consumable examples supplied for this branch; never mix durable assets into this catalogue. */
+const CONSUMABLE_EXAMPLES: Record<string, string[]> = {
+  "Office and academic stationery": ["Paper", "Official-use notebooks", "Pens", "Pencils", "Markers", "Folders", "Envelopes", "Labels"],
+  "Laboratory chemicals": ["Reagents", "Solvents", "Acids", "Bases", "Buffers", "Analytical chemicals"],
+  "Laboratory consumables": ["Test tubes", "Pipette tips", "Sample tubes", "Disposable labware", "Plasticware"],
+  "Scientific materials": ["Glassware", "Filters", "Sample containers", "Culture media"],
+  "Biological consumables": ["Bacterial cultures", "Microbial media", "Biological reagents"],
+  "Computer consumables": ["Printer ink", "Toner", "Computer cleaning supplies"],
+  "Electrical and electronic consumables": ["Wires", "Connectors", "Solder", "Small replacement components", "Prototyping materials"],
+  "Mechanical and fabrication consumables": ["Screws", "Nuts", "Bolts", "Fasteners", "Abrasives", "Cutting consumables", "Drilling consumables"],
+  "Maintenance consumables": ["Routine-use replacement parts", "Minor maintenance materials"],
+  "Housekeeping consumables": ["Cleaning agents", "Detergents", "Disinfectants", "Tissue paper", "Garbage bags"],
+  "Water and wastewater treatment consumables": ["Chlorine", "Alum", "Urea", "DAP", "Treatment bacterial culture", "Other treatment chemicals"],
+  "Research-specific consumables": ["Experimental materials", "Testing materials", "Prototyping supplies", "Fieldwork supplies"],
+  "Miscellaneous": ["Other item (specify in description)"],
+};
+export const CONSUMABLE_TYPES: ItemType[] = Object.entries(CONSUMABLE_EXAMPLES)
+  .flatMap(([group, names]) => names.map((name) => t(group, name)));
+
+export function groupsForCategory(category: string): string[] {
+  return category === "Consumables" ? Object.keys(CONSUMABLE_EXAMPLES) : [...ITEM_GROUPS];
+}
+export function itemTypesFor(category: string, group: string): ItemType[] {
+  const catalogue = category === "Consumables" ? CONSUMABLE_TYPES : ITEM_TYPES;
+  const items = catalogue.filter((i) => i.group === group);
+  if (!groupsForCategory(category).includes(group)) return [];
+  return [...items, { name: "Miscellaneous", group, requiresMakeModel: false, uom: "Nos" }];
+}
+export const findItemType = (category: string, group: string, name: string) =>
+  itemTypesFor(category, group).find((i) => i.name === name);
+
+/** Contextual suggestions, not procurement endorsements. Sources are recorded in README.md. */
+export function brandsFor(category: string, group: string, type: string): string[] {
+  if (!findItemType(category, group, type)) return [];
+  let brands: string[] = [];
+  if (category !== "Consumables" && group === IT) {
+    if (["Speaker", "Sound System"].includes(type)) brands = ["Portronics", "boAt", "Zebronics", "JBL", "Sony"];
+    else if (type === "MacBook") brands = ["Apple"];
+    else if (["Desktop Computer", "Laptop", "Notebook", "CPU", "LED", "Monitor"].includes(type)) brands = ["Dell", "HP", "Lenovo", "Apple"];
+  }
+  if (category !== "Consumables" && group === EL) {
+    if (["Fan", "Exhaust Fan", "Blower"].includes(type)) brands = ["Havells", "Crompton", "Bajaj", "Usha", "Orient Electric"];
+    else if (["Heat Pillar", "Oil Heater", "Kettle", "Geyser", "Induction", "Press"].includes(type)) brands = ["Havells", "Crompton", "Bajaj", "Usha"];
+  }
+  if (category === "Consumables" && group === "Electrical and electronic consumables" && type === "Wires") {
+    brands = ["Havells", "Polycab", "RR Kabel", "Finolex"];
+  }
+  return [...brands, "Miscellaneous"];
+}

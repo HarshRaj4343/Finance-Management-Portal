@@ -4,6 +4,8 @@ Use PostgreSQL 17. See [the operational guide](../README.md) for setup, backups,
 
 Migrations 0001–0003 establish the base schema, transactional workflow and immutable stock references. Migration 0004 is the additive integrity upgrade: revision checks, invoice deduplication, structured bill data, live actor guards, durable before/after ledgers, atomic top-ups and account closure.
 
+Migration 0005 is a data-neutral validation upgrade: purchase value must equal quantity-weighted items plus charges, bill date cannot follow delivery/installation, consumables must use consumable groups, and PDA is a permitted fund code. Run 0004 then 0005 on every upgrade; the latter replaces `fn_validate_bill`. Existing rows/timestamps/balances/events are not modified by 0005.
+
 For a **fresh empty** database, run `npm run db:setup`. For an **existing** database, back up first and run `npm run db:upgrade`. Never run 0001 or delete a Docker volume to upgrade. Demo login is retained; the optional `seed/0003_demo_data.sql` only adds missing demo accounts and starter balances without modifying existing records. Run it manually only on a demo database; see the operational guide for credentials and the seed command.
 
 The account invariant is:
