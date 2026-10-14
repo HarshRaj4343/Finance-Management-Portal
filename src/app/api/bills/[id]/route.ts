@@ -44,7 +44,9 @@ export async function GET(
            from public.employees where employee_code = $1`,
         [bill.employee_id]
       ),
-      query("select actor_code, old_data, new_data, recorded_at from public.change_log where entity = 'bills' and entity_id = $1 order by id", [id]),
+      query(`select c.actor_code, e.employee_name as actor_name, c.old_data, c.new_data, c.recorded_at
+               from public.change_log c left join public.employees e on e.employee_code = c.actor_code
+              where c.entity = 'bills' and c.entity_id = $1 order by c.id`, [id]),
     ]);
 
     return ok({

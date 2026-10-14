@@ -18,6 +18,8 @@ vi.mock("@/server/db", async (importOriginal) => {
 });
 import { POST as submit } from "@/app/api/bills/route";
 import { GET as register } from "@/app/api/register/route";
+import { GET as fundHeads, POST as addFunding } from "@/app/api/fund-heads/route";
+import { GET as movements } from "@/app/api/movements/route";
 import { POST as addEmployee } from "@/app/api/admin/employees/route";
 import { PATCH as updateEmployee } from "@/app/api/admin/employees/[code]/route";
 import { PATCH as pda } from "@/app/api/admin/pda/route";
@@ -88,6 +90,32 @@ describe("API authority and financial boundaries", () => {
       expect((await register(req("/api/register"))).status).toBe(403);
     }
     expect(mocks.query).not.toHaveBeenCalled();
+  });
+  it("opens the inward / outward register to the Dean and the three approval desks only", async () => {
+    for (const role of ["User", "Bill Employee", "PDA Manager"]) {
+      mocks.actor.role = role;
+      expect((await movements(req("/api/movements?register=Inward"))).status).toBe(403);
+    }
+    expect(mocks.query).not.toHaveBeenCalled();
+    mocks.query.mockResolvedValue([]); mocks.queryOne.mockResolvedValue({ total: 0 });
+    for (const role of ["Dean", "Finance Admin", "Audit", "Student Purchase"]) {
+      mocks.actor.role = role;
+      expect((await movements(req("/api/movements?register=Outward&desk=Audit"))).status).toBe(200);
+    }
+    expect((await movements(req("/api/movements?register=Sideways"))).status).toBe(400);
+  });
+  it("opens the OH-31 / OH-35 registers and allocations to the Dean only", async () => {
+    for (const role of ["User", "Bill Employee", "Student Purchase", "Audit", "Finance Admin", "PDA Manager"]) {
+      mocks.actor.role = role;
+      expect((await fundHeads(req("/api/fund-heads?code=OH-31"))).status).toBe(403);
+      expect((await addFunding(req("/api/fund-heads", { code: "OH-31", financial_year: "2026-27", amount: 100, reference: "R" }))).status).toBe(403);
+    }
+    expect(mocks.queryOne).not.toHaveBeenCalled();
+    mocks.actor.role = "Dean"; mocks.actor.code = "TEST-D"; mocks.queryOne.mockResolvedValue({ head: {} });
+    expect((await addFunding(req("/api/fund-heads", { code: "OH-40", financial_year: "2026-27", amount: 100, reference: "R" }))).status).toBe(400);
+    expect((await addFunding(req("/api/fund-heads", { code: "OH-35", financial_year: "2026-27", amount: 100.123, reference: "R" }))).status).toBe(400);
+    expect((await addFunding(req("/api/fund-heads", { code: "OH-35", financial_year: "2026-27", amount: 100, reference: "MoE/1" }))).status).toBe(201);
+    expect(mocks.queryOne).toHaveBeenCalledWith(expect.stringContaining("fn_add_fund_allocation"), ["OH-35", "2026-27", 100, "MoE/1", null, "", "TEST-D"]);
   });
   it("applies identical search, date and year filters to rows and totals", async () => {
     mocks.actor.role = "Dean"; mocks.actor.code = "TEST-D";

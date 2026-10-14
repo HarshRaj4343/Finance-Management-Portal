@@ -165,6 +165,8 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     await db.query(readFileSync("db/migrations/0004_integrity.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0005_bill_form_review.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0006_edit_window.sql", "utf8"));
+    await db.query(readFileSync("db/migrations/0007_fund_heads.sql", "utf8"));
+    await db.query(readFileSync("db/migrations/0008_movement_registers.sql", "utf8"));
     expect((await db.query("select sum(po_value) as total,count(*) as n from public.bills")).rows[0]).toEqual(before);
     await expect(db.query("update public.change_log set actor_code='forged'")).rejects.toThrow(/append-only/);
     expect((await db.query("select count(*)::integer as n from public.pda_balances where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
@@ -272,5 +274,114 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     b = await decide(b, "Finance Admin", "Rejected");
     await submit({ ...p, submission_key: randomUUID() });
     await expect(db.query("select public.fn_amend_bill($1,$2,$3)", [b.id, { ...p, expected_revision: b.revision }, filer])).rejects.toThrow(/already uses this supplier invoice/);
+  });
+
+  describe("OH-31 and OH-35 budget heads", () => {
+    const dean = async () => (await db.query("select employee_code from public.employees where employee_type='Dean' and is_active order by employee_code limit 1")).rows[0].employee_code;
+    const fy = async () => (await db.query("select public.fn_financial_year() as fy")).rows[0].fy as string;
+    const head = async (code: string) => (await db.query("select allocated,balance,committed,spent from public.fund_heads where code=$1 and financial_year=public.fn_financial_year()", [code])).rows[0];
+    const pda = async () => (await db.query("select balance,committed,spent from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    const allocate = async (code: string, amount: number, actor?: string) =>
+      db.query("select public.fn_add_fund_allocation($1,$2,$3,'MoE sanction 1',null,'Test',$4) as head", [code, await fy(), amount, actor ?? await dean()]);
+    const withFund = (amount: number, category: string, fund: string) => { const f = billForm("TEST-U", amount, category); f.fund = fund; return payload(f); };
+
+    it("charges OH bills to their head, never the applicant's PDA, and keeps a permanent ledger", async () => {
+      await allocate("OH-31", 10000);
+      const before = await pda();
+      let b = await submit(withFund(2000, "Consumables", "OH-31"));
+      expect(b).toMatchObject({ funding_pool: "OH-31", funding_fy: await fy() });
+      expect(await pda()).toEqual(before);
+      expect(await head("OH-31")).toMatchObject({ allocated: "10000.00", balance: "8000.00", committed: "2000.00" });
+      b = await decide(b, "Finance Admin", "Rejected");
+      expect(await head("OH-31")).toMatchObject({ balance: "10000.00", committed: "0.00" });
+      b = await decide(await submit(withFund(2500, "Consumables", "OH-31")));
+      expect(b.status).toBe("Accepted");
+      expect(await head("OH-31")).toMatchObject({ balance: "7500.00", committed: "0.00", spent: "2500.00" });
+      expect(await pda()).toEqual(before);
+      const kinds = (await db.query("select kind from public.fund_head_entries where code='OH-31' order by id")).rows.map((r) => r.kind);
+      expect(kinds).toEqual(["Allocation", "Reserved", "Released", "Reserved", "Spent"]);
+      expect((await db.query("select source_of_fund from public.purchase_register where bill_id=$1", [b.id])).rows[0].source_of_fund).toBe("OH-31");
+      await expect(db.query("update public.fund_head_entries set amount=1")).rejects.toThrow(/append-only/);
+      expect((await db.query("select count(*)::integer as n from public.fund_heads where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
+    });
+
+    it("refuses unfunded or overspent heads, non-Dean allocations and fund/category mismatches", async () => {
+      await expect(submit(withFund(1000, "Major", "OH-35"))).rejects.toThrow(/No OH-35 budget/);
+      await expect(submit(withFund(1000, "Consumables", "OH-35"))).rejects.toThrow(/capital assets/);
+      await expect(submit(withFund(1000, "Major", "OH-31"))).rejects.toThrow(/recurring/);
+      await expect(submit(withFund(999999, "Consumables", "OH-31"))).rejects.toThrow(/Insufficient OH-31/);
+      await expect(allocate("OH-35", 500, "TEST-F")).rejects.toThrow(/Only the Dean/);
+      await expect(allocate("OH-35", -5)).rejects.toThrow(/positive/);
+      await allocate("OH-35", 50000);
+      const b = await submit(withFund(40000, "Major", "OH-35"));
+      expect(b.funding_pool).toBe("OH-35");
+      expect((await submit(withFund(300, "Minor", "OH-31"))).funding_pool).toBe("OH-31");
+    });
+
+    it("moves the reservation between pools when a correction changes the fund", async () => {
+      const p = withFund(500, "Consumables", "PDA");
+      let b = await submit(p);
+      const reserved = await pda();
+      const headBefore = await head("OH-31");
+      b = await decide(b, "Finance Admin", "Hold");
+      const moved = { ...p, ...withFund(500, "Consumables", "OH-31"), invoice_no: p.invoice_no, form_data: { ...p.form_data, fund: "OH-31" }, source_of_fund: "OH-31" };
+      b = (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...moved, expected_revision: b.revision }, filer])).rows[0].bill;
+      expect(b.funding_pool).toBe("OH-31");
+      const after = await pda();
+      expect(Number(reserved.committed) - Number(after.committed)).toBe(500);
+      expect(Number((await head("OH-31")).committed) - Number(headBefore.committed)).toBe(500);
+    });
+  });
+
+  describe("inward and outward registers", () => {
+    const moves = async (id: string) => (await db.query(
+      "select register, desk, nature, counterpart, serial_no from public.bill_movements where bill_id=$1 order by id", [id])).rows;
+    const amend = async (b: { id: string; revision: number }, p: Record<string, unknown>) =>
+      (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...p, expected_revision: b.revision }, filer])).rows[0].bill;
+
+    it("records every arrival and dispatch of a bill, desk by desk, with permanent serials", async () => {
+      const p = payload(billForm("TEST-U", 60000, "Minor"));
+      let b = await submit(p);
+      b = await decide(b, "Student Purchase");
+      b = await decide(b, "Audit", "Hold");
+      b = await closeWindow(await amend(b, p));
+      b = await decide(b, "Student Purchase"); b = await decide(b, "Audit"); b = await decide(b);
+      expect(b.status).toBe("Accepted");
+      const m = await moves(b.id);
+      expect(m.map((r) => [r.register, r.desk, r.nature])).toEqual([
+        ["Inward", "Student Purchase", "New bill"],
+        ["Outward", "Student Purchase", "Approved and forwarded"],
+        ["Inward", "Audit", "Forwarded"],
+        ["Outward", "Audit", "On hold"],
+        ["Inward", "Student Purchase", "Correction"],
+        ["Outward", "Student Purchase", "Approved and forwarded"],
+        ["Inward", "Audit", "Forwarded"],
+        ["Outward", "Audit", "Approved and forwarded"],
+        ["Inward", "Finance Admin", "Forwarded"],
+        ["Outward", "Finance Admin", "Final approval"],
+      ]);
+      expect(m[1].counterpart).toBe("Audit");
+      expect(m[2].counterpart).toBe("Store and Purchase Department");
+      expect(m.at(-1)!.counterpart).toMatch(/purchase register/);
+      expect(m[0].serial_no).toMatch(/^SNP\/IN\/\d{4}-\d{2}\/\d{5}$/);
+      expect(m.at(-1)!.serial_no).toMatch(/^FA\/OUT\//);
+      await expect(db.query("update public.bill_movements set nature='x' where bill_id=$1", [b.id])).rejects.toThrow(/append-only/);
+      expect((await db.query("select count(*)::integer as n from (select serial_no from public.bill_movements group by serial_no having count(*) > 1) d")).rows[0].n).toBe(0);
+    });
+
+    it("records a recall inside the edit window and a resubmission after rejection", async () => {
+      const p = payload(billForm("TEST-U", 900));
+      let b = await fileBill(p);
+      b = await closeWindow(await amend(b, p));
+      b = await decide(b, "Finance Admin", "Rejected");
+      b = await amend(b, p);
+      expect((await moves(b.id)).map((r) => [r.register, r.nature])).toEqual([
+        ["Inward", "New bill"],
+        ["Outward", "Recalled by filer for correction"],
+        ["Inward", "Correction"],
+        ["Outward", "Rejected"],
+        ["Inward", "Resubmitted after rejection"],
+      ]);
+    });
   });
 });

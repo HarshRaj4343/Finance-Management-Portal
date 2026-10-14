@@ -188,6 +188,10 @@ say "applying additive migrations"
   < db/migrations/0005_bill_form_review.sql
 "${DOCKER[@]}" compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 \
   < db/migrations/0006_edit_window.sql
+"${DOCKER[@]}" compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 \
+  < db/migrations/0007_fund_heads.sql
+"${DOCKER[@]}" compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 \
+  < db/migrations/0008_movement_registers.sql
 
 say "starting the containers"
 "${DOCKER[@]}" compose up -d

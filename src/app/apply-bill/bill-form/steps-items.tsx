@@ -5,7 +5,7 @@ import { api } from "@/lib/api";
 import { Plus, Trash2 } from "lucide-react";
 import { AreaField, Button, Card, ComboField, Full, Grid, MoneyField, NumberField, ReadOnlyField, SelectField, TextField } from "./ui";
 import {
-  BUILDINGS, FLOORS, FUNDS, ITEM_CATEGORIES, UOMS,
+  BUILDINGS, FLOORS, FUNDS, ITEM_CATEGORIES, UOMS, fundsForCategory,
   findItemType, itemTypesFor, groupsForCategory, brandsFor,
 } from "./masters";
 import { FormState, Line, Place, emptyLine, inr, needsMakeModel, lineQty, lineTotal, toNum, totals, purchaseMatchesTotal } from "./model";
@@ -308,10 +308,10 @@ export function StepFunding({ f, set, errors }: StepProps) {
   const code = f.requesterCode.trim();
   useEffect(() => {
     let cancelled = false;
-    if (code) api.get<{ account: NonNullable<typeof funding>["account"] }>(`/api/bills/funding?employee=${encodeURIComponent(code)}`)
+    if (code && f.fund === "PDA") api.get<{ account: NonNullable<typeof funding>["account"] }>(`/api/bills/funding?employee=${encodeURIComponent(code)}`)
       .then(({ data, error }) => { if (!cancelled) setFunding({ code, account: data?.account ?? null, error: error ?? undefined }); });
     return () => { cancelled = true; };
-  }, [code]);
+  }, [code, f.fund]);
   const snapshot = funding?.code === code ? funding : null;
 
   const patchLine = (i: number, patch: Partial<Line>) =>
@@ -327,20 +327,20 @@ export function StepFunding({ f, set, errors }: StepProps) {
             required
             value={f.fund}
             onChange={(v) => set({ fund: v })}
-            options={FUNDS.map((x) => ({ value: x.code, label: `${x.code} — ${x.description}`, group: x.group }))}
+            options={fundsForCategory(f.category).map((x) => ({ value: x.code, label: `${x.code} — ${x.description}`, group: x.group }))}
             placeholder="Search by code or description"
             error={errors["f-fund"]}
-            hint={fund ? `Source: ${fund.code} — ${fund.description}.` : "Choose OH-31, OH-35 or the applicant's PDA."}
           />
         </Grid>
+        {fund?.code === "PDA" && (
         <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-slate-700" aria-live="polite">
           <p className="font-semibold">Applicant PDA · {code || "Choose an applicant"}</p>
           {snapshot?.error ? <p className="mt-2 text-red-700">{snapshot.error}</p> : !snapshot ? <p>Loading account…</p> : snapshot.account?.is_active ?
             <dl className="mt-2 grid grid-cols-2 gap-2"><div><dt>Free balance</dt><dd>{inr(snapshot.account.balance)}</dd></div>
               <div><dt>Committed</dt><dd>{inr(snapshot.account.committed)}</dd></div><div><dt>Spent</dt><dd>{inr(snapshot.account.spent)}</dd></div>
               <div><dt>This bill</dt><dd>{inr(T.total)}</dd></div></dl> : <p className="mt-2 text-red-700">No active PDA account. Ask the PDA Manager to open/fund it.</p>}
-          <p className="mt-3 text-xs">All three source choices currently reserve funds from this applicant&apos;s PDA. The server rechecks the available balance atomically on submission; corrections reserve only the amount difference.</p>
         </div>
+        )}
       </Card>
 
       {f.lines.map((l, i) => {
@@ -367,7 +367,7 @@ export function StepFunding({ f, set, errors }: StepProps) {
                 value={l.custodian}
                 onChange={(v) => patchLine(i, { custodian: v })}
                 error={errors[id("custodian")]}
-                hint="Employee ID or name of the person responsible for this item."
+                hint="Employee ID or name."
               />
               <NumberField
                 id={id("qty-issued")}
@@ -395,9 +395,6 @@ export function StepFunding({ f, set, errors }: StepProps) {
                   onChange={(p) => patchLine(i, p)}
                   error={errors[id("room")]}
                 />
-                <p className="mt-1.5 text-xs text-slate-500">
-                  Where this item or batch is placed.
-                </p>
               </Full>
             </Grid>
           </Card>
@@ -408,7 +405,7 @@ export function StepFunding({ f, set, errors }: StepProps) {
         <span className="text-sm text-slate-600">{T.units} units · {T.issued} issued</span>
         <span className="text-sm font-semibold tabular-nums">Bill total {inr(T.total)}</span>
       </div>
-      {T.total > 0 && !purchaseMatchesTotal(f) && <p className="text-sm text-red-700">Bill total must match the PO / purchase value, including all quantities and extra charges.</p>}
+      {T.total > 0 && !purchaseMatchesTotal(f) && <p className="text-sm text-red-700">Bill total must match the PO / purchase value.</p>}
     </div>
   );
 }

@@ -609,34 +609,33 @@ export default function AdminPage() {
                       </td>
 
                       <td className="px-4 py-3 whitespace-nowrap">
-                        <button
-                          onClick={() => setEditing(p)}
-                          className="text-xs text-blue-600 hover:underline"
-                        >
-                          Edit
-                        </button>
-                        {p.pda && (
-                          <button
-                            onClick={() => {
-                              setToppingUp(p);
-                              setTopUpAmount("");
-                            }}
-                            className="ml-3 text-xs text-blue-600 hover:underline"
-                          >
-                            Top up
+                        {/* Fixed slots, so Deactivate never shifts when there is no PDA to top up. */}
+                        <div className="inline-grid grid-cols-[2.5rem_3.5rem_4.5rem] items-center gap-2 text-xs">
+                          <button onClick={() => setEditing(p)} className="justify-self-start text-blue-600 hover:underline">
+                            Edit
                           </button>
-                        )}
-                        {p.is_active ? (
-                          <button
-                            onClick={() => deactivate(p)}
-                            disabled={busy === p.employee_code}
-                            className="ml-3 text-xs text-red-600 hover:underline disabled:opacity-50"
-                          >
-                            Deactivate
-                          </button>
-                        ) : (
-                          <span className="ml-3 text-xs text-gray-400">Deactivated</span>
-                        )}
+                          {p.pda ? (
+                            <button
+                              onClick={() => { setToppingUp(p); setTopUpAmount(""); }}
+                              className="justify-self-start text-blue-600 hover:underline"
+                            >
+                              Top up
+                            </button>
+                          ) : (
+                            <span title="No PDA account to top up" className="block w-8 border-t border-dashed border-slate-300" aria-hidden="true" />
+                          )}
+                          {p.is_active ? (
+                            <button
+                              onClick={() => deactivate(p)}
+                              disabled={busy === p.employee_code}
+                              className="justify-self-start text-red-600 hover:underline disabled:opacity-50"
+                            >
+                              Deactivate
+                            </button>
+                          ) : (
+                            <span className="text-gray-400">Deactivated</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))}

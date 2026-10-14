@@ -54,9 +54,17 @@ The PO / purchase value remains a separate entered value representing the order 
 
 Consumables have their own twelve domain groups and examples, plus Miscellaneous. Durable equipment such as laptops/MacBooks is not offered as a consumable. Every item group offers a Miscellaneous item with a required custom description; the make selector offers Miscellaneous for an actual custom brand. Brands are filtered by item, not a global unrelated list.
 
-The source choices are OH-31, OH-35 and PDA. **All three currently reserve/settle the applicant's PDA account**, matching the existing financial ledger; OH codes are reporting classifications, not separate cash pools. The funding step shows a permission-scoped live PDA snapshot. The server checks balance atomically; the snapshot does not guarantee funds remain available.
+The source choices are OH-31, OH-35 and PDA, and each is a separate pool (migration 0007). **PDA** bills reserve and settle the applicant's PDA account. **OH-31** (general, recurring) and **OH-35** (creation of capital assets) are institute budget heads, funded per financial year by the Dean. An OH bill reserves, releases and spends that head's budget for the year it was filed in and never touches the applicant's PDA. Each bill records the pool holding its money (`funding_pool`); older bills have none and stay on the PDA, where their money was reserved. Fund rule: Consumables use OH-31 or PDA, Major uses OH-35 or PDA, and Minor may use any. The server checks the chosen pool's balance atomically.
+
+The Dean alone sees the **OH-31 Register** and **OH-35 Register** (`/fund-register/OH-31`, `/fund-register/OH-35`). Each shows allocated, available, committed and spent per financial year, the sanctions the Dean recorded (letter or order reference, date, amount) and every bill reservation, release and spend. Both registers are append-only. All Bills and the Purchase Register are also Dean-only.
 
 Store and Purchase review shows filed delivery/installation dates read-only, independently of bank guarantees. Older bills use an unambiguous generated date in their saved text when available; otherwise dates are explicitly marked missing, with no historical backfill. Approve, Hold and Reject are available on both its dashboard and Bill Details for eligible reviewers. Each action opens a summary/confirmation dialog; cancelling does not send a decision. The same confirmation step guards Audit and Finance Admin decisions, bill submission, and employee, role and PDA changes on the Dean, Finance Admin and PDA Manager pages. This is double confirmation, **not OTP-based two-factor authentication**. JSON debugging controls are removed from the Store and Purchase UI. Internal role/status values and URLs remain unchanged to preserve existing records and permissions.
+
+**Inward / Outward Register** (`/movement-register`, open to the Dean, Finance Admin, Audit and Store and Purchase only) follows the office diary and dispatch practice:
+- The **inward** register records each bill as it reaches a desk, and where it came from: the filer (new, corrected or resubmitted) or the previous desk.
+- The **outward** register records each bill as it leaves a desk, and where it went: the next desk, closed into the purchase register, returned to the filer on hold or rejection, or recalled inside the edit window. It also shows how long the bill stayed at the desk.
+
+Migration 0008 writes these entries automatically from the append-only workflow log, with permanent serials per desk, register and financial year (e.g. `SNP/IN/2026-27/00001`, `FA/OUT/2026-27/00042`). It also replays existing history once.
 
 PDA allocations, top-ups, closures, bill transitions and event sequences are transactional. Closed accounts are retained rather than deleted and cannot fund purchases. Administrative and PDA changes have durable before/after audit records. The last active Dean cannot be removed. Deactivation and role changes take effect on the next authenticated request; sessions have a hard eight-hour sign-in lifetime.
 
@@ -80,6 +88,8 @@ For Docker:
 docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0004_integrity.sql
 docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0005_bill_form_review.sql
 docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0006_edit_window.sql
+docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0007_fund_heads.sql
+docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0008_movement_registers.sql
 docker compose up -d --build
 ```
 
@@ -87,9 +97,9 @@ Migration 0004 is additive, transactional and repeatable. It retains existing bi
 
 Migration 0005 replaces bill validation to enforce purchase-total reconciliation, date order, consumable groups and the PDA fund choice. It does not update any existing records. Run it after 0004.
 
-Migration 0006 adds the edit window and the reopen-after-rejection correction rule. Existing bills get no window, so nothing already at a desk disappears. Repeat upgrades must run 0004, 0005 and 0006 in that order and finish with 0006, because rerunning 0004 restores the older correction function.
+Migration 0006 adds the edit window and the reopen-after-rejection correction rule. Existing bills get no window, so nothing already at a desk disappears. Migration 0007 adds the OH-31/OH-35 budget heads, their ledger and per-bill funding pools, and rewrites the submission, decision and correction functions to move money only in the bill's own pool. Repeat upgrades must run 0004 through 0008 in order and finish with the latest, because rerunning an earlier migration restores older functions.
 
-On first Docker database creation, migrations 0001–0006 run in order. Existing volumes do not rerun init scripts. `scripts/deploy-server.sh` takes a custom-format database backup before applying additive migrations; it does not reset volumes. Configure TLS, LDAP and mail in `.env`; see `docker-compose.yml` and `deploy/nginx/`.
+On first Docker database creation, migrations 0001–0008 run in order. Existing volumes do not rerun init scripts. `scripts/deploy-server.sh` takes a custom-format database backup before applying additive migrations; it does not reset volumes. Configure TLS, LDAP and mail in `.env`; see `docker-compose.yml` and `deploy/nginx/`.
 
 `DECISIONS.md` and `Bill-form.md` are retained design/history references, not deployment instructions. Earlier Supabase, destructive demo-dataset and Vercel instructions in the historical decision log are superseded.
 

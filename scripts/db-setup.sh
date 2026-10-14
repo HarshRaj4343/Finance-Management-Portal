@@ -12,5 +12,5 @@ if [ "$("${PSQL[@]}" -tA -c "select exists(select 1 from pg_tables where scheman
   exit 1
 fi
 "${PSQL[@]}" --single-transaction -f db/migrations/0001_schema.sql -f db/migrations/0002_functions.sql -f db/migrations/0003_stock_entry.sql
-"${PSQL[@]}" -f db/migrations/0004_integrity.sql -f db/migrations/0005_bill_form_review.sql -f db/migrations/0006_edit_window.sql
+"${PSQL[@]}" -f db/migrations/0004_integrity.sql -f db/migrations/0005_bill_form_review.sql -f db/migrations/0006_edit_window.sql -f db/migrations/0007_fund_heads.sql -f db/migrations/0008_movement_registers.sql
 echo "Schema ready. Configure LDAP and provision the first Dean (README.md)."

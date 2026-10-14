@@ -61,6 +61,14 @@ export function canReviewDesk(bill: Bill, desk: "Audit" | "Finance Admin", code:
     && code !== bill.employee_id && code !== bill.created_by && !inEditWindow(bill));
 }
 
+/** The IST calendar day of a timestamp (ISO or Postgres text such as "2026-10-14 20:43:23+05:30"). */
+export function istDay(ts: string | null | undefined): string | null {
+  if (!ts) return null;
+  const date = new Date(ts.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
+
 /** A calendar day in India, YYYY-MM-DD. */
 export function isoDay(value: string | null | undefined): string | null {
   if (!value) return null;

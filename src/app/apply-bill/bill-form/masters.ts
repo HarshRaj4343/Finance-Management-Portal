@@ -49,14 +49,25 @@ export const SUPPLIERS: Supplier[] = [
 export type Fund = { code: string; description: string; group: string };
 
 /**
- * Only OH-31 and OH-35 are confirmed (architecture.jpeg). The remaining
- * codes and descriptions must come from the Finance office's sheet.
+ * OH-31 and OH-35 are institute budget heads allocated each financial year
+ * and managed by the Dean; PDA is the applicant's own allowance. Each bill
+ * reserves and spends only the pool it names (0007_fund_heads.sql).
  */
 export const FUNDS: Fund[] = [
-  { code: "OH-31", description: "Recurring consumable", group: "Institute / OH heads" },
-  { code: "OH-35", description: "Non-recurring", group: "Institute / OH heads" },
-  { code: "PDA", description: "Applicant's PDA account", group: "Personal Development Account" },
+  { code: "OH-31", description: "General (recurring)", group: "Institute budget heads" },
+  { code: "OH-35", description: "Capital assets", group: "Institute budget heads" },
+  { code: "PDA", description: "Applicant's PDA", group: "Personal Development Account" },
 ];
+
+/** Mirrors fn_validate_fund: capital money is not for consumables, recurring money not for major equipment. */
+export const FUNDS_BY_CATEGORY: Record<string, string[]> = {
+  Consumables: ["OH-31", "PDA"],
+  Minor: ["OH-31", "OH-35", "PDA"],
+  Major: ["OH-35", "PDA"],
+};
+
+export const fundsForCategory = (category: string) =>
+  FUNDS.filter((fund) => (FUNDS_BY_CATEGORY[category] ?? FUNDS.map((f) => f.code)).includes(fund.code));
 
 export const FUND_PATTERN = /^(OH-\d{2,3}|PDA)$/;
 

@@ -1,4 +1,4 @@
-import { findItemType, FUND_PATTERN, FUNDS, ITEM_CATEGORIES, groupsForCategory } from "./masters";
+import { findItemType, FUND_PATTERN, FUNDS, ITEM_CATEGORIES, fundsForCategory, groupsForCategory } from "./masters";
 
 // ---------------------------------------------------------------------
 // Shape of the form
@@ -292,6 +292,11 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
     const fund = FUNDS.find((x) => x.code === f.fund);
     if (!f.fund) e["f-fund"] = "Choose the source of fund.";
     else if (!FUND_PATTERN.test(f.fund) || !fund) e["f-fund"] = "Choose an active fund code.";
+    else if (!fundsForCategory(f.category).some((x) => x.code === f.fund)) {
+      e["f-fund"] = f.fund === "OH-35"
+        ? "OH-35 is for creation of capital assets. Charge consumables to OH-31 or the PDA."
+        : "OH-31 is the general (recurring) head. Charge major equipment to OH-35 or the PDA.";
+    }
     f.lines.forEach((l, i) => {
       const id = (k: string) => `line-${i}-${k}`;
       const qi = l.qtyIssued.trim();

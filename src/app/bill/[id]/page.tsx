@@ -9,6 +9,7 @@ import BillItems from "@/components/BillItems";
 import SnpReviewPanel from "@/components/SnpReviewPanel";
 import DeskReviewPanel from "@/components/DeskReviewPanel";
 import { canReviewDesk } from "@/lib/bill-review";
+import { billCorrections, type Revision } from "@/lib/bill-changes";
 import AppShell, { sharedLinks } from "@/components/AppShell";
 import { LoadingState } from "@/components/ui/page";
 import { api, money, when } from "@/lib/api";
@@ -30,7 +31,7 @@ import type { Bill, BillApproval, RegisterEntry, Employee } from "@/types/databa
 type Payload = {
   bill: Bill;
   events: BillApproval[];
-  revisions: { actor_code: string | null; old_data: Bill | null; new_data: Bill; recorded_at: string }[];
+  revisions: Revision[];
   register: RegisterEntry | null;
   applicant: Pick<Employee, "employee_code" | "employee_name" | "email" | "department"> | null;
   route: string[];
@@ -122,6 +123,7 @@ export default function BillDetailsPage() {
     );
 
   const { bill, events, register, applicant, route, revisions } = payload;
+  const corrections = billCorrections(revisions);
 
   // helper for pretty formatting
   const formatValue = (val: string | number | boolean | null | undefined) => {
@@ -144,12 +146,12 @@ export default function BillDetailsPage() {
             <p className="mt-1 font-mono text-sm text-slate-500">{bill.bill_number}</p>
           )}
         </div>
-        <button
-          onClick={() => window.print()}
+        <a
+          href={`/bill/${bill.id}/print`}
           className="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 print:hidden"
         >
-          Print page
-        </button>
+          Print bill
+        </a>
       </div>
 
       {/* Status */}
@@ -197,13 +199,34 @@ export default function BillDetailsPage() {
           ) : null
         )}
       </div>
-      <details className="mb-6 border rounded p-3">
-        <summary className="cursor-pointer font-medium">Revision history ({revisions.length} {revisions.length === 1 ? "change" : "changes"})</summary>
-        {revisions.map((revision, index) => <details key={index} className="mt-3 border-t pt-2">
-          <summary>Revision {revision.new_data.revision} — {revision.actor_code ?? "System"} — {when(revision.recorded_at)}</summary>
-          <pre className="text-xs overflow-x-auto whitespace-pre-wrap mt-2">{JSON.stringify({ before: revision.old_data, after: revision.new_data }, null, 2)}</pre>
-        </details>)}
-      </details>
+      <section className="mb-6 rounded-xl border border-slate-200 p-4" aria-label="Changes">
+        <h2 className="text-base font-semibold text-slate-900">Changes</h2>
+        {corrections.length === 0 ? (
+          <p className="mt-1 text-sm text-slate-500">No corrections since this bill was filed.</p>
+        ) : (
+          <>
+          <p className="mb-3 text-xs text-slate-500">Corrections made to this bill after it was filed. Decisions are in the History below.</p>
+          <ol className="space-y-3">
+            {corrections.map((c, i) => (
+              <li key={i} className="rounded-lg bg-slate-50 p-3 text-sm">
+                <p className="font-medium text-slate-900">
+                  Corrected by {c.actor} <span className="font-normal text-slate-500">· {when(c.at)}</span>
+                </p>
+                <ul className="mt-1 space-y-0.5">
+                  {c.changes.map((ch) => (
+                    <li key={ch.label} className="text-slate-700">
+                      <span className="text-slate-500">{ch.label}:</span>{" "}
+                      <span className="line-through decoration-slate-400">{ch.from}</span>{" "}→{" "}
+                      <span className="font-medium text-slate-900">{ch.to}</span>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ol>
+          </>
+        )}
+      </section>
       {/* Approval route */}
       <div className="mb-6 print:hidden">
         <p className="text-sm font-medium text-gray-700 mb-2">

@@ -1,7 +1,5 @@
 import React, { type ReactNode } from 'react';
 import Link from "next/link";
-import { escapeHtml } from "@/lib/security";
-import { deskLabel } from "@/lib/roles";
 import { when } from "@/lib/api";
 import { Bill } from '@/types/database';
 import BillItems from './BillItems';
@@ -41,87 +39,8 @@ export const BillCard: React.FC<BillCardProps> = ({
   };
 
 
- const handlePrintBill = () => {
-  const printContent = `
-    <html>
-      <head>
-        <title>Bill ${escapeHtml(bill.id)}</title>
-        <style>
-          @page {
-            size: A4;
-            margin: 10mm;
-          }
-
-          body {
-            font-family: Arial, sans-serif;
-            padding: 0;
-            margin: 0;
-            zoom: 85%;
-          }
-
-          h2 {
-            text-align: center;
-            margin-bottom: 12px;
-          }
-
-          table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-            font-size: 12px;
-          }
-
-          td, th {
-            border: 1px solid #555;
-            padding: 6px;
-            text-align: left;
-            vertical-align: top;
-          }
-        </style>
-      </head>
-      <body>
-        <h2>Bill Details</h2>
-        <table>
-          <tr><td>ID</td><td>${escapeHtml(bill.id)}</td></tr>
-          <tr><td>Employee ID</td><td>${escapeHtml(bill.employee_id)}</td></tr>
-          <tr><td>Employee Name</td><td>${escapeHtml(bill.employee_name)}</td></tr>
-          <tr><td>Department</td><td>${escapeHtml(bill.employee_department)}</td></tr>
-          <tr><td>PO Details</td><td>${escapeHtml(bill.po_details)}</td></tr>
-          <tr><td>PO Value</td><td>${escapeHtml(bill.po_value ? "₹" + bill.po_value : "—")}</td></tr>
-          <tr><td>Supplier Name</td><td>${escapeHtml(bill.supplier_name)}</td></tr>
-          <tr><td>Supplier Address</td><td>${escapeHtml(bill.supplier_address)}</td></tr>
-          <tr><td>Item Category</td><td>${escapeHtml(bill.item_category)}</td></tr>
-          <tr><td>Item Description</td><td>${escapeHtml(bill.item_description)}</td></tr>
-          <tr><td>Quantity</td><td>${escapeHtml(bill.qty)}</td></tr>
-          <tr><td>Quantity Issued</td><td>${escapeHtml(bill.qty_issued)}</td></tr>
-          <tr><td>Indenter Name</td><td>${escapeHtml(bill.indenter_name)}</td></tr>
-          <tr><td>Bill Details</td><td>${escapeHtml(bill.bill_details)}</td></tr>
-          <tr><td>Source of Fund</td><td>${escapeHtml(bill.source_of_fund)}</td></tr>
-          <tr><td>Stock Entry</td><td>${escapeHtml(bill.stock_entry)}</td></tr>
-          <tr><td>Location</td><td>${escapeHtml(bill.location)}</td></tr>
-          <tr><td>Remarks</td><td>${escapeHtml(bill.remarks)}</td></tr>
-          <tr><td>Remarks1</td><td>${escapeHtml(bill.remarks1)}</td></tr>
-          <tr><td>Remarks2</td><td>${escapeHtml(bill.remarks2)}</td></tr>
-          <tr><td>Remarks3</td><td>${escapeHtml(bill.remarks3)}</td></tr>
-          <tr><td>Remarks4</td><td>${escapeHtml(bill.remarks4)}</td></tr>
-          <tr><td>Status</td><td>${escapeHtml(deskLabel(bill.status))}</td></tr>
-          <tr><td>Store and Purchase Department</td><td>${escapeHtml(bill.snp)}</td></tr>
-          <tr><td>Audit</td><td>${escapeHtml(bill.audit)}</td></tr>
-          <tr><td>Finance Admin</td><td>${escapeHtml(bill.finance_admin)}</td></tr>
-          <tr><td>Noted</td><td>${escapeHtml(bill.noted)}</td></tr>
-          <tr><td>Created At</td><td>${escapeHtml(new Date(bill.created_at).toLocaleString())}</td></tr>
-        </table>
-      </body>
-    </html>
-  `;
-
-    const printWindow = window.open("", "_blank");
-    printWindow?.document.write(printContent);
-    printWindow?.document.close();
-    printWindow?.focus();
-    printWindow?.print();
-  };
-
+ // The A4 bill sheet, sent straight to the printer.
+  const handlePrintBill = () => window.open(`/bill/${bill.id}/print?print=1`, "_blank", "noopener");
 
   const remarks = [
     ["Store and Purchase Department", bill.remarks1],

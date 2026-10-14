@@ -118,6 +118,9 @@ export interface BillRow {
   updated_at: string;
   /** Until this instant the filer may correct the bill and no desk sees it. */
   editable_until?: string | null;
+  /** Which pool holds the bill's money: PDA, OH-31 or OH-35 (null on older bills = PDA). */
+  funding_pool?: string | null;
+  funding_fy?: string | null;
   /** When the bill reached the desk it is at now (list endpoint only). */
   stage_entered_at?: string | null;
 }

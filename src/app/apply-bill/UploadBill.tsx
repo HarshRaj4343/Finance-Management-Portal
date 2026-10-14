@@ -20,7 +20,17 @@ import { cn } from "@/lib/utils";
 import type { BillRow } from "@/types/database";
 import { Banner, Button } from "./bill-form/ui";
 import {
-  Draft, FormState, STEPS, clearDraft, emptyForm, inr, loadDraft, saveDraft, stepOfField, totals, validateStep,
+  Draft,
+  FormState,
+  STEPS,
+  clearDraft,
+  emptyForm,
+  inr,
+  loadDraft,
+  saveDraft,
+  stepOfField,
+  totals,
+  validateStep,
 } from "./bill-form/model";
 import { Lookup, StepBill, StepSubmitter, StepSupplier } from "./bill-form/steps-basic";
 import { StepFunding, StepItems } from "./bill-form/steps-items";
@@ -364,7 +374,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
             <Button variant="outline" onClick={() => window.print()}>
               Print / Save Acknowledgement as PDF
             </Button>
-            <Button variant="text" onClick={reset}>
+            <Button variant="outline" onClick={reset}>
               Submit Another Bill
             </Button>
           </div>
@@ -390,7 +400,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
         </nav>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold text-slate-900">
-            {initialBill ? "Correct Bill" : "New Bill"}{department ? <span className="font-normal text-slate-500"> · {department}</span> : null}
+            {initialBill ? "Correct Bill" : "New Bill"}
           </h1>
           <div className="flex items-center gap-3 text-xs">
             <span className="rounded-full bg-slate-200 px-2.5 py-1 font-medium text-slate-700">Draft</span>

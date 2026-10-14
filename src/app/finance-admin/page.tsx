@@ -2,29 +2,19 @@
 import { useSession } from "next-auth/react";
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { api, money } from "@/lib/api";
+import { api } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import { normaliseRole, deskLabel } from "@/lib/roles";
 import {
-  IconEye,
   IconUsers,
-  IconList,
-  IconHistory,
-  IconClockPause,
-  IconFileText,
-  IconCheck,
-  IconX,
   IconEdit,
   IconTrash,
   IconPlus,
 } from "@tabler/icons-react";
-import AppShell from "@/components/AppShell";
-import DeskReviewPanel from "@/components/DeskReviewPanel";
-import { EmptyState, LoadingState, PageHeader, Panel, StatCard, StatGrid, StatusBadge } from "@/components/ui/page";
+import DeskQueue from "@/components/DeskQueue";
+import { PageHeader, Panel } from "@/components/ui/page";
 import EditEmployeeForm from "@/components/EditEmployeeForm";
-import BillCard from "@/components/BillCard";
 import { useConfirm } from "@/components/ConfirmProvider";
-import { canReviewDesk, latestArrivalFirst } from "@/lib/bill-review";
 
 // Allowed departments
 const DEPARTMENTS = [
@@ -108,30 +98,18 @@ const DEPARTMENTS = [
 ];
 
 /* ---------- Interfaces ---------- */
-import type { Bill } from "@/types/database";
 
 import type { Employee } from "@/types/database";
 
-type PageView = "dashboard" | "review-bills" | "hold-bills" | "history" | "employees";
 
 export default function FinanceAdminDashboard() {
   const { data: session,status} = useSession();
   const confirm = useConfirm();
 
-  const [bills, setBills] = useState<Bill[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  const [activePage, setActivePage] = useState<PageView>("dashboard");
-  // Bill History filter by the Finance Admin decision: "" shows every bill.
-  const [historyFilter, setHistoryFilter] = useState<"" | "Approved" | "Reject">("");
-  const openHistory = (filter: "" | "Approved" | "Reject") => { setHistoryFilter(filter); setActivePage("history"); };
 
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
-  // for bill actions
-  const [showDetailModal, setShowDetailModal] = useState(false);
-  const [selectedBillDetails, setSelectedBillDetails] = useState<Bill | null>(null);
 
   // Add employee form
   const [showAddEmployeeForm, setShowAddEmployeeForm] = useState(false);
@@ -143,38 +121,7 @@ export default function FinanceAdminDashboard() {
     employee_code: "",
   });
 
-  //const FINANCE_ADMIN_PASSWORD = "admin123"; // In production, this should be in environment variables
-  useEffect(() => {
-      if (status === "loading") return;
-  
-      if (status === "unauthenticated") {
-        if (typeof window !== "undefined") {
-          window.location.href = "/login";
-        }
-        return;
-      }
-  
-      if (session && normaliseRole(session.user?.employee_type) !== "Finance Admin") {
-        window.location.href = "/";
-      }
-    }, [status, session]);
   const [notice, setNotice] = useState<NoticeState>(null);
-
-  // Bills. The server scopes what this role may see; the browser no longer
-  // pulls the whole table down and filters it in React.
-  useEffect(() => {
-    const fetchBills = async () => {
-      setLoading(true);
-      const { data, error } = await api.bills<{ bills: Bill[] }>("/api/bills?limit=500");
-      setLoading(false);
-      if (error) {
-        setNotice({ kind: "bad", text: error });
-        return;
-      }
-      setBills(data!.bills);
-    };
-    fetchBills();
-  }, []);
 
   // The employee directory, newest first.
   const fetchEmployees = async () => {
@@ -194,8 +141,8 @@ export default function FinanceAdminDashboard() {
   };
 
   useEffect(() => {
-    if (activePage === "employees") fetchEmployees();
-  }, [activePage]);
+    if (status === "authenticated" && normaliseRole(session?.user?.employee_type) === "Finance Admin") fetchEmployees();
+  }, [status, session]);
 
   const handleSaveEmployee = async (updatedEmployee: Employee) => {
     if (!updatedEmployee?.employee_code) {
@@ -237,17 +184,6 @@ export default function FinanceAdminDashboard() {
     if (action === "edit") setEditingEmployee(employees.find((e) => e.employee_code === code) ?? null);
     if (action === "delete" && code) void handleDeleteEmployee(code);
   };
-
-  /* ---------- Bill Actions ---------- */
-  /**
-   * This is the last desk. Approving here ends the workflow: the money
-   * moves from committed to spent and the purchase is entered in the
-   * departmental register under a fresh serial number. All of it happens
-   * inside fn_bill_action, so a bill can never be marked Accepted without
-   * its register entry, or vice versa.
-   */
-
-
 
   /* ---------- Employee Actions ---------- */
   /**
@@ -330,229 +266,10 @@ export default function FinanceAdminDashboard() {
     });
   };
 
-  /* ---------- Stats ---------- */
-  const totalBills = bills.length;
-  const approvedCount = bills.filter((b) => b.finance_admin === "Approved").length;
-  const holdCount = bills.filter((b) => b.finance_admin === "Hold").length;
-  const rejectCount = bills.filter((b) => b.finance_admin === "Reject").length;
-  const pendingCount = bills.filter((b) => b.finance_admin === "Pending").length;
-
-  const formatBillDetails = (bill: Bill) => {
-    return {
-      basicInfo: {
-        id: bill.id,
-        employeeId: bill.employee_id,
-        employeeName: bill.employee_name,
-        submittedAt: bill.created_at ? new Date(bill.created_at).toLocaleString() : "N/A",
-      },
-      purchaseDetails: {
-        poDetails: bill.po_details || "N/A",
-        supplierName: bill.supplier_name || "N/A",
-        itemDescription: bill.item_description || "N/A",
-        itemCategory: bill.item_category || "N/A",
-        quantity: bill.qty || 0,
-        totalValue: bill.po_value || 0,
-      },
-      workflowStatus: {
-        overall: deskLabel(bill.status),
-        snpStatus: bill.snp || "N/A",
-        auditStatus: bill.audit || "N/A",
-        financeAdminStatus: bill.finance_admin || "N/A",
-      },
-      departmentRemarks: {
-        snp: bill.remarks1 || "No remark",
-        audit: bill.remarks2 || "No remark", 
-        financeAdmin: bill.remarks || "No remark",
-        other: bill.remarks3 || "No remark",
-        additional: bill.remarks4 || "No remark",
-      }
-    };
-  };
-
-  const reviewQueue = bills
-    .filter((bill) =>
-      bill.finance_admin === "Pending" ||
-      bill.finance_admin === "Hold" ||
-      (bill.status === "Finance Admin" && (bill.finance_admin === null || bill.finance_admin === undefined))
-    )
-    // Newest arrival at this desk first, e.g. a bill Store and Purchase just approved.
-    .sort(latestArrivalFirst);
-  const heldBills = bills.filter((b) => b.snp === "Hold" || b.audit === "Hold" || b.finance_admin === "Hold");
   const th = "px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
-
-  return (
-    <AppShell
-      desk="Finance Admin"
-      nav={[
-        { label: "Dashboard", icon: <IconList />, onClick: () => setActivePage("dashboard"), active: activePage === "dashboard" },
-        { label: "Review Bills", icon: <IconFileText />, onClick: () => setActivePage("review-bills"), active: activePage === "review-bills", badge: reviewQueue.length || null },
-        { label: "Hold Bills", icon: <IconClockPause />, onClick: () => setActivePage("hold-bills"), active: activePage === "hold-bills", badge: heldBills.length || null },
-        { label: "Bill History", icon: <IconHistory />, onClick: () => openHistory(""), active: activePage === "history" },
-        { label: "Manage Employees", icon: <IconUsers />, onClick: () => setActivePage("employees"), active: activePage === "employees" },
-      ]}
-    >
+  const employeesView = (
+    <>
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
-
-      {activePage === "dashboard" && (
-        <>
-          <PageHeader title="Finance Admin" description="Final approval desk. Approving here debits the PDA and enters the purchase in the register." />
-          <StatGrid>
-            <StatCard label="Total Bills" value={totalBills} hint="All submissions" onClick={() => openHistory("")} />
-            <StatCard label="Approved" value={approvedCount} hint="Ready for payment" tone="green" onClick={() => openHistory("Approved")} />
-            <StatCard label="Hold" value={holdCount} hint="Needs attention" tone="amber" onClick={() => setActivePage("hold-bills")} />
-            <StatCard label="Rejected" value={rejectCount} hint="Not approved" tone="red" onClick={() => openHistory("Reject")} />
-            <StatCard label="Pending" value={pendingCount} hint="Awaiting review" tone="blue" onClick={() => setActivePage("review-bills")} />
-          </StatGrid>
-          <section className="space-y-4">
-            <h2 className="text-base font-semibold text-slate-900">Recent bills</h2>
-            {loading ? <LoadingState label="Loading bills…" /> : bills.length === 0 ? (
-              <EmptyState title="No bills yet" />
-            ) : (
-              bills.slice(0, 5).map((bill) => <BillCard key={bill.id} bill={bill} showBankGuarantee={false} />)
-            )}
-          </section>
-        </>
-      )}
-
-      {activePage === "review-bills" && (
-        <>
-          <PageHeader title="Review Bills" description="Bills waiting at Finance Admin, the most recent arrival first." />
-          {loading ? <LoadingState label="Loading bills…" /> : reviewQueue.length === 0 ? (
-            <EmptyState icon={<IconCheck />} title="Nothing to review" description="Bills appear here once they reach Finance Admin." />
-          ) : (
-            <div className="space-y-4">
-              {reviewQueue.map((bill) => {
-                const locked = !canReviewDesk(bill, "Finance Admin", session?.user?.employee_code, session?.user?.employee_type);
-                return (
-                  <BillCard key={bill.id} bill={bill} showBankGuarantee={false}>
-                    {!locked && (
-                      <DeskReviewPanel
-                        bill={bill}
-                        desk="Finance Admin"
-                        actorCode={session?.user?.employee_code}
-                        actorRole={session?.user?.employee_type}
-                        onDecided={(updated, text) => {
-                          setBills((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
-                          setNotice({ kind: "ok", text });
-                        }}
-                      />
-                    )}
-                  </BillCard>
-                );
-              })}
-            </div>
-          )}
-        </>
-      )}
-
-      {activePage === "hold-bills" && (
-        <>
-          <PageHeader title="Hold Bills" description="Bills on hold at any desk, waiting for the filer to correct them." />
-          {heldBills.length === 0 ? (
-            <EmptyState icon={<IconClockPause />} title="No bills on hold" />
-          ) : (
-            <Panel bodyClassName="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-50">
-                  <tr>
-                    <th className={th}>Bill</th>
-                    <th className={th}>Employee</th>
-                    <th className={`${th} text-right`}>Amount</th>
-                    <th className={th}>Held by</th>
-                    <th className={th}>Remark</th>
-                    <th className={th}><span className="sr-only">Actions</span></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {heldBills.map((bill) => {
-                    const holdDepartment =
-                      bill.finance_admin === "Hold" ? "Finance Admin" :
-                      bill.audit === "Hold" ? "Audit" :
-                      bill.snp === "Hold" ? "Store and Purchase Department" : "Unknown";
-                    const holdRemark =
-                      bill.finance_admin === "Hold" ? bill.remarks :
-                      bill.audit === "Hold" ? bill.remarks2 :
-                      bill.snp === "Hold" ? bill.remarks1 : null;
-                    return (
-                      <tr key={bill.id} className="hover:bg-slate-50">
-                        <td className="max-w-xs px-4 py-3">
-                          <p className="truncate font-medium text-slate-900">{bill.item_description || "No description"}</p>
-                          <p className="truncate text-xs text-slate-500">{bill.bill_number} · {bill.supplier_name}</p>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3">{bill.employee_name}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{money(bill.po_value)}</td>
-                        <td className="whitespace-nowrap px-4 py-3"><StatusBadge value={holdDepartment} /></td>
-                        <td className="max-w-xs px-4 py-3 text-slate-700">{holdRemark || "No remark"}</td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right">
-                          <button
-                            onClick={() => { setSelectedBillDetails(bill); setShowDetailModal(true); }}
-                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-blue-700 hover:bg-blue-50"
-                          >
-                            <IconEye size={16} /> View
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </Panel>
-          )}
-        </>
-      )}
-
-      {activePage === "history" && (
-        <>
-          <PageHeader title="Bill History" description="Every bill visible to Finance Admin, filtered by the Finance Admin decision." />
-          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Finance Admin decision">
-            {([["", "All"], ["Approved", "Approved"], ["Reject", "Rejected"]] as const).map(([value, label]) => (
-              <button key={label} role="tab" aria-selected={historyFilter === value} onClick={() => setHistoryFilter(value)}
-                className={`inline-flex h-9 items-center rounded-md border px-4 text-sm font-medium ${historyFilter === value ? "border-blue-300 bg-blue-50 text-blue-800" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}>
-                {label}
-                <span className="ml-2 rounded-full bg-white/70 px-1.5 text-xs tabular-nums">
-                  {value ? bills.filter((b) => b.finance_admin === value).length : bills.length}
-                </span>
-              </button>
-            ))}
-          </div>
-          {(() => {
-            const rows = historyFilter ? bills.filter((b) => b.finance_admin === historyFilter) : bills;
-            return rows.length === 0 ? <EmptyState title="No bills here" /> : (
-              <Panel bodyClassName="overflow-x-auto">
-                <table className="min-w-full divide-y divide-slate-200 text-sm">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className={th}>Bill</th>
-                      <th className={th}>Employee</th>
-                      <th className={`${th} text-right`}>Amount</th>
-                      <th className={th}>Status</th>
-                      <th className={th}>Finance Admin</th>
-                      <th className={th}>Filed</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {rows.map((bill) => (
-                      <tr key={bill.id} className="hover:bg-slate-50">
-                        <td className="max-w-xs px-4 py-3">
-                          <a href={`/bill/${bill.id}`} className="whitespace-nowrap font-mono text-xs font-medium text-blue-700 hover:underline">{bill.bill_number ?? bill.id.slice(0, 8)}</a>
-                          <p className="truncate text-slate-700">{bill.item_description || "No description"}</p>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3">{bill.employee_name} <span className="text-xs text-slate-500">({bill.employee_id})</span></td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{money(bill.po_value)}</td>
-                        <td className="px-4 py-3"><StatusBadge value={bill.status} /></td>
-                        <td className="px-4 py-3"><StatusBadge value={bill.finance_admin} /></td>
-                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">{new Date(bill.created_at).toLocaleDateString("en-IN")}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </Panel>
-            );
-          })()}
-        </>
-      )}
-
-      {activePage === "employees" && (
         <>
           <PageHeader
             title="Manage Employees"
@@ -601,8 +318,6 @@ export default function FinanceAdminDashboard() {
             </table>
           </Panel>
         </>
-      )}
-
       {/* Add Employee Modal */}
       <AnimatePresence>
         {showAddEmployeeForm && (
@@ -695,103 +410,6 @@ export default function FinanceAdminDashboard() {
         )}
       </AnimatePresence>
 
-      {/* Bill Detail Modal */}
-      <AnimatePresence>
-        {showDetailModal && selectedBillDetails && (
-          <motion.div
-            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
-            <motion.div
-              className="bg-white rounded-lg shadow-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto"
-              initial={{ scale: 0.9 }}
-              animate={{ scale: 1 }}
-              exit={{ scale: 0.9 }}
-            >
-              <div className="flex justify-between items-center p-6 border-b">
-                <h3 className="text-xl font-semibold">Bill Details</h3>
-                <button
-                  onClick={() => {
-                    setShowDetailModal(false);
-                    setSelectedBillDetails(null);
-                  }}
-                  className="p-2 hover:bg-gray-100 rounded-full"
-                >
-                  <IconX size={20} />
-                </button>
-              </div>
-              
-              <div className="p-6 space-y-6">
-                {(() => {
-                  const details = formatBillDetails(selectedBillDetails);
-                  return (
-                    <>
-                      {/* Basic Info */}
-                      <div className="bg-gray-50 rounded-lg p-4">
-                        <h4 className="font-semibold mb-3">Basic Information</h4>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div><span className="font-medium">Bill ID:</span> {details.basicInfo.id}</div>
-                          <div><span className="font-medium">Employee ID:</span> {details.basicInfo.employeeId}</div>
-                          <div><span className="font-medium">Employee Name:</span> {details.basicInfo.employeeName}</div>
-                          <div><span className="font-medium">Submitted:</span> {details.basicInfo.submittedAt}</div>
-                        </div>
-                      </div>
-
-                      {/* Purchase Details */}
-                      <div className="bg-blue-50 rounded-lg p-4">
-                        <h4 className="font-semibold mb-3">Purchase Details</h4>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div><span className="font-medium">PO Details:</span> {details.purchaseDetails.poDetails}</div>
-                          <div><span className="font-medium">Supplier:</span> {details.purchaseDetails.supplierName}</div>
-                          <div><span className="font-medium">Category:</span> {details.purchaseDetails.itemCategory}</div>
-                          <div><span className="font-medium">Quantity:</span> {details.purchaseDetails.quantity}</div>
-                          <div className="col-span-2"><span className="font-medium">Description:</span> {details.purchaseDetails.itemDescription}</div>
-                          <div><span className="font-medium">Total Value:</span> ₹{details.purchaseDetails.totalValue.toLocaleString()}</div>
-                        </div>
-                      </div>
-
-                      {/* Workflow Status */}
-                      <div className="bg-green-50 rounded-lg p-4">
-                        <h4 className="font-semibold mb-3">Workflow Status</h4>
-                        <div className="grid grid-cols-2 gap-3 text-sm">
-                          <div><span className="font-medium">Overall Status:</span> {details.workflowStatus.overall}</div>
-                          <div><span className="font-medium">Store and Purchase Department Status:</span> {details.workflowStatus.snpStatus}</div>
-                          <div><span className="font-medium">Audit Status:</span> {details.workflowStatus.auditStatus}</div>
-                          <div><span className="font-medium">Finance Admin:</span> {details.workflowStatus.financeAdminStatus}</div>
-                        </div>
-                      </div>
-
-                      {/* Department Remarks */}
-                      <div className="bg-yellow-50 rounded-lg p-4">
-                        <h4 className="font-semibold mb-3">Department Remarks</h4>
-                        <div className="space-y-2 text-sm">
-                          <div className="bg-white p-2 rounded">
-                            <span className="font-medium">Store and Purchase Department:</span> {details.departmentRemarks.snp}
-                          </div>
-                          <div className="bg-white p-2 rounded">
-                            <span className="font-medium">Audit:</span> {details.departmentRemarks.audit}
-                          </div>
-                          <div className="bg-white p-2 rounded">
-                            <span className="font-medium">Finance Admin:</span> {details.departmentRemarks.financeAdmin}
-                          </div>
-                          {details.departmentRemarks.other !== "No remark" && (
-                            <div className="bg-white p-2 rounded">
-                              <span className="font-medium">Other:</span> {details.departmentRemarks.other}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    </>
-                  );
-                })()}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
       {editingEmployee && (
         <EditEmployeeForm
           employee={editingEmployee}
@@ -799,9 +417,27 @@ export default function FinanceAdminDashboard() {
           onCancel={() => setEditingEmployee(null)}
         />
       )}
-    </AppShell>
+    </>
+  );
+
+  return (
+    <DeskQueue
+      desk="Finance Admin"
+      title="Finance Admin"
+      description="Final approval desk. Approving here debits the bill's fund and enters the purchase in the register."
+      hints={{
+        Pending: "Waiting for you",
+        Approved: "Ready for payment",
+        Hold: "Waiting for correction",
+        Reject: "Funds released",
+        All: "Every bill seen by Finance Admin",
+      }}
+      extraNav={[{ key: "employees", label: "Manage Employees", icon: <IconUsers /> }]}
+      extraView={() => employeesView}
+    />
   );
 }
+
 
 // helper to normalize department before sending to DB
 // accept only exact matches from the allowed DEPARTMENTS list

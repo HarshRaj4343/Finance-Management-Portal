@@ -19,7 +19,7 @@ const BILL_COLUMNS = `
   date_of_installation, date_of_delivery,
   status, snp, audit, finance_admin, noted,
   remarks, remarks1, remarks2, remarks3, remarks4,
-  decided_at, created_at::text, updated_at::text, editable_until,
+  decided_at, created_at::text, updated_at::text, editable_until, funding_pool, funding_fy,
   greatest(
     (select max(a.created_at) from public.bill_approvals a
       where a.bill_id = bills.id and a.to_status = bills.status

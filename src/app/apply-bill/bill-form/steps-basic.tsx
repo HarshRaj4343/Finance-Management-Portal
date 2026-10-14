@@ -70,16 +70,13 @@ export function StepSupplier({ f, set, errors }: StepProps) {
             error={errors["f-purchase-type"]}
           />
           {isPo && (
-            <ComboField
+            <TextField
               id="f-po-number"
               label="PO Number"
               required
               value={f.poNumber}
               onChange={(v) => set({ poNumber: v })}
-              options={[]}
-              allowCustom
               placeholder="Enter PO number"
-              emptyText="The PO register is not connected yet. Type the PO number."
               error={errors["f-po-number"]}
               hint="Type the number as printed on the PO."
             />

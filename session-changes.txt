@@ -1,0 +1,71 @@
+Changes made in this session (one line each, in order)
+=======================================================
+
+Workflow and rules
+- Removed the bank guarantee panel from the Finance Admin section.
+- Made the Finance Admin stat cards clickable so each opens the section it counts.
+- Removed the "Other Charges" field; the bill total is now quantity x unit price only (older bills still display their old charges).
+- Added a confirmation popup before every important action: approve/hold/reject, bill submission, employee, role and PDA changes.
+- Sorted every desk queue so the most recently arrived bill is shown first.
+- Added a filed-date range filter and a Finance Admin decision filter to the All Bills page.
+- Added a 5-minute edit window: a new or corrected bill stays with its filer and is hidden from the desks until it closes (migration 0006).
+- Allowed the filer to correct a bill again after a desk holds or rejects it; correcting a rejected bill reserves its funds again and restarts the route.
+- Merged the Bill Editor desk into Bill Employee; retired the Bill-edit login, the /bill-editor page and assigning the Bill Editor role.
+- Applied migration 0006 to the local database after backing it up.
+- Added an "Edit Bill" button with a live countdown on the "Bill submitted" screen.
+- Renamed the "Noted" button on Rejected Bills to "Dismiss" and clarified its confirmation text.
+- Committed and pushed the first batch of changes to the fork (commit 018dfec).
+
+UI standardisation
+- Built one shared app shell (labelled sidebar, mobile drawer, signed-in user, sign out) and used it on every page.
+- Added shared page header, stat card, status badge, panel, filter bar, empty and loading components.
+- Redesigned the bill card (title, number, status and amount first; collapsible item breakdown; actions inside the card).
+- Fixed modal backgrounds that rendered solid black (Tailwind v4 dropped bg-opacity classes).
+- Rebuilt the PDA Manager page: rupee formatting, labelled dialogs, "Close account" / "Remove all free balance", dialog instead of a browser prompt.
+- Rebuilt the Rejected Bills list around bill, rejecting desk, reason, "Edit & resubmit" and "Dismiss".
+- Fixed the bill card reading the Finance Admin remark from the wrong column and showing "Pending" for desks not on the route.
+- Showed Store and Purchase delivery/installation dates as readable dates.
+- Removed the old sidebar component and logo files that were no longer used.
+- Added subtle animations: sliding sidebar highlight, mobile drawer slide, section fade-in, button press feedback, animated confirmation dialogs (respecting reduced motion).
+- Made All Bills and Purchase Register Dean-only (pages, sidebar links and register API), with an in-page Bill History for Finance Admin at the time.
+- Shortened the "Everything at this desk" sidebar label to "All".
+- Aligned the bill form's step heading so the form card and Summary panel start level.
+- Made Approve / Hold / Reject buttons identical on every desk with one shared component.
+- Added the Audit and Finance Admin decision panels to the Bill details page ("View details").
+- Committed and pushed the UI pass to the fork (commit 5b0ac73).
+- Replaced the empty PO Number dropdown ("PO register is not connected") with a plain text field.
+
+Source of fund
+- Made OH-31 and OH-35 real institute budget heads per financial year; PDA bills still use the applicant's PDA (migration 0007).
+- Recorded which pool holds each bill's money, so releases and spends return to the same pool, and corrections move money between pools.
+- Enforced the fund rule: Consumables use OH-31 or PDA, Major uses OH-35 or PDA, Minor any.
+- Added Dean-only OH-31 and OH-35 Registers with budget summary, sanction entries ("Add funding") and bill-wise expenditure.
+- Allowed PDA accounts to close while the holder still has OH-funded bills in flight.
+- Replaced the default favicon with the IIT Mandi logo.
+- Applied migration 0007 to the local database after backing it up.
+- Shortened the fund names, removed the extra explanation box, and showed the PDA balance only when PDA is chosen.
+- Trimmed field hints on the Funding and Stock step.
+- Gave "Submit Another Bill" a bordered button.
+
+Desks
+- Made the Finance Admin, Audit and Store and Purchase pages refresh their bills every 30 seconds and on returning to the tab.
+- Removed "Store and Purchase Section" from the bill form header and the Pending Bills description.
+- Put all three approval desks on one shared desk page (Pending, Approved, Hold, Rejected, All), defaulting to Pending Bills.
+- Renamed "Review Bills" to "Pending Bills" and removed Finance Admin's separate Dashboard and Bill History.
+- Fixed the Store and Purchase location filter, which searched remarks instead of the location.
+- Fixed the Dean page action column so Deactivate stays in place, with a dashed line where Top up is absent.
+
+Registers and records
+- Added inward and outward registers for the whole bill flow, written automatically from the workflow log with permanent serials (migration 0008).
+- Added the Inward / Outward Register page for the Dean, Finance Admin, Audit and Store and Purchase, with desk, year and search filters and time-at-desk.
+- Backfilled the registers from all existing bill history and applied migration 0008 to the local database after backing it up.
+- Hid the system's own filing note from the register's Remarks column.
+- Replaced the raw JSON revision history on Bill details with a readable "Changes" list of filer corrections.
+- Kept the Changes section visible on every bill, with "No corrections since this bill was filed" when empty.
+- Added a proper A4 "Bill Processing Sheet" print layout with header, QR code, items, amount in words, approval record and signature blocks.
+- Pointed every "Print bill" button at the new print sheet and removed the old raw-field print.
+
+Supporting work
+- Added database and API tests for the edit window, fund heads, registers and every new access rule.
+- Added unit tests for edit-window helpers, queue ordering, readable changes and amount in words.
+- Updated the README, migration scripts and Docker setup for migrations 0006, 0007 and 0008.

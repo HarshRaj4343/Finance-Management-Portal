@@ -91,6 +91,11 @@ export function isApprover(role: Role): role is Stage {
   return (APPROVAL_STAGES as readonly string[]).includes(role);
 }
 
+/** The inward / outward register is kept for the Dean and the three approval desks. */
+export function canOpenMovementRegister(role: string | null | undefined): boolean {
+  return ["Dean", "Finance Admin", "Audit", "Student Purchase"].includes(normaliseRole(role));
+}
+
 /** Roles allowed to see every bill in the portal, not just their own. */
 export function canSeeAllBills(role: Role): boolean {
   return role !== "User";

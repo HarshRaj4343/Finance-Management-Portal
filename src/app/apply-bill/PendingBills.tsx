@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, money, when } from "@/lib/api";
-import { billScopeQuery, isUmbrellaDepartment } from "@/lib/roles";
+import { billScopeQuery } from "@/lib/roles";
 import { Bill } from "./types";
 import EditBillModal from "./EditBillModal";
 import { StatusBadge } from "@/components/ui/page";
@@ -65,7 +65,7 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
     <div className="mx-auto w-full max-w-6xl">
       <h1 className="mb-1 text-2xl font-semibold text-slate-900">Pending Bills</h1>
       <p className="mb-5 text-sm text-slate-500">
-        {isUmbrellaDepartment(department) ? "Bills filed through Store and Purchase for any school" : `Bills filed for ${department ?? "your department"}`} that are still waiting on a desk.
+        Bills you have filed that are still waiting on a desk.
       </p>
       {error && <p className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{error}</p>}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
