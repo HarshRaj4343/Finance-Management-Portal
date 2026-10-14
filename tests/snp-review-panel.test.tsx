@@ -40,7 +40,7 @@ async function remark(value: string) {
 describe("Store and Purchase confirmation UI (no live API or financial writes)", () => {
   it("shows dates without a guarantee and removes JSON controls", async () => {
     await render();
-    expect(host.textContent).toContain("2026-01-02"); expect(host.textContent).toContain("Not required");
+    expect(host.textContent).toContain("02 Jan 2026"); expect(host.textContent).toContain("Not required");
     expect(host.textContent).not.toContain("JSON");
     for (const action of ["Approve", "Hold", "Reject"]) expect(button(action).disabled).toBe(false);
   });
@@ -48,7 +48,7 @@ describe("Store and Purchase confirmation UI (no live API or financial writes)",
     await render(); await click("Approve");
     const dialog = document.querySelector('[role="alertdialog"]');
     expect(dialog?.textContent).toContain("Confirm approve"); expect(dialog?.textContent).toContain("TEST/1");
-    expect(dialog?.textContent).toContain("₹1000.00"); expect(dialog?.textContent).toContain("2026-01-02");
+    expect(dialog?.textContent).toContain("₹1000.00"); expect(dialog?.textContent).toContain("02 Jan 2026");
     expect(document.activeElement).toBe(button("Cancel")); expect(mocks.post).not.toHaveBeenCalled();
     await click("Cancel"); expect(document.querySelector('[role="alertdialog"]')).toBeNull();
     await vi.waitFor(() => expect(document.activeElement).toBe(button("Approve")));

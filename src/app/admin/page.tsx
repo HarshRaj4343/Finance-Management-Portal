@@ -1,25 +1,21 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import {
-  IconArrowLeft,
-  IconHome,
   IconUsers,
   IconUserPlus,
-  IconSearch,
-  IconFilter,
   IconBook,
   IconWallet,
   IconAlertCircle,
 } from "@tabler/icons-react";
-import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 import { api, money, qs, when } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
+import AppShell from "@/components/AppShell";
+import FilterBar, { FilterField, filterInput } from "@/components/FilterBar";
+import { PageHeader } from "@/components/ui/page";
 import { ROLES, ASSIGNABLE_ROLES, normaliseRole, deskLabel, type Role } from "@/lib/roles";
 import { useConfirm } from "@/components/ConfirmProvider";
 import type { Employee, PdaBalanceRow, DepartmentRow } from "@/types/database";
@@ -56,37 +52,13 @@ const BLANK = {
   allocated: "",
 };
 
-const Logo = () => (
-  <a
-    href="#"
-    className="relative z-20 flex items-center space-x-2 py-1 text-base font-semibold text-black"
-  >
-    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
-    <motion.span
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="whitespace-pre text-black"
-    >
-      People and Roles
-    </motion.span>
-  </a>
-);
 
-const LogoIcon = () => (
-  <a
-    href="#"
-    className="relative z-20 flex items-center py-1 text-sm font-semibold text-black"
-  >
-    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
-  </a>
-);
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
   const confirm = useConfirm();
   const myRole = normaliseRole((session?.user as { employee_type?: string })?.employee_type);
 
-  const [open, setOpen] = useState(false);
   const [people, setPeople] = useState<EmployeeWithPda[]>([]);
   const [departments, setDepartments] = useState<DepartmentRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,7 +68,6 @@ export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("");
   const [showInactive, setShowInactive] = useState(false);
-  const [showFilters, setShowFilters] = useState(false);
   const [activeFilter, setActiveFilter] = useState("Everyone");
 
   const [adding, setAdding] = useState(false);
@@ -379,158 +350,56 @@ export default function AdminPage() {
       : people;
 
   return (
-    <div className="flex w-full h-screen bg-white shadow-lg">
+    <AppShell
+      desk={myRole === "Dean" ? "Dean" : "People and Roles"}
+      nav={links.map((link) => ({ label: link.label, icon: link.icon, onClick: link.onClick, active: activeFilter === link.label }))}
+    >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
-
-      {/* Sidebar */}
-      <Sidebar open={open} setOpen={setOpen}>
-        <SidebarBody className="flex flex-col justify-between h-full">
-          <div className="flex flex-col">
-            {open ? <Logo /> : <LogoIcon />}
-            <div className="mt-8 flex flex-col gap-2">
-              {links.map((link, idx) => (
-                <button
-                  key={idx}
-                  onClick={link.onClick}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded text-left w-full transition-colors",
-                    activeFilter === link.label
-                      ? "bg-blue-100 font-medium text-blue-900"
-                      : "hover:bg-gray-100"
-                  )}
-                >
-                  {link.icon}
-                  {open && <span>{link.label}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Bottom links */}
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={() => (window.location.href = "/register")}
-              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full"
-            >
-              <IconBook className="h-5 w-5 shrink-0 text-neutral-700" />
-              {open && <span>Register</span>}
-            </button>
-            <button
-              onClick={() => (window.location.href = "/")}
-              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full"
-            >
-              <IconHome className="h-5 w-5 shrink-0 text-neutral-700" />
-              {open && <span>Portal</span>}
-            </button>
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full"
-            >
-              <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700" />
-              {open && <span>Logout</span>}
-            </button>
-          </div>
-        </SidebarBody>
-      </Sidebar>
-
-      {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-8 overflow-y-auto bg-gray-50">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center"
-        >
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
-            People and Roles
-          </h1>
-          <p className="text-gray-600 font-medium">
-            {myRole === "Dean"
-              ? "A role decides which desk somebody lands on and what they may approve"
-              : "Only the Dean of Finance can change a role. You can correct names, emails and departments."}
-          </p>
-        </motion.div>
+      <PageHeader
+        title="People and Roles"
+        description={myRole === "Dean"
+          ? "A role decides which desk somebody lands on and what they may approve."
+          : "Only the Dean of Finance can change a role. You can correct names, emails and departments."}
+      />
 
         {unprovisioned.length > 0 && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg px-4 py-3 text-sm text-yellow-900">
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             {unprovisioned.length}{" "}
             {unprovisioned.length === 1 ? "person has" : "people have"} no PDA account
             yet, so no bill can be filed against them.
           </div>
         )}
 
-        {/* Search and Filter Section */}
-        <div className="bg-white rounded-lg shadow p-4 space-y-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <IconSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by name, employee code, email..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
+        <FilterBar
+          search={searchQuery}
+          onSearch={setSearchQuery}
+          placeholder="Search by name, employee code or email"
+          onClear={() => { setSearchQuery(""); setRoleFilter(""); setShowInactive(false); }}
+          active={Boolean(searchQuery || roleFilter || showInactive)}
+          actions={
             <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
-                showFilters
-                  ? "bg-blue-100 text-blue-700 border-blue-300"
-                  : "bg-gray-100 text-gray-700 border-gray-300"
-              }`}
-            >
-              <IconFilter className="h-5 w-5" />
-              Filters
-            </button>
-            <button
+              type="button"
               onClick={() => setAdding((v) => !v)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-medium text-white hover:bg-blue-800"
             >
-              <IconUserPlus className="h-5 w-5" />
+              <IconUserPlus className="size-4" />
               {adding ? "Cancel" : "Add Person"}
             </button>
-          </div>
-
-          <AnimatePresence>
-            {showFilters && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t"
-              >
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Role
-                  </label>
-                  <select
-                    value={roleFilter}
-                    onChange={(e) => setRoleFilter(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">All roles</option>
-                    {ROLES.map((r) => (
-                      <option key={r} value={r}>
-                        {deskLabel(r)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="flex items-end">
-                  <label className="flex items-center gap-2 text-sm text-gray-700 pb-2">
-                    <input
-                      type="checkbox"
-                      checked={showInactive}
-                      onChange={(e) => setShowInactive(e.target.checked)}
-                      className="rounded border-gray-300"
-                    />
-                    Include deactivated people
-                  </label>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+          }
+        >
+          <FilterField label="Role">
+            <select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)} className={filterInput}>
+              <option value="">All roles</option>
+              {ROLES.map((r) => (
+                <option key={r} value={r}>{deskLabel(r)}</option>
+              ))}
+            </select>
+          </FilterField>
+          <label className="flex items-end gap-2 pb-2 text-sm text-slate-700">
+            <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} className="rounded border-slate-300" />
+            Include deactivated people
+          </label>
+        </FilterBar>
 
         {/* Add form */}
         <AnimatePresence>
@@ -540,7 +409,7 @@ export default function AdminPage() {
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
               onSubmit={addPerson}
-              className="bg-white rounded-lg shadow p-4 overflow-hidden"
+              className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm overflow-hidden"
             >
               <h2 className="font-semibold text-gray-800 mb-1">Add a person</h2>
               <p className="text-sm text-gray-500 mb-4">
@@ -636,8 +505,8 @@ export default function AdminPage() {
         </AnimatePresence>
 
         {/* The directory */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-4 py-3 border-b bg-gray-50 flex items-center gap-2">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b bg-slate-50 flex items-center gap-2">
             <IconUsers className="h-5 w-5 text-blue-600" />
             <h2 className="font-semibold text-gray-800">{activeFilter}</h2>
             <span className="ml-auto text-sm text-gray-500">{shown.length} people</span>
@@ -716,7 +585,7 @@ export default function AdminPage() {
                         )}
                       </td>
 
-                      <td className="px-4 py-3 whitespace-nowrap">
+                      <td className="min-w-[12rem] px-4 py-3">
                         {p.pda ? (
                           <>
                             <span className="font-medium text-gray-800">
@@ -776,11 +645,10 @@ export default function AdminPage() {
             </div>
           )}
         </div>
-      </div>
 
       {/* Edit dialog */}
       {editing && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -858,7 +726,7 @@ export default function AdminPage() {
 
       {/* Top-up dialog */}
       {toppingUp && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -927,6 +795,6 @@ export default function AdminPage() {
           </motion.div>
         </div>
       )}
-    </div>
+    </AppShell>
   );
 }

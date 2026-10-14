@@ -1,11 +1,12 @@
 // BillsHistory.tsx
-import { deskLabel } from "@/lib/roles";
 import React, { useState } from "react";
-import { api } from "@/lib/api";
+import { api, money } from "@/lib/api";
 import { Bill } from "./types";
 import EditBillModal from "./EditBillModal";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { canCorrectBill, deskRemark } from "@/lib/bill-review";
+import Link from "next/link";
+import { EmptyState, LoadingState, PageHeader, StatusBadge } from "@/components/ui/page";
 
 interface BillsHistoryProps {
   bills: Bill[];
@@ -64,190 +65,73 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
   };
 
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case "Pending":
-        return "text-yellow-600 bg-yellow-100";
-      case "Approved":
-        return "text-green-600 bg-green-100";
-      case "Reject":
-        return "text-red-600 bg-red-100";
-      case "Hold":
-        return "text-orange-600 bg-orange-100";
-      default:
-        return "text-gray-600 bg-gray-100";
-    }
-  };
-
-  if (loading) {
-    return (
-      <div className="w-full">
-        <h2 className="text-2xl font-semibold mb-6">All Bills History</h2>
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
-      </div>
-    );
-  }
-
-  if (bills.length === 0) {
-    return (
-      <div className="w-full">
-        <h2 className="text-2xl font-semibold mb-6">All Bills History</h2>
-      {noteError && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {noteError}
-        </div>
-      )}
-        <div className="text-center py-12">
-          <p className="text-gray-500 text-lg">No bills uploaded yet.</p>
-        </div>
-      </div>
-    );
-  }
+  const rejectedBy = (bill: Bill) =>
+    bill.finance_admin === "Reject" ? "Finance Admin" : bill.audit === "Reject" ? "Audit" : bill.snp === "Reject" ? "Store and Purchase Department" : bill.status;
+  const th = "px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
 
   return (
-    <div className="w-full">
-      <h2 className="text-2xl font-semibold mb-6">Rejected Bills</h2>
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 border rounded bg-white shadow-sm text-sm">
-          <thead className="bg-gray-100">
-            <tr>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Employee ID
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Employee Name
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                PO Details
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                PO Value
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Category
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Status
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Store and Purchase Department
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Audit
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Finance Admin
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Remark
-              </th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                Created At
-              </th>
-              {enableEdit && (
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Edit
-                </th>
-              )}
-              {allowNote && (
-                <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Dismiss
-                </th>
-              )}
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
-            {bills.map((bill) => (
-              <tr key={bill.id} className="hover:bg-gray-50">
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {bill.employee_id}
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {bill.employee_name}
-                </td>
-                <td className="px-3 py-4 text-sm text-gray-900 max-w-xs truncate">
-                  {bill.po_details || "N/A"}
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                  ₹ {bill.po_value?.toLocaleString()}
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                  <span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">
-                    {bill.item_category}
-                  </span>
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.status)}`}>
-                    {deskLabel(bill.status)}
-                  </span>
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm">
-                  {bill.snp ? (
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.snp)}`}>
-                      {bill.snp}
-                    </span>
-                  ) : (
-                    "N/A"
-                  )}
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm">
-                  {bill.audit ? (
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.audit)}`}>
-                      {bill.audit}
-                    </span>
-                  ) : (
-                    "N/A"
-                  )}
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm">
-                  {bill.finance_admin ? (
-                    <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.finance_admin)}`}>
-                      {bill.finance_admin}
-                    </span>
-                  ) : (
-                    "N/A"
-                  )}
-                </td>
-                <td className="px-3 py-4 text-sm text-gray-900 max-w-xs">
-                  {deskRemark(bill) ?? "—"}
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {new Date(bill.created_at).toLocaleDateString()}
-                </td>
-                {enableEdit && (
-                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => setEditingBill(bill)}
-                      disabled={!canEditBill(bill)}
-                      className={`inline-flex items-center px-3 py-1 rounded-md transition-colors ${
-                        canEditBill(bill)
-                          ? "text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100"
-                          : "text-gray-400 bg-gray-100 cursor-not-allowed"
-                      }`}
-                    >
-                      Edit
-                    </button>
-                  </td>
-                )}
-                {allowNote && (
-                  <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
-                    <button
-                      onClick={() => handleNoted(bill.id)}
-                      title="Clear this bill from the list without resubmitting it"
-                      disabled={notingId === bill.id}
-                      className="inline-flex items-center px-3 py-1 rounded-md transition-colors disabled:opacity-50 text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100"
-                    >
-                      {notingId === bill.id ? "Dismissing..." : "Dismiss"}
-                    </button>
-                  </td>
-                )}
+    <div className="space-y-6">
+      <PageHeader
+        title="Rejected Bills"
+        description="Correct and resubmit a rejected bill, or dismiss it to clear it from this list. Its funds were released when it was rejected."
+      />
+      {noteError && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{noteError}</p>}
+      {loading ? <LoadingState label="Loading rejected bills…" /> : bills.length === 0 ? (
+        <EmptyState title="No rejected bills" description="Bills a desk rejects appear here until you resubmit or dismiss them." />
+      ) : (
+        <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className={th}>Bill</th>
+                <th className={`${th} text-right`}>Amount</th>
+                <th className={th}>Rejected by</th>
+                <th className={th}>Reason</th>
+                <th className={th}>Filed</th>
+                {(enableEdit || allowNote) && <th className={th}><span className="sr-only">Actions</span></th>}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {bills.map((bill) => (
+                <tr key={bill.id} className="align-top hover:bg-slate-50">
+                  <td className="px-4 py-3">
+                    <Link href={`/bill/${bill.id}`} className="whitespace-nowrap font-mono text-xs font-medium text-blue-700 hover:underline">{bill.bill_number ?? "—"}</Link>
+                    <p className="whitespace-nowrap font-medium text-slate-900">{bill.employee_name} ({bill.employee_id})</p>
+                    <p className="max-w-[16rem] truncate text-xs text-slate-500" title={bill.po_details ?? ""}>{bill.item_category} · {bill.po_details || "No PO"}</p>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{money(bill.po_value)}</td>
+                  <td className="px-4 py-3"><StatusBadge value={rejectedBy(bill)} /></td>
+                  <td className="min-w-[16rem] max-w-md px-4 py-3 text-slate-700">{deskRemark(bill) ?? "—"}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{new Date(bill.created_at).toLocaleDateString("en-IN")}</td>
+                  {(enableEdit || allowNote) && (
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      {enableEdit && (
+                        <button
+                          onClick={() => setEditingBill(bill)}
+                          disabled={!canEditBill(bill)}
+                          className="inline-flex h-8 items-center rounded-md bg-blue-700 px-3 text-sm font-medium text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500"
+                        >
+                          Edit &amp; resubmit
+                        </button>
+                      )}
+                      {allowNote && (
+                        <button
+                          onClick={() => handleNoted(bill.id)}
+                          title="Clear this bill from the list without resubmitting it"
+                          disabled={notingId === bill.id}
+                          className="ml-2 inline-flex h-8 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {notingId === bill.id ? "Dismissing..." : "Dismiss"}
+                        </button>
+                      )}
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {enableEdit && editingBill && (
         <EditBillModal

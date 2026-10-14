@@ -82,15 +82,22 @@ describe("API authority and financial boundaries", () => {
     expect((await pda(req("/api/admin/pda", { employee_id: "U", top_up: 100 }))).status).toBe(200);
     expect(mocks.queryOne).toHaveBeenCalledExactlyOnceWith("select public.fn_top_up_pda($1, $2, $3) as account", ["U", 100, "TEST-C"]);
   });
-  it("applies identical identity, search, date and year filters to rows and totals", async () => {
-    mocks.actor.role = "User"; mocks.actor.code = "TEST-U";
+  it("opens the purchase register to the Dean only", async () => {
+    for (const role of ["User", "Bill Employee", "Student Purchase", "Audit", "Finance Admin", "PDA Manager"]) {
+      mocks.actor.role = role;
+      expect((await register(req("/api/register"))).status).toBe(403);
+    }
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+  it("applies identical search, date and year filters to rows and totals", async () => {
+    mocks.actor.role = "Dean"; mocks.actor.code = "TEST-D";
     mocks.query.mockResolvedValue([]); mocks.queryOne.mockResolvedValue({ total: 0, totals: {} });
     expect((await register(req("/api/register?q=Secret&from=2026-01-01&fy=2025-26"))).status).toBe(200);
     const totalsCall = mocks.queryOne.mock.calls.find(([sql]) => sql.includes("jsonb_build_object"));
     const rowsCall = mocks.query.mock.calls.find(([sql]) => sql.includes("select *"));
     expect(totalsCall![0].split("where ")[1].trim()).toBe(rowsCall![0].split("where ")[1].split("order by")[0].trim());
     expect(totalsCall![1].slice(0, -1)).toEqual(rowsCall![1].slice(0, -2));
-    expect(totalsCall![1][0]).toBe("TEST-U");
+    expect(totalsCall![1][0]).toBe("2025-26");
     expect(totalsCall![0]).not.toContain("fn_register_totals");
   });
 });

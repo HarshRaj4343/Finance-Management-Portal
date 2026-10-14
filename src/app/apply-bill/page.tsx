@@ -4,10 +4,9 @@ import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import { billScopeQuery, normaliseRole } from "@/lib/roles";
-import { signOut, useSession } from "next-auth/react";
-import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
-import { IconArrowLeft } from "@tabler/icons-react";
-import { Logo, LogoIcon } from "./Logo";
+import { useSession } from "next-auth/react";
+import AppShell from "@/components/AppShell";
+import { IconCheck, IconClock, IconFilePlus, IconX } from "@tabler/icons-react";
 import UploadBill from "./UploadBill";
 import BillsHistory from "./BillsHistory";
 import ApprovedBills from "./ApprovedBills";
@@ -18,7 +17,6 @@ type PageView = "upload" | "pending" | "history" | "approved";
 
 export default function EmployeeDashboard() {
   const { data: session, status } = useSession();
-  const [open, setOpen] = useState(false);
   const [bills, setBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
   const canFile = normaliseRole(session?.user?.employee_type) === "Bill Employee";
@@ -129,69 +127,17 @@ export default function EmployeeDashboard() {
   };
 
   return (
-    <div className="flex h-screen w-full bg-white overflow-hidden">
+    <AppShell
+      desk={canFile ? "Bill Employee" : "Bill corrections"}
+      fill={activePage === "upload"}
+      nav={[
+        ...(canFile ? [{ label: "Apply Bill", icon: <IconFilePlus />, onClick: () => setActivePage("upload"), active: activePage === "upload" }] : []),
+        { label: "Pending Bills", icon: <IconClock />, onClick: () => setActivePage("pending"), active: activePage === "pending" },
+        { label: "Rejected Bills", icon: <IconX />, onClick: () => setActivePage("history"), active: activePage === "history", badge: bills.length || null },
+        { label: "Approved Bills", icon: <IconCheck />, onClick: () => setActivePage("approved"), active: activePage === "approved" },
+      ]}
+    >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
-      {/* Sidebar */}
-      <Sidebar open={open} setOpen={setOpen}>
-        <SidebarBody className="justify-between gap-8">
-          <div className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto">
-            {open ? <Logo /> : <LogoIcon />}
-            <div className="mt-8 flex flex-col gap-2">
-              {/* === Sidebar Links === */}
-              {canFile && (
-                <button
-                  onClick={() => setActivePage("upload")}
-                  className={`flex items-center gap-2 px-3 py-2 rounded ${
-                    activePage === "upload" ? "bg-gray-200 font-semibold" : "hover:bg-gray-100"
-                  }`}
-                >
-                  {open && "Apply Bill"}
-                </button>
-              )}
-
-              <button
-                onClick={() => setActivePage("pending")}
-                className={`flex items-center gap-2 px-3 py-2 rounded ${
-                  activePage === "pending" ? "bg-gray-200 font-semibold" : "hover:bg-gray-100"
-                }`}
-              >
-                {open && "Pending Bills"}
-              </button>
-
-              <button
-                onClick={() => setActivePage("history")}
-                className={`flex items-center gap-2 px-3 py-2 rounded ${
-                  activePage === "history" ? "bg-gray-200 font-semibold" : "hover:bg-gray-100"
-                }`}
-              >
-                {open && "Rejected Bills"}
-              </button>
-
-              {/* Approved Bills sidebar option */}
-              <button
-                onClick={() => setActivePage("approved")}
-                className={`flex items-center gap-2 px-3 py-2 rounded ${
-                  activePage === "approved" ? "bg-gray-200 font-semibold" : "hover:bg-gray-100"
-                }`}
-              >
-                {open && "Approved Bills"}
-              </button>
-
-              {/* Logout */}
-              <button
-                onClick={() => signOut({ callbackUrl: "/login" })}
-                className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full mt-4"
-              >
-                <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700" />
-                {open && <span>Logout</span>}
-              </button>
-            </div>
-          </div>
-        </SidebarBody>
-      </Sidebar>
-
-      {/* Main Content */}
-      <div className="flex flex-1 p-6 overflow-y-auto bg-gray-50">
         {activePage === "upload" && canFile && (
           <UploadBill onBillSubmitted={handleBillSubmitted} department={department} />
         )}
@@ -210,9 +156,7 @@ export default function EmployeeDashboard() {
           />
         )}
 
-        {/* Approved Bills page rendering */}
         {activePage === "approved" && <ApprovedBills department={department} />}
-      </div>
-    </div>
+    </AppShell>
   );
 }

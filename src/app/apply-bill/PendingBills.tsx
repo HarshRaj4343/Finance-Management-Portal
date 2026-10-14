@@ -3,9 +3,10 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { api, money, when } from "@/lib/api";
-import { billScopeQuery, isUmbrellaDepartment, deskLabel } from "@/lib/roles";
+import { billScopeQuery, isUmbrellaDepartment } from "@/lib/roles";
 import { Bill } from "./types";
 import EditBillModal from "./EditBillModal";
+import { StatusBadge } from "@/components/ui/page";
 import { canCorrectBill, deskRemark, editWindowLeft, heldAtCurrentDesk } from "@/lib/bill-review";
 
 const countdown = (ms: number) => {
@@ -89,7 +90,7 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
             {bills.map((b) => (
               <tr key={b.id}>
                 <td className="px-4 py-3">
-                  <Link href={`/bill/${b.id}`} className="font-mono font-medium text-blue-700 hover:underline">
+                  <Link href={`/bill/${b.id}`} className="whitespace-nowrap font-mono font-medium text-blue-700 hover:underline">
                     {b.bill_number ?? "—"}
                   </Link>
                   <p className="text-xs text-slate-500">{b.employee_name} ({b.employee_id})</p>
@@ -100,7 +101,7 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
                 </td>
                 <td className="px-4 py-3 text-right tabular-nums">{money(b.po_value)}</td>
                 <td className="px-4 py-3">
-                  <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900">{deskLabel(b.status)}</span>
+                  <StatusBadge value={b.status} />
                   <p className="mt-1 text-xs text-slate-500">{heldAt(b)}</p>
                   {heldAtCurrentDesk(b) && deskRemark(b) && (
                     <p className="mt-1 max-w-xs text-xs text-amber-900">Remark: {deskRemark(b)}</p>

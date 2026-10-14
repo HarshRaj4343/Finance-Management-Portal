@@ -1,12 +1,13 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Check, Pause, X } from "lucide-react";
+import DecisionButtons from "./DecisionButtons";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from "./ui/alert-dialog";
 import { canReviewSnp, recordedBillDates } from "@/lib/bill-review";
 import { api, money } from "@/lib/api";
 import { deskLabel } from "@/lib/roles";
 import { isMoney } from "@/lib/security";
+import { shortDate } from "@/app/apply-bill/bill-form/model";
 import type { Bill } from "@/types/database";
 
 type Action = "Approved" | "Hold" | "Rejected";
@@ -71,8 +72,8 @@ export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm">
       <h3 className="mb-2 font-semibold">Dates recorded in the bill form</h3>
       <dl className="grid gap-3 sm:grid-cols-2">
-        <div><dt className="text-gray-600">Date of Delivery</dt><dd className="font-medium">{dates.delivery ?? "Not recorded in this legacy bill"}</dd></div>
-        <div><dt className="text-gray-600">Date of Installation</dt><dd className="font-medium">{dates.installationNotRequired ? "Not required" : dates.installation ?? "Not recorded in this legacy bill"}</dd></div>
+        <div><dt className="text-gray-600">Date of Delivery</dt><dd className="font-medium">{dates.delivery ? shortDate(dates.delivery) : "Not recorded in this legacy bill"}</dd></div>
+        <div><dt className="text-gray-600">Date of Installation</dt><dd className="font-medium">{dates.installationNotRequired ? "Not required" : dates.installation ? shortDate(dates.installation) : "Not recorded in this legacy bill"}</dd></div>
       </dl>
       <p className="mt-2 text-xs text-gray-600">Read-only applicant facts. {dates.legacy ? "Legacy dates are extracted from the original saved bill text; no records were rewritten." : bill.form_data ? "Copied from the submitted bill form." : "This older bill has no verifiable recorded dates."}</p>
     </div>
@@ -88,11 +89,7 @@ export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }
       <label className="block text-sm font-medium">Store and Purchase Department remark (required for Hold/Reject)
         <textarea className="mt-1 w-full rounded-lg border p-3" rows={2} value={remark} onChange={(e) => setRemark(e.target.value)} />
       </label>
-      <div className="flex flex-wrap gap-3">
-        <button type="button" onClick={(event) => request("Approved", event.currentTarget)} className="flex items-center gap-1 rounded-lg bg-green-600 px-4 py-2 text-white"><Check size={16} />Approve</button>
-        <button type="button" onClick={(event) => request("Hold", event.currentTarget)} className="flex items-center gap-1 rounded-lg bg-amber-500 px-4 py-2 text-white"><Pause size={16} />Hold</button>
-        <button type="button" onClick={(event) => request("Rejected", event.currentTarget)} className="flex items-center gap-1 rounded-lg bg-red-600 px-4 py-2 text-white"><X size={16} />Reject</button>
-      </div>
+      <DecisionButtons onDecide={(action, button) => request(action, button)} disabled={busy || pending !== null} busy={busy} />
     </fieldset>}
     <AlertDialog open={pending !== null} onOpenChange={(open) => { if (!open && !busy) setPending(null); }}>
       <AlertDialogContent onEscapeKeyDown={(e) => { if (busy) e.preventDefault(); }}
@@ -103,7 +100,7 @@ export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }
         <dl className="grid grid-cols-2 gap-2 text-sm">
           <dt>Bill</dt><dd>{bill.bill_number ?? bill.id}</dd><dt>Applicant</dt><dd>{bill.employee_name} ({bill.employee_id})</dd>
           <dt>Amount</dt><dd>{money(bill.po_value)}</dd><dt>Revision</dt><dd>{pending?.revision}</dd>
-          <dt>Delivery</dt><dd>{dates.delivery ?? "Not recorded"}</dd><dt>Installation</dt><dd>{dates.installationNotRequired ? "Not required" : dates.installation ?? "Not recorded"}</dd>
+          <dt>Delivery</dt><dd>{dates.delivery ? shortDate(dates.delivery) : "Not recorded"}</dd><dt>Installation</dt><dd>{dates.installationNotRequired ? "Not required" : dates.installation ? shortDate(dates.installation) : "Not recorded"}</dd>
           <dt>Remark</dt><dd className="break-words whitespace-pre-wrap">{pending?.remark || "None"}</dd>
           {pending?.action === "Approved" && <><dt>Bank guarantee</dt><dd>{pending.extra.has_bank_guarantee ? `${money(Number(pending.extra.bank_guarantee_amount))} — ${pending.extra.bank_guarantee_details}` : "Not required"}</dd></>}
         </dl>

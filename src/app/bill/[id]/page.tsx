@@ -7,6 +7,10 @@ import { useSession } from "next-auth/react";
 import QRCode from "react-qr-code";
 import BillItems from "@/components/BillItems";
 import SnpReviewPanel from "@/components/SnpReviewPanel";
+import DeskReviewPanel from "@/components/DeskReviewPanel";
+import { canReviewDesk } from "@/lib/bill-review";
+import AppShell, { sharedLinks } from "@/components/AppShell";
+import { LoadingState } from "@/components/ui/page";
 import { api, money, when } from "@/lib/api";
 import type { Bill, BillApproval, RegisterEntry, Employee } from "@/types/database";
 
@@ -105,14 +109,16 @@ export default function BillDetailsPage() {
 
   if (authStatus === "loading" || loading)
     return (
-      <div className="text-center mt-10 text-gray-500">Loading bill details...</div>
+      <AppShell desk="Bill details" nav={[]} links={sharedLinks(session?.user?.employee_type, "detail")}><LoadingState label="Loading bill details…" /></AppShell>
     );
 
   if (error || !payload?.bill)
     return (
-      <div className="max-w-md mx-auto mt-10 bg-red-50 border border-red-200 text-red-800 rounded-lg px-5 py-4 text-center text-sm">
-        {error ?? "Bill not found."}
-      </div>
+      <AppShell desk="Bill details" nav={[]} links={sharedLinks(session?.user?.employee_type, "detail")}>
+        <div role="alert" className="mx-auto max-w-md rounded-lg border border-red-200 bg-red-50 px-5 py-4 text-center text-sm text-red-800">
+          {error ?? "Bill not found."}
+        </div>
+      </AppShell>
     );
 
   const { bill, events, register, applicant, route, revisions } = payload;
@@ -126,19 +132,23 @@ export default function BillDetailsPage() {
   };
 
   return (
-    <div className="max-w-4xl mx-auto bg-white shadow rounded-lg p-6 mt-10 mb-10">
-      <div className="flex justify-between items-center mb-6">
+    <AppShell desk="Bill details" nav={[]} links={sharedLinks(session?.user?.employee_type, "detail")}>
+    <div className="mx-auto max-w-4xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:border-0 print:shadow-none">
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-gray-800">Bill Details</h2>
+          <button onClick={() => history.length > 1 ? history.back() : window.location.assign("/")} className="mb-2 text-sm font-medium text-blue-700 hover:underline print:hidden">
+            ← Back
+          </button>
+          <h1 className="text-2xl font-semibold text-slate-900">Bill details</h1>
           {bill.bill_number && (
-            <p className="text-sm text-gray-500 mt-1">{bill.bill_number}</p>
+            <p className="mt-1 font-mono text-sm text-slate-500">{bill.bill_number}</p>
           )}
         </div>
         <button
           onClick={() => window.print()}
-          className="px-4 py-2 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+          className="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 print:hidden"
         >
-          Print Page
+          Print page
         </button>
       </div>
 
@@ -172,9 +182,23 @@ export default function BillDetailsPage() {
             const { data, error: refreshError } = await api.get<Payload>(`/api/bills/${id}`);
             if (refreshError) setError(refreshError); else setPayload(data);
           }} />
+        {(["Audit", "Finance Admin"] as const).map((desk) =>
+          canReviewDesk(bill, desk, session?.user?.employee_code, session?.user?.employee_type) ? (
+            <div key={desk} className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <h2 className="mb-3 text-base font-semibold text-slate-900">{desk} decision</h2>
+              <DeskReviewPanel key={`${bill.id}:${bill.revision}`} bill={bill} desk={desk}
+                actorCode={session?.user?.employee_code} actorRole={session?.user?.employee_type}
+                onDecided={async (updated) => {
+                  setPayload((current) => current ? { ...current, bill: updated } : current);
+                  const { data, error: refreshError } = await api.get<Payload>(`/api/bills/${id}`);
+                  if (refreshError) setError(refreshError); else setPayload(data);
+                }} />
+            </div>
+          ) : null
+        )}
       </div>
       <details className="mb-6 border rounded p-3">
-        <summary className="cursor-pointer font-medium">Revision history ({revisions.length} changes)</summary>
+        <summary className="cursor-pointer font-medium">Revision history ({revisions.length} {revisions.length === 1 ? "change" : "changes"})</summary>
         {revisions.map((revision, index) => <details key={index} className="mt-3 border-t pt-2">
           <summary>Revision {revision.new_data.revision} — {revision.actor_code ?? "System"} — {when(revision.recorded_at)}</summary>
           <pre className="text-xs overflow-x-auto whitespace-pre-wrap mt-2">{JSON.stringify({ before: revision.old_data, after: revision.new_data }, null, 2)}</pre>
@@ -343,5 +367,6 @@ export default function BillDetailsPage() {
         </p>
       </div>
     </div>
+    </AppShell>
   );
 }

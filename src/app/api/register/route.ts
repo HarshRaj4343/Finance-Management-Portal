@@ -1,6 +1,6 @@
 import { NextRequest } from "next/server";
 import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
-import { requireActor } from "@/server/session";
+import { HttpError, requireActor } from "@/server/session";
 import { fail, ok } from "@/server/http";
 import { canSeeAllBills } from "@/lib/roles";
 import { pagination } from "@/lib/security";
@@ -21,6 +21,8 @@ export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     const actor = await requireActor();
+    // RBAC: the purchase register is open to the Dean only.
+    if (actor.role !== "Dean") throw new HttpError(403, "Only the Dean can open the purchase register.");
     const p = req.nextUrl.searchParams;
 
     const { limit, offset } = pagination(p);

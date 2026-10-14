@@ -403,13 +403,13 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
       <Stepper step={step} reached={reached} onGo={goTo} />
 
       {/* body */}
-      <div ref={top} className="min-h-0 flex-1 overflow-y-auto pb-6 pr-1">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_300px]">
+      <div ref={top} className="min-h-0 flex-1 overflow-y-auto pb-6 pr-1 pt-5">
+        <h2 ref={heading} tabIndex={-1} className="mb-4 text-lg font-semibold text-slate-900 outline-none">
+          {STEPS[step].label}
+          <span className="ml-2 text-sm font-normal text-slate-500">Step {step + 1} of {STEPS.length}</span>
+        </h2>
+        <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="min-w-0 space-y-6">
-            <h2 ref={heading} tabIndex={-1} className="text-lg font-semibold text-slate-900 outline-none">
-              {STEPS[step].label}
-              <span className="ml-2 text-sm font-normal text-slate-500">Step {step + 1} of {STEPS.length}</span>
-            </h2>
 
             {pending && !hasContent && (
               <Banner tone="info">
@@ -487,7 +487,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
             </div>
           </div>
 
-          <div className="hidden lg:block">
+          <div className="hidden lg:sticky lg:top-0 lg:block">
             <SummaryPanel f={f} variant="side" />
           </div>
         </div>

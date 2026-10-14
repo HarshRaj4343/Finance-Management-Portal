@@ -1,47 +1,36 @@
 "use client";
-import Image from "next/image";
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { api, money } from "@/lib/api";
+import { api } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import { normaliseRole, deskLabel } from "@/lib/roles";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import {
-  IconArrowLeft,
   IconCheck,
   IconX,
   IconClockPause,
   IconListDetails,
   IconClock,
   IconAlertCircle,
-  IconSearch,
-  IconFilter,
-  IconCalendar,
-  IconCurrencyRupee,
-  IconMapPin,
-  IconCategory,
 } from "@tabler/icons-react";
-import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 import BillCard from "@/components/BillCard";
-import { useConfirm } from "@/components/ConfirmProvider";
-import { billDecisionPrompt } from "@/components/confirmBillDecision";
-import { latestArrivalFirst } from "@/lib/bill-review";
+import AppShell from "@/components/AppShell";
+import DeskReviewPanel from "@/components/DeskReviewPanel";
+import FilterBar, { FilterField, filterInput } from "@/components/FilterBar";
+import { EmptyState, LoadingState, PageHeader, StatCard, StatGrid } from "@/components/ui/page";
+import { canReviewDesk, latestArrivalFirst } from "@/lib/bill-review";
 
 /* ---------- Interfaces ---------- */
 import type { Bill } from "@/types/database";
 
 export default function AuditDashboard() {
   const { data: session, status } = useSession();
-  const confirm = useConfirm();
-  const [open, setOpen] = useState(false);
   const [bills, setBills] = useState<Bill[]>([]);
   const [filteredBills, setFilteredBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<
     "All" | "Approved" | "Hold" | "Reject" | "Pending"
   >("Pending");
-  const [remarks, setRemarks] = useState<Record<string, string>>({});
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedBillDetails, setSelectedBillDetails] = useState<Bill | null>(null);
   
@@ -53,7 +42,6 @@ export default function AuditDashboard() {
   const [amountFilter, setAmountFilter] = useState<{ min: string; max: string }>({ min: "", max: "" });
   const [dateFilter, setDateFilter] = useState<{ start: string; end: string }>({ start: "", end: "" });
   const [locationFilter, setLocationFilter] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
 
   // Access control: Only allow users with employee_type === "Audit"
   useEffect(() => {
@@ -163,54 +151,8 @@ export default function AuditDashboard() {
    * the event log -- as one transaction. The email goes from the server
    * afterwards, so a mail failure cannot undo a recorded decision.
    */
-  const [busy, setBusy] = useState<string | null>(null);
 
-  const act = async (bill: Bill, action: "Approved" | "Rejected" | "Hold") => {
-    const remark = (remarks[bill.id] ?? "").trim();
-    if (action !== "Approved" && !remark) {
-      setNotice({
-        kind: "bad",
-        text: `Write a remark before you ${action === "Rejected" ? "reject" : "hold"} this bill.`,
-      });
-      return;
-    }
 
-    if (!(await confirm(billDecisionPrompt(bill, action, remark,
-      action === "Approved"
-        ? "The bill moves on to Finance Admin."
-        : action === "Hold"
-        ? "The bill stays at Audit with its funds reserved, and the filer may correct it."
-        : `The bill is rejected and ${money(Number(bill.po_value))} goes back to the applicant's PDA. The filer may correct and resubmit it.`)))) return;
-
-    setBusy(bill.id);
-    setNotice(null);
-    const { data, error } = await api.post<{ bill: Bill }>(
-      `/api/bills/${bill.id}/action`,
-      { action, remark: remark || undefined, expected_revision: bill.revision }
-    );
-    setBusy(null);
-
-    if (error) {
-      setNotice({ kind: "bad", text: error });
-      return;
-    }
-
-    setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, ...data!.bill } : b)));
-    setRemarks((r) => ({ ...r, [bill.id]: "" }));
-    setNotice({
-      kind: "ok",
-      text:
-        action === "Approved"
-          ? `Approved and sent to ${deskLabel(data!.bill.status)}.`
-          : action === "Rejected"
-          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and the decision is recorded.`
-          : "Bill put on hold. The decision is recorded on the bill timeline.",
-    });
-  };
-
-  const handleApprove = (bill: Bill) => act(bill, "Approved");
-  const handleReject = (bill: Bill) => act(bill, "Rejected");
-  const handleHold = (bill: Bill) => act(bill, "Hold");
 
   // Clear all filters
   const clearFilters = () => {
@@ -297,367 +239,108 @@ export default function AuditDashboard() {
     return null;
   }
 
+  const filtersActive = Boolean(searchQuery || categoryFilter !== "All" || amountFilter.min || amountFilter.max || dateFilter.start || dateFilter.end || locationFilter);
+  const counts: Record<string, number> = { All: bills.length, Pending: pendingCount, Approved: approvedCount, Hold: holdCount, Reject: rejectCount };
+
   return (
-    <div className="flex w-full h-screen bg-white shadow-lg">
+    <AppShell
+      desk="Audit"
+      nav={links.map((link) => {
+        const key = link.label.replace(" Bills", "");
+        const filter = key === "Rejected" ? "Reject" : key;
+        return { label: link.label === "All Bills" ? "All" : link.label, icon: link.icon, onClick: link.onClick, active: activeFilter === filter, badge: counts[filter] ?? null };
+      })}
+    >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
-      {/* Sidebar */}
-      <Sidebar open={open} setOpen={setOpen}>
-        <SidebarBody className="flex flex-col justify-between h-full">
-          <div className="flex flex-col">
-            {open ? <Logo /> : <LogoIcon />}
-            <div className="mt-8 flex flex-col gap-2">
-              {links.map((link, idx) => (
-                <button
-                  key={idx}
-                  onClick={link.onClick}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded text-left w-full transition-colors",
-                    activeFilter === link.label.replace(" Bills", "") 
-                      ? "bg-blue-100 font-medium text-blue-900" 
-                      : "hover:bg-gray-100"
-                  )}
-                >
-                  {link.icon}
-                  {open && <span>{link.label}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
+      <PageHeader title="Audit" description={`Bills above ₹50,000 are checked here before Finance Admin. ${pendingCount} waiting.`} />
 
-          {/* Bottom links */}
-          <div className="flex flex-col gap-2">
- 
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full"
-            >
-              <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700" />
-              {open && <span>Logout</span>}
-            </button>
-          </div>
-        </SidebarBody>
-      </Sidebar>
+      {loading ? <LoadingState label="Loading Audit bills…" /> : (
+        <>
+          <StatGrid>
+            <StatCard label="Pending" value={pendingCount} hint="Waiting for you" tone="blue" icon={<IconClock />} onClick={() => setActiveFilter("Pending")} active={activeFilter === "Pending"} />
+            <StatCard label="Approved" value={approvedCount} hint="Sent to Finance Admin" tone="green" icon={<IconCheck />} onClick={() => setActiveFilter("Approved")} active={activeFilter === "Approved"} />
+            <StatCard label="Hold" value={holdCount} hint="Waiting for correction" tone="amber" icon={<IconClockPause />} onClick={() => setActiveFilter("Hold")} active={activeFilter === "Hold"} />
+            <StatCard label="Rejected" value={rejectCount} hint="Funds released" tone="red" icon={<IconX />} onClick={() => setActiveFilter("Reject")} active={activeFilter === "Reject"} />
+            <StatCard label="All" value={bills.length} hint="Every bill seen by Audit" icon={<IconListDetails />} onClick={() => setActiveFilter("All")} active={activeFilter === "All"} />
+          </StatGrid>
 
-      {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-8 overflow-y-auto bg-gray-50">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <span className="ml-3 text-gray-600">Loading Audit bills...</span>
-          </div>
-        ) : (
-          <>
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-center"
-            >
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
-                Audit Department
-              </h1>
-              <p className="text-gray-600 font-medium">
-                Bills requiring Audit review: {pendingCount} pending
-              </p>
-            </motion.div>
-
-            {/* Search and Filter Section */}
-            <div className="bg-white rounded-lg shadow p-4 space-y-4">
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative">
-                  <IconSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                  <input
-                    type="text"
-                    placeholder="Search bills by PO details, supplier, employee, item description..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  />
-                </div>
-                <button
-                  onClick={() => setShowFilters(!showFilters)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
-                    showFilters ? "bg-blue-100 text-blue-700 border-blue-300" : "bg-gray-100 text-gray-700 border-gray-300"
-                  }`}
-                >
-                  <IconFilter className="h-5 w-5" />
-                  Filters
-                </button>
-                <button
-                  onClick={clearFilters}
-                  className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-                >
-                  Clear All
-                </button>
+          <FilterBar
+            search={searchQuery}
+            onSearch={setSearchQuery}
+            placeholder="Search by PO, supplier, employee or item"
+            onClear={clearFilters}
+            active={filtersActive}
+            summary={`Showing ${filteredBills.length} of ${bills.length} bills`}
+          >
+            <FilterField label="Category">
+              <select value={categoryFilter} onChange={(e) => setCategoryFilter(e.target.value)} className={filterInput}>
+                <option value="All">All categories</option>
+                <option value="Minor">Minor</option>
+                <option value="Major">Major</option>
+                <option value="Consumables">Consumables</option>
+              </select>
+            </FilterField>
+            <FilterField label="Amount (₹)">
+              <div className="flex gap-2">
+                <input type="number" placeholder="Min" value={amountFilter.min} onChange={(e) => setAmountFilter((prev) => ({ ...prev, min: e.target.value }))} className={filterInput} />
+                <input type="number" placeholder="Max" value={amountFilter.max} onChange={(e) => setAmountFilter((prev) => ({ ...prev, max: e.target.value }))} className={filterInput} />
               </div>
-
-              {/* Advanced Filters */}
-              <AnimatePresence>
-                {showFilters && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t"
-                  >
-                    {/* Category Filter */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        <IconCategory className="inline h-4 w-4 mr-1" />
-                        Category
-                      </label>
-                      <select
-                        value={categoryFilter}
-                        onChange={(e) => setCategoryFilter(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="All">All Categories</option>
-                        <option value="Minor">Minor</option>
-                        <option value="Major">Major</option>
-                        <option value="Consumables">Consumables</option>
-                      </select>
-                    </div>
-
-                    {/* Amount Range Filter */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        <IconCurrencyRupee className="inline h-4 w-4 mr-1" />
-                        Amount Range
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          placeholder="Min"
-                          value={amountFilter.min}
-                          onChange={(e) => setAmountFilter(prev => ({ ...prev, min: e.target.value }))}
-                          className="w-full px-2 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-sm"
-                        />
-                        <input
-                          type="number"
-                          placeholder="Max"
-                          value={amountFilter.max}
-                          onChange={(e) => setAmountFilter(prev => ({ ...prev, max: e.target.value }))}
-                          className="w-full px-2 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-sm"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Date Range Filter */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        <IconCalendar className="inline h-4 w-4 mr-1" />
-                        Date Range
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="date"
-                          value={dateFilter.start}
-                          onChange={(e) => setDateFilter(prev => ({ ...prev, start: e.target.value }))}
-                          className="w-full px-2 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-sm"
-                        />
-                        <input
-                          type="date"
-                          value={dateFilter.end}
-                          onChange={(e) => setDateFilter(prev => ({ ...prev, end: e.target.value }))}
-                          className="w-full px-2 py-2 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 text-sm"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Location Filter */}
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        <IconMapPin className="inline h-4 w-4 mr-1" />
-                        Location
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="Search by location..."
-                        value={locationFilter}
-                        onChange={(e) => setLocationFilter(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-
-              {/* Results count */}
-              <div className="text-sm text-gray-600">
-                Showing {filteredBills.length} of {bills.length} bills
+            </FilterField>
+            <FilterField label="Filed between">
+              <div className="flex gap-2">
+                <input type="date" aria-label="From" value={dateFilter.start} onChange={(e) => setDateFilter((prev) => ({ ...prev, start: e.target.value }))} className={filterInput} />
+                <input type="date" aria-label="To" value={dateFilter.end} onChange={(e) => setDateFilter((prev) => ({ ...prev, end: e.target.value }))} className={filterInput} />
               </div>
-            </div>
+            </FilterField>
+            <FilterField label="Location">
+              <input type="text" placeholder="Building, room or address" value={locationFilter} onChange={(e) => setLocationFilter(e.target.value)} className={filterInput} />
+            </FilterField>
+          </FilterBar>
 
-            {/* Stats Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="bg-white p-4 rounded-lg shadow border-l-4 border-orange-500"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Pending</p>
-                    <p className="text-2xl font-bold text-orange-600">{pendingCount}</p>
-                  </div>
-                  <IconClock className="h-8 w-8 text-orange-500" />
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="bg-white p-4 rounded-lg shadow border-l-4 border-green-500"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Approved</p>
-                    <p className="text-2xl font-bold text-green-600">{approvedCount}</p>
-                  </div>
-                  <IconCheck className="h-8 w-8 text-green-500" />
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="bg-white p-4 rounded-lg shadow border-l-4 border-yellow-500"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Hold</p>
-                    <p className="text-2xl font-bold text-yellow-600">{holdCount}</p>
-                  </div>
-                  <IconClockPause className="h-8 w-8 text-yellow-500" />
-                </div>
-              </motion.div>
-
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="bg-white p-4 rounded-lg shadow border-l-4 border-red-500"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600">Rejected</p>
-                    <p className="text-2xl font-bold text-red-600">{rejectCount}</p>
-                  </div>
-                  <IconX className="h-8 w-8 text-red-500" />
-                </div>
-              </motion.div>
-            </div>
-
-            {/* Bills List */}
+          {filteredBills.length === 0 ? (
+            <EmptyState
+              icon={<IconAlertCircle />}
+              title={`No ${activeFilter === "All" ? "" : activeFilter === "Reject" ? "rejected " : `${activeFilter.toLowerCase()} `}bills found`}
+              description={filtersActive ? "Try adjusting your search or filters." : undefined}
+            />
+          ) : (
             <div className="space-y-4">
-              {filteredBills.length === 0 ? (
-                <div className="text-center py-12">
-                  <IconAlertCircle className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">No {activeFilter.toLowerCase()} bills found</p>
-                  {(searchQuery || categoryFilter !== "All" || amountFilter.min || amountFilter.max || dateFilter.start || dateFilter.end || locationFilter) && (
-                    <p className="text-sm text-gray-400 mt-2">Try adjusting your search or filter criteria</p>
-                  )}
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  {filteredBills.map((bill, index) => {
-                    const canTakeAction = bill.audit === "Pending" || bill.audit === "Hold";
-
-                    return (
-                      <motion.div
-                        key={bill.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.05 }}
-                      >
-                        <BillCard bill={bill} showBankGuarantee={true} />
-                        
-                        {/* Audit Actions */}
-                        {canTakeAction && (
-                          <div className="mt-4 bg-white rounded-lg shadow p-4 border border-gray-200">
-                            <div className="space-y-3">
-                              <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-1">
-                                  Add Audit Remark {bill.audit === "Hold" ? "(Update)" : "(Required for Hold/Reject)"}
-                                </label>
-                                <textarea
-                                  rows={2}
-                                  placeholder="Enter your audit remark here..."
-                                  value={remarks[bill.id] || ""}
-                                  onChange={(e) =>
-                                    setRemarks((prev) => ({
-                                      ...prev,
-                                      [bill.id]: e.target.value,
-                                    }))
-                                  }
-                                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                                />
-                              </div>
-
-                              <div className="flex gap-3">
-                                <button
-                                  disabled={busy === bill.id} onClick={() => handleApprove(bill)}
-                                  className="flex items-center gap-1 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
-                                >
-                                  <IconCheck size={16} />
-                                  Approve & Send to Finance Admin
-                                </button>
-                                
-                                <button
-                                  disabled={busy === bill.id} onClick={() => handleHold(bill)}
-                                  className="flex items-center gap-1 px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-colors"
-                                >
-                                  <IconClockPause size={16} />
-                                  Hold
-                                </button>
-                                
-                                <button
-                                  disabled={busy === bill.id} onClick={() => handleReject(bill)}
-                                  className="flex items-center gap-1 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
-                                >
-                                  <IconX size={16} />
-                                  Reject
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Show actions result for approved/rejected bills */}
-                        {!canTakeAction && (
-                          <div className={`mt-4 p-3 rounded-lg ${
-                            bill.audit === "Approved" ? "bg-green-100 text-green-800" :
-                            "bg-red-100 text-red-800"
-                          }`}>
-                            <p className="flex items-center gap-2 font-medium">
-                              {bill.audit === "Approved" ? (
-                                <IconCheck className="h-4 w-4 shrink-0" />
-                              ) : (
-                                <IconX className="h-4 w-4 shrink-0" />
-                              )}
-                              {bill.audit === "Approved"
-                                ? "Bill approved and sent to Finance Admin Department"
-                                : "Bill rejected by Audit Department"}
-                            </p>
-                          </div>
-                        )}
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              )}
+              {filteredBills.map((bill) => {
+                const canTakeAction = canReviewDesk(bill, "Audit", session?.user?.employee_code, session?.user?.employee_type);
+                return (
+                  <BillCard key={bill.id} bill={bill} showBankGuarantee>
+                    {canTakeAction ? (
+                      <DeskReviewPanel
+                        bill={bill}
+                        desk="Audit"
+                        actorCode={session?.user?.employee_code}
+                        actorRole={session?.user?.employee_type}
+                        onDecided={(updated, text) => {
+                          setBills((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+                          setNotice({ kind: "ok", text });
+                        }}
+                      />
+                    ) : (
+                      <p className={`flex items-center gap-2 text-sm font-medium ${bill.audit === "Approved" ? "text-green-800" : bill.audit === "Reject" ? "text-red-800" : "text-slate-600"}`}>
+                        {bill.audit === "Approved" ? <IconCheck className="size-4" /> : bill.audit === "Reject" ? <IconX className="size-4" /> : null}
+                        {bill.audit === "Approved" ? "Approved by Audit and sent on to Finance Admin."
+                          : bill.audit === "Reject" ? "Rejected by Audit."
+                          : `With ${deskLabel(bill.status)}.`}
+                      </p>
+                    )}
+                  </BillCard>
+                );
+              })}
             </div>
-          </>
-        )}
-      </div>
+          )}
+        </>
+      )}
 
       {/* Bill Detail Modal */}
       <AnimatePresence>
         {showDetailModal && selectedBillDetails && (
           <motion.div
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -795,32 +478,8 @@ export default function AuditDashboard() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </AppShell>
   );
 }
 
-/* ------------------------- Sidebar Logos ------------------------- */
-const Logo = () => (
-  <a
-    href="#"
-    className="relative z-20 flex items-center space-x-2 py-1 text-base font-semibold text-black"
-  >
-    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
-    <motion.span
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="whitespace-pre text-black"
-    >
-      Audit Department
-    </motion.span>
-  </a>
-);
 
-const LogoIcon = () => (
-  <a
-    href="#"
-    className="relative z-20 flex items-center py-1 text-sm font-semibold text-black"
-  >
-    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
-  </a>
-);

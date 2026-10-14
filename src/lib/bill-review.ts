@@ -53,6 +53,14 @@ export function canReviewSnp(bill: Bill, code: string | null | undefined, role: 
     && !inEditWindow(bill));
 }
 
+/** Audit or Finance Admin may decide this bill now: right desk, still open, not their own, window closed. */
+export function canReviewDesk(bill: Bill, desk: "Audit" | "Finance Admin", code: string | null | undefined, role: string | null | undefined) {
+  const state = desk === "Audit" ? bill.audit : bill.finance_admin;
+  return Boolean(code && normaliseRole(role) === desk && bill.status === desk
+    && (state === "Pending" || state === "Hold" || state == null)
+    && code !== bill.employee_id && code !== bill.created_by && !inEditWindow(bill));
+}
+
 /** A calendar day in India, YYYY-MM-DD. */
 export function isoDay(value: string | null | undefined): string | null {
   if (!value) return null;

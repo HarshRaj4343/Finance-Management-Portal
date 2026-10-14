@@ -1,5 +1,5 @@
 "use client";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { api, money } from "@/lib/api";
@@ -7,9 +7,9 @@ import Notice, { NoticeState } from "@/components/Notice";
 import { normaliseRole, deskLabel } from "@/lib/roles";
 import {
   IconEye,
-  IconArrowLeft,
   IconUsers,
   IconList,
+  IconHistory,
   IconClockPause,
   IconFileText,
   IconCheck,
@@ -18,13 +18,13 @@ import {
   IconTrash,
   IconPlus,
 } from "@tabler/icons-react";
-import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
+import AppShell from "@/components/AppShell";
+import DeskReviewPanel from "@/components/DeskReviewPanel";
+import { EmptyState, LoadingState, PageHeader, Panel, StatCard, StatGrid, StatusBadge } from "@/components/ui/page";
 import EditEmployeeForm from "@/components/EditEmployeeForm";
 import BillCard from "@/components/BillCard";
 import { useConfirm } from "@/components/ConfirmProvider";
-import { billDecisionPrompt } from "@/components/confirmBillDecision";
-import { latestArrivalFirst } from "@/lib/bill-review";
+import { canReviewDesk, latestArrivalFirst } from "@/lib/bill-review";
 
 // Allowed departments
 const DEPARTMENTS = [
@@ -112,23 +112,24 @@ import type { Bill } from "@/types/database";
 
 import type { Employee } from "@/types/database";
 
-type PageView = "dashboard" | "review-bills" | "hold-bills" | "employees";
+type PageView = "dashboard" | "review-bills" | "hold-bills" | "history" | "employees";
 
 export default function FinanceAdminDashboard() {
   const { data: session,status} = useSession();
   const confirm = useConfirm();
-  const [open, setOpen] = useState(false);
 
   const [bills, setBills] = useState<Bill[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [activePage, setActivePage] = useState<PageView>("dashboard");
+  // Bill History filter by the Finance Admin decision: "" shows every bill.
+  const [historyFilter, setHistoryFilter] = useState<"" | "Approved" | "Reject">("");
+  const openHistory = (filter: "" | "Approved" | "Reject") => { setHistoryFilter(filter); setActivePage("history"); };
 
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
 
   // for bill actions
-  const [remarks, setRemarks] = useState<{ [key: string]: string }>({});
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedBillDetails, setSelectedBillDetails] = useState<Bill | null>(null);
 
@@ -245,54 +246,8 @@ export default function FinanceAdminDashboard() {
    * inside fn_bill_action, so a bill can never be marked Accepted without
    * its register entry, or vice versa.
    */
-  const [busy, setBusy] = useState<string | null>(null);
 
-  const act = async (bill: Bill, action: "Approved" | "Rejected" | "Hold") => {
-    const remark = (remarks[bill.id] ?? "").trim();
-    if (action !== "Approved" && !remark) {
-      setNotice({
-        kind: "bad",
-        text: `Write a remark before you ${action === "Rejected" ? "reject" : "hold"} this bill.`,
-      });
-      return;
-    }
 
-    if (!(await confirm(billDecisionPrompt(bill, action, remark,
-      action === "Approved"
-        ? `This is the final approval: ${money(Number(bill.po_value))} will be debited from the applicant's PDA and entered in the purchase register.`
-        : action === "Hold"
-        ? "The bill stays at Finance Admin with its funds reserved, and the filer may correct it."
-        : `The bill is rejected and ${money(Number(bill.po_value))} goes back to the applicant's PDA. The filer may correct and resubmit it.`)))) return;
-
-    setBusy(bill.id);
-    setNotice(null);
-    const { data, error } = await api.post<{ bill: Bill }>(
-      `/api/bills/${bill.id}/action`,
-      { action, remark: remark || undefined, expected_revision: bill.revision }
-    );
-    setBusy(null);
-
-    if (error) {
-      setNotice({ kind: "bad", text: error });
-      return;
-    }
-
-    setBills((prev) => prev.map((b) => (b.id === bill.id ? { ...b, ...data!.bill } : b)));
-    setRemarks((r) => ({ ...r, [bill.id]: "" }));
-    setNotice({
-      kind: "ok",
-      text:
-        action === "Approved"
-          ? `Bill ${data!.bill.bill_number ?? ""} approved. ${money(Number(bill.po_value))} has been debited and the purchase is now in the register.`
-          : action === "Rejected"
-          ? `Bill rejected. ${money(Number(bill.po_value))} has gone back to the applicant's PDA and the decision is recorded.`
-          : "Bill put on hold. The decision is recorded on the bill timeline.",
-    });
-  };
-
-  const handleApprove = (bill: Bill) => act(bill, "Approved");
-  const handleHold = (bill: Bill) => act(bill, "Hold");
-  const handleReject = (bill: Bill) => act(bill, "Rejected");
 
   /* ---------- Employee Actions ---------- */
   /**
@@ -382,35 +337,6 @@ export default function FinanceAdminDashboard() {
   const rejectCount = bills.filter((b) => b.finance_admin === "Reject").length;
   const pendingCount = bills.filter((b) => b.finance_admin === "Pending").length;
 
-  /* ---------- Sidebar Links ---------- */
-  const links = [
-    {
-      label: "Dashboard",
-      icon: <IconList className="h-5 w-5 shrink-0 text-blue-600" />,
-      onClick: () => setActivePage("dashboard"),
-    },
-    {
-      label: "Review Bills",
-      icon: <IconFileText className="h-5 w-5 shrink-0 text-indigo-600" />,
-      onClick: () => setActivePage("review-bills"),
-    },
-    {
-      label: "Hold Bills",
-      icon: <IconClockPause className="h-5 w-5 shrink-0 text-yellow-600" />,
-      onClick: () => setActivePage("hold-bills"),
-    },
-    {
-      label: "All Bills",
-      icon: <IconFileText className="h-5 w-5 shrink-0 text-indigo-500" />,
-      onClick: () => window.location.assign("/bills"),
-    },
-    {
-      label: "Manage Employees",
-      icon: <IconUsers className="h-5 w-5 shrink-0 text-green-600" />,
-      onClick: () => setActivePage("employees"),
-    },
-  ];
-
   const formatBillDetails = (bill: Bill) => {
     return {
       basicInfo: {
@@ -443,416 +369,239 @@ export default function FinanceAdminDashboard() {
     };
   };
 
+  const reviewQueue = bills
+    .filter((bill) =>
+      bill.finance_admin === "Pending" ||
+      bill.finance_admin === "Hold" ||
+      (bill.status === "Finance Admin" && (bill.finance_admin === null || bill.finance_admin === undefined))
+    )
+    // Newest arrival at this desk first, e.g. a bill Store and Purchase just approved.
+    .sort(latestArrivalFirst);
+  const heldBills = bills.filter((b) => b.snp === "Hold" || b.audit === "Hold" || b.finance_admin === "Hold");
+  const th = "px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
+
   return (
-    <div className="flex h-screen w-full bg-white overflow-hidden">
+    <AppShell
+      desk="Finance Admin"
+      nav={[
+        { label: "Dashboard", icon: <IconList />, onClick: () => setActivePage("dashboard"), active: activePage === "dashboard" },
+        { label: "Review Bills", icon: <IconFileText />, onClick: () => setActivePage("review-bills"), active: activePage === "review-bills", badge: reviewQueue.length || null },
+        { label: "Hold Bills", icon: <IconClockPause />, onClick: () => setActivePage("hold-bills"), active: activePage === "hold-bills", badge: heldBills.length || null },
+        { label: "Bill History", icon: <IconHistory />, onClick: () => openHistory(""), active: activePage === "history" },
+        { label: "Manage Employees", icon: <IconUsers />, onClick: () => setActivePage("employees"), active: activePage === "employees" },
+      ]}
+    >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
-      {/* Sidebar */}
-      <Sidebar open={open} setOpen={setOpen}>
-        <SidebarBody className="justify-between gap-8">
-          <div className="flex flex-1 flex-col overflow-x-hidden overflow-y-auto">
-            {open ? <Logo /> : <LogoIcon />}
-            <div className="mt-8 flex flex-col gap-2">
-              {links.map((link, idx) => (
-                <button
-                  key={idx}
-                  onClick={link.onClick}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded text-left w-full transition-colors",
-                    activePage === link.label.toLowerCase().replace(" ", "-") 
-                      ? "bg-blue-100 font-medium text-blue-900" 
-                      : "hover:bg-gray-100"
-                  )}
-                >
-                  <div className="min-w-[24px] flex justify-center">
-                    {link.icon}
-                  </div>
-                  <span className={cn(
-                    "transition-all duration-200", 
-                    open ? "opacity-100" : "opacity-0 md:hidden"
-                  )}>
-                    {link.label}
-                  </span>
-                </button>
-              ))}
 
-              <button
-                onClick={() => signOut({ callbackUrl: "/login" })}
-                className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full mt-4"
-              >
-                <div className="min-w-[24px] flex justify-center">
-                  <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700" />
-                </div>
-                <span className={cn(
-                  "transition-all duration-200", 
-                  open ? "opacity-100" : "opacity-0 md:hidden"
-                )}>
-                  Logout
-                </span>
-              </button>
-            </div>
-          </div>
-        </SidebarBody>
-      </Sidebar>
-
-      {/* Main Content */}
-      <div className="flex flex-1 p-4 overflow-y-auto bg-gray-50">
-        {activePage === "dashboard" && (
-          <div className="w-full">
-            <motion.h1 
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="text-2xl font-semibold mb-6"
-            >
-              Finance Admin Dashboard
-            </motion.h1>
-
-            {/* Stats Cards: each opens the section it counts */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-              {[
-                { label: "Total Bills", value: totalBills, hint: "All submissions", tone: "bg-white border-gray-200", text: "text-gray-900",
-                  open: () => window.location.assign("/bills") },
-                { label: "Approved", value: approvedCount, hint: "Ready for payment", tone: "bg-green-50 border-green-200", text: "text-green-700",
-                  open: () => window.location.assign("/bills?finance_admin=Approved") },
-                { label: "Hold", value: holdCount, hint: "Needs attention", tone: "bg-yellow-50 border-yellow-200", text: "text-yellow-700",
-                  open: () => setActivePage("hold-bills") },
-                { label: "Rejected", value: rejectCount, hint: "Not approved", tone: "bg-red-50 border-red-200", text: "text-red-700",
-                  open: () => window.location.assign("/bills?finance_admin=Reject") },
-                { label: "Pending", value: pendingCount, hint: "Awaiting review", tone: "bg-blue-50 border-blue-200", text: "text-blue-700",
-                  open: () => setActivePage("review-bills") },
-              ].map((card, i) => (
-                <motion.button
-                  key={card.label}
-                  type="button"
-                  onClick={card.open}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: 0.1 * (i + 1) }}
-                  className={`rounded-lg shadow p-6 border text-left cursor-pointer transition hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${card.tone}`}
-                >
-                  <h2 className="text-gray-600 text-sm">{card.label}</h2>
-                  <p className={`text-2xl font-bold ${card.text}`}>{card.value}</p>
-                  <p className="text-xs text-gray-500 mt-1">{card.hint} →</p>
-                </motion.button>
-              ))}
-            </div>
-
-            {/* Recent Activity */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.6 }}
-              className="bg-white rounded-lg shadow border p-6"
-            >
-              <h2 className="text-lg font-semibold mb-4">Recent Bills</h2>
-              {bills.slice(0, 5).length === 0 ? (
-                <p className="text-gray-500">No recent bills</p>
-              ) : (
-                <div className="space-y-4">
-                  {bills.slice(0, 5).map((bill) => (
-                    <BillCard key={bill.id} bill={bill} showBankGuarantee={false} />
-                  ))}
-                </div>
-              )}
-            </motion.div>
-          </div>
-        )}
-
-        {/* Review Bills Page */}
-        {activePage === "review-bills" && (
-          <div className="w-full">
-            <h2 className="text-2xl font-semibold mb-6">Review Bills</h2>
-
-            {loading ? (
-              <div className="flex items-center justify-center py-12">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                <span className="ml-3">Loading bills...</span>
-              </div>
+      {activePage === "dashboard" && (
+        <>
+          <PageHeader title="Finance Admin" description="Final approval desk. Approving here debits the PDA and enters the purchase in the register." />
+          <StatGrid>
+            <StatCard label="Total Bills" value={totalBills} hint="All submissions" onClick={() => openHistory("")} />
+            <StatCard label="Approved" value={approvedCount} hint="Ready for payment" tone="green" onClick={() => openHistory("Approved")} />
+            <StatCard label="Hold" value={holdCount} hint="Needs attention" tone="amber" onClick={() => setActivePage("hold-bills")} />
+            <StatCard label="Rejected" value={rejectCount} hint="Not approved" tone="red" onClick={() => openHistory("Reject")} />
+            <StatCard label="Pending" value={pendingCount} hint="Awaiting review" tone="blue" onClick={() => setActivePage("review-bills")} />
+          </StatGrid>
+          <section className="space-y-4">
+            <h2 className="text-base font-semibold text-slate-900">Recent bills</h2>
+            {loading ? <LoadingState label="Loading bills…" /> : bills.length === 0 ? (
+              <EmptyState title="No bills yet" />
             ) : (
-              <div className="space-y-4">
-                {bills
-                  .filter(bill => 
-                    bill.finance_admin === "Pending" || 
-                    bill.finance_admin === "Hold" || 
-                    (bill.status === "Finance Admin" && (bill.finance_admin === null || bill.finance_admin === undefined))
-                  )
-                  // Newest arrival at this desk first, e.g. a bill Store and Purchase just approved.
-                  .sort(latestArrivalFirst)
-                  .map((bill, index) => {
-                    const locked = bill.finance_admin === "Approved" || bill.finance_admin === "Reject";
-
-                    return (
-                      <motion.div
-                        key={bill.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.05 }}
-                      >
-                        <BillCard bill={bill} showBankGuarantee={false} />
-
-                        {/* Finance Admin Actions */}
-                        {!locked && (
-                          <div className="mt-4 bg-white rounded-lg shadow p-4 border border-gray-200">
-                            <div className="space-y-3">
-                              {/* Previous Remarks */}
-                              {(bill.remarks1 || bill.remarks2) && (
-                                <div className="bg-gray-50 rounded p-3">
-                                  <p className="text-sm font-medium mb-2">Previous Department Remarks:</p>
-                                  {bill.remarks1 && (
-                                    <p className="text-xs text-gray-700 mb-1">
-                                      <span className="font-medium">Store and Purchase Department:</span> {bill.remarks1}
-                                    </p>
-                                  )}
-                                  {bill.remarks2 && (
-                                    <p className="text-xs text-gray-700">
-                                      <span className="font-medium">Audit:</span> {bill.remarks2}
-                                    </p>
-                                  )}
-                                </div>
-                              )}
-
-                              {/* Current Finance Admin Remark */}
-                              {bill.remarks && (
-                                <div className="bg-blue-50 rounded p-3">
-                                  <p className="text-sm font-medium mb-1">Your Current Remark:</p>
-                                  <p className="text-sm text-gray-700">{bill.remarks}</p>
-                                </div>
-                              )}
-
-                              {/* Remark Input */}
-                              <div className="flex gap-2">
-                                <input
-                                  type="text"
-                                  placeholder="Enter your remark..."
-                                  value={remarks[bill.id] || ""}
-                                  onChange={(e) =>
-                                    setRemarks((prev) => ({
-                                      ...prev,
-                                      [bill.id]: e.target.value,
-                                    }))
-                                  }
-                                  className="flex-1 px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
-                                />
-                              </div>
-
-                              {/* Action Buttons */}
-                              <div className="flex gap-3 pt-2">
-                                <button
-                                  disabled={busy === bill.id} onClick={() => handleApprove(bill)}
-                                  className="flex items-center gap-1 px-4 py-2 rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
-                                >
-                                  <IconCheck size={16} />
-                                  Approve
-                                </button>
-                                <button
-                                  disabled={busy === bill.id} onClick={() => handleHold(bill)}
-                                  className="flex items-center gap-1 px-4 py-2 rounded-lg bg-yellow-500 text-white hover:bg-yellow-600 transition-colors"
-                                >
-                                  <IconClockPause size={16} />
-                                  Hold
-                                </button>
-                                <button
-                                  disabled={busy === bill.id} onClick={() => handleReject(bill)}
-                                  className="flex items-center gap-1 px-4 py-2 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
-                                >
-                                  <IconX size={16} />
-                                  Reject
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-                      </motion.div>
-                    );
-                  })}
-              </div>
+              bills.slice(0, 5).map((bill) => <BillCard key={bill.id} bill={bill} showBankGuarantee={false} />)
             )}
-          </div>
-        )}
+          </section>
+        </>
+      )}
 
-        {/* Hold Bills Page */}
-        {activePage === "hold-bills" && (
-          <div className="w-full">
-            <h2 className="text-2xl font-semibold mb-6">Hold Bills (All Departments)</h2>
-            
-            {bills.filter(
-              (b) => b.snp === "Hold" || b.audit === "Hold" || b.finance_admin === "Hold"
-            ).length === 0 ? (
-              <div className="text-center py-12 bg-white rounded-lg shadow">
-                <IconClockPause className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg">No bills on hold</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-lg shadow overflow-hidden">
-                <table className="min-w-full divide-y divide-gray-200">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Bill Details
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Employee
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Amount
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Hold By
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Remark
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                        Actions
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
-                    {bills
-                      .filter((b) => b.snp === "Hold" || b.audit === "Hold" || b.finance_admin === "Hold")
-                      .map((bill) => {
-                        const holdDepartment = 
-                          bill.finance_admin === "Hold" ? "Finance Admin" :
-                          bill.audit === "Hold" ? "Audit" :
-                          bill.snp === "Hold" ? "Store and Purchase Department" : "Unknown";
-                        
-                        const holdRemark = 
-                          bill.finance_admin === "Hold" ? bill.remarks :
-                          bill.audit === "Hold" ? bill.remarks2 :
-                          bill.snp === "Hold" ? bill.remarks1 : "No remark";
-
-                        return (
-                          <tr key={bill.id} className="hover:bg-gray-50">
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <div className="text-sm font-medium text-gray-900">
-                                {bill.item_description || "No description"}
-                              </div>
-                              <div className="text-sm text-gray-500">
-                                {bill.supplier_name}
-                              </div>
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              {bill.employee_name}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                              ₹{bill.po_value?.toLocaleString()}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap">
-                              <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded">
-                                {holdDepartment}
-                              </span>
-                            </td>
-                            <td className="px-6 py-4 text-sm text-gray-900 max-w-xs truncate">
-                              {holdRemark || "No remark"}
-                            </td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                              <button
-                                onClick={() => {
-                                  setSelectedBillDetails(bill);
-                                  setShowDetailModal(true);
-                                }}
-                                className="text-blue-600 hover:text-blue-900 flex items-center gap-1"
-                              >
-                                <IconEye size={16} />
-                                View
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Employees Management Page */}
-        {activePage === "employees" && (
-          <div className="w-full">
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-2xl font-semibold">Manage Employees</h2>
-              <button
-                onClick={() => handleDirectoryAction("add")}
-                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                <IconPlus size={20} />
-                Add Employee
-              </button>
+      {activePage === "review-bills" && (
+        <>
+          <PageHeader title="Review Bills" description="Bills waiting at Finance Admin, the most recent arrival first." />
+          {loading ? <LoadingState label="Loading bills…" /> : reviewQueue.length === 0 ? (
+            <EmptyState icon={<IconCheck />} title="Nothing to review" description="Bills appear here once they reach Finance Admin." />
+          ) : (
+            <div className="space-y-4">
+              {reviewQueue.map((bill) => {
+                const locked = !canReviewDesk(bill, "Finance Admin", session?.user?.employee_code, session?.user?.employee_type);
+                return (
+                  <BillCard key={bill.id} bill={bill} showBankGuarantee={false}>
+                    {!locked && (
+                      <DeskReviewPanel
+                        bill={bill}
+                        desk="Finance Admin"
+                        actorCode={session?.user?.employee_code}
+                        actorRole={session?.user?.employee_type}
+                        onDecided={(updated, text) => {
+                          setBills((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+                          setNotice({ kind: "ok", text });
+                        }}
+                      />
+                    )}
+                  </BillCard>
+                );
+              })}
             </div>
+          )}
+        </>
+      )}
 
-            <div className="bg-white rounded-lg shadow overflow-hidden">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
+      {activePage === "hold-bills" && (
+        <>
+          <PageHeader title="Hold Bills" description="Bills on hold at any desk, waiting for the filer to correct them." />
+          {heldBills.length === 0 ? (
+            <EmptyState icon={<IconClockPause />} title="No bills on hold" />
+          ) : (
+            <Panel bodyClassName="overflow-x-auto">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
                   <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Employee Code
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Email
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Type
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Department
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    <th className={th}>Bill</th>
+                    <th className={th}>Employee</th>
+                    <th className={`${th} text-right`}>Amount</th>
+                    <th className={th}>Held by</th>
+                    <th className={th}>Remark</th>
+                    <th className={th}><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {employees.map((emp) => (
-                    <tr key={emp.id} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {emp.employee_code ?? "—"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {emp.email ?? "—"}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                        {deskLabel(emp.employee_type)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className="px-2 py-1 text-xs font-medium bg-gray-100 text-gray-800 rounded">
-                          {emp.department}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium space-x-2">
-                        {editingEmployee?.id === emp.id ? (
+                <tbody className="divide-y divide-slate-100">
+                  {heldBills.map((bill) => {
+                    const holdDepartment =
+                      bill.finance_admin === "Hold" ? "Finance Admin" :
+                      bill.audit === "Hold" ? "Audit" :
+                      bill.snp === "Hold" ? "Store and Purchase Department" : "Unknown";
+                    const holdRemark =
+                      bill.finance_admin === "Hold" ? bill.remarks :
+                      bill.audit === "Hold" ? bill.remarks2 :
+                      bill.snp === "Hold" ? bill.remarks1 : null;
+                    return (
+                      <tr key={bill.id} className="hover:bg-slate-50">
+                        <td className="max-w-xs px-4 py-3">
+                          <p className="truncate font-medium text-slate-900">{bill.item_description || "No description"}</p>
+                          <p className="truncate text-xs text-slate-500">{bill.bill_number} · {bill.supplier_name}</p>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">{bill.employee_name}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{money(bill.po_value)}</td>
+                        <td className="whitespace-nowrap px-4 py-3"><StatusBadge value={holdDepartment} /></td>
+                        <td className="max-w-xs px-4 py-3 text-slate-700">{holdRemark || "No remark"}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
                           <button
-                            onClick={() => setEditingEmployee(null)}
-                            className="text-gray-600 hover:text-gray-900"
+                            onClick={() => { setSelectedBillDetails(bill); setShowDetailModal(true); }}
+                            className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-blue-700 hover:bg-blue-50"
                           >
-                            Cancel
+                            <IconEye size={16} /> View
                           </button>
-                        ) : (
-                          <>
-                            <button
-                              onClick={() => handleDirectoryAction("edit", emp.employee_code)}
-                              className="text-blue-600 hover:text-blue-900 flex items-center gap-1"
-                            >
-                              <IconEdit size={16} />
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDirectoryAction("delete", emp.employee_code)}
-                              className="text-red-600 hover:text-red-900 flex items-center gap-1 ml-2"
-                            >
-                              <IconTrash size={16} />
-                              Delete
-                            </button>
-                          </>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
-            </div>
+            </Panel>
+          )}
+        </>
+      )}
+
+      {activePage === "history" && (
+        <>
+          <PageHeader title="Bill History" description="Every bill visible to Finance Admin, filtered by the Finance Admin decision." />
+          <div className="flex flex-wrap gap-2" role="tablist" aria-label="Finance Admin decision">
+            {([["", "All"], ["Approved", "Approved"], ["Reject", "Rejected"]] as const).map(([value, label]) => (
+              <button key={label} role="tab" aria-selected={historyFilter === value} onClick={() => setHistoryFilter(value)}
+                className={`inline-flex h-9 items-center rounded-md border px-4 text-sm font-medium ${historyFilter === value ? "border-blue-300 bg-blue-50 text-blue-800" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}>
+                {label}
+                <span className="ml-2 rounded-full bg-white/70 px-1.5 text-xs tabular-nums">
+                  {value ? bills.filter((b) => b.finance_admin === value).length : bills.length}
+                </span>
+              </button>
+            ))}
           </div>
-        )}
-      </div>
+          {(() => {
+            const rows = historyFilter ? bills.filter((b) => b.finance_admin === historyFilter) : bills;
+            return rows.length === 0 ? <EmptyState title="No bills here" /> : (
+              <Panel bodyClassName="overflow-x-auto">
+                <table className="min-w-full divide-y divide-slate-200 text-sm">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className={th}>Bill</th>
+                      <th className={th}>Employee</th>
+                      <th className={`${th} text-right`}>Amount</th>
+                      <th className={th}>Status</th>
+                      <th className={th}>Finance Admin</th>
+                      <th className={th}>Filed</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rows.map((bill) => (
+                      <tr key={bill.id} className="hover:bg-slate-50">
+                        <td className="max-w-xs px-4 py-3">
+                          <a href={`/bill/${bill.id}`} className="whitespace-nowrap font-mono text-xs font-medium text-blue-700 hover:underline">{bill.bill_number ?? bill.id.slice(0, 8)}</a>
+                          <p className="truncate text-slate-700">{bill.item_description || "No description"}</p>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">{bill.employee_name} <span className="text-xs text-slate-500">({bill.employee_id})</span></td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{money(bill.po_value)}</td>
+                        <td className="px-4 py-3"><StatusBadge value={bill.status} /></td>
+                        <td className="px-4 py-3"><StatusBadge value={bill.finance_admin} /></td>
+                        <td className="whitespace-nowrap px-4 py-3 text-slate-600">{new Date(bill.created_at).toLocaleDateString("en-IN")}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Panel>
+            );
+          })()}
+        </>
+      )}
+
+      {activePage === "employees" && (
+        <>
+          <PageHeader
+            title="Manage Employees"
+            description="Add people and correct their details. Only the Dean assigns workflow roles."
+            actions={
+              <button onClick={() => handleDirectoryAction("add")}
+                className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-medium text-white hover:bg-blue-800">
+                <IconPlus size={18} /> Add Employee
+              </button>
+            }
+          />
+          <Panel bodyClassName="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  <th className={th}>Employee</th>
+                  <th className={th}>Email</th>
+                  <th className={th}>Role</th>
+                  <th className={th}>Department</th>
+                  <th className={th}><span className="sr-only">Actions</span></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {employees.map((emp) => (
+                  <tr key={emp.id} className="hover:bg-slate-50">
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <p className="font-medium text-slate-900">{emp.employee_name}</p>
+                      <p className="text-xs text-slate-500">{emp.employee_code ?? "—"}{emp.is_active === false && " · Deactivated"}</p>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-700">{emp.email ?? "—"}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-slate-700">{deskLabel(emp.employee_type)}</td>
+                    <td className="px-4 py-3 text-slate-700">{emp.department}</td>
+                    <td className="whitespace-nowrap px-4 py-3 text-right">
+                      <button onClick={() => handleDirectoryAction("edit", emp.employee_code)}
+                        className="inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-blue-700 hover:bg-blue-50">
+                        <IconEdit size={16} /> Edit
+                      </button>
+                      <button onClick={() => handleDirectoryAction("delete", emp.employee_code)}
+                        className="ml-1 inline-flex items-center gap-1 rounded-md px-2 py-1 font-medium text-red-700 hover:bg-red-50">
+                        <IconTrash size={16} /> Deactivate
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Panel>
+        </>
+      )}
 
       {/* Add Employee Modal */}
       <AnimatePresence>
@@ -861,7 +610,7 @@ export default function FinanceAdminDashboard() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-gray-900 bg-opacity-75 flex justify-center items-center z-50"
+            className="fixed inset-0 bg-slate-900/60 flex justify-center items-center z-50"
           >
             <motion.div
               initial={{ y: -50, opacity: 0 }}
@@ -950,7 +699,7 @@ export default function FinanceAdminDashboard() {
       <AnimatePresence>
         {showDetailModal && selectedBillDetails && (
           <motion.div
-            className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
+            className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -1050,23 +799,9 @@ export default function FinanceAdminDashboard() {
           onCancel={() => setEditingEmployee(null)}
         />
       )}
-    </div>
+    </AppShell>
   );
 }
-
-/* ---------- Sidebar Branding ---------- */
-const Logo = () => (
-  <div className="flex items-center gap-2">
-    <IconCheck className="h-6 w-6 text-blue-600" />
-    <span className="font-semibold text-lg">Finance Admin</span>
-  </div>
-);
-
-const LogoIcon = () => (
-  <div className="flex items-center justify-center">
-    <IconCheck className="h-6 w-6 text-blue-600" />
-  </div>
-);
 
 // helper to normalize department before sending to DB
 // accept only exact matches from the allowed DEPARTMENTS list

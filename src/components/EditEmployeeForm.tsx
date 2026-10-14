@@ -134,7 +134,7 @@ const EditEmployeeForm: React.FC<EditEmployeeFormProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-gray-900 bg-opacity-75 flex justify-center items-center z-50">
+    <div className="fixed inset-0 bg-slate-900/60 flex justify-center items-center z-50">
       <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all">
         <h2 className="text-3xl font-bold mb-6 text-gray-800">Edit Employee</h2>
         <form onSubmit={handleSubmit} className="space-y-6">

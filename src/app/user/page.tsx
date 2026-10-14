@@ -1,22 +1,19 @@
 "use client";
 
-import Image from "next/image";
 import { deskLabel } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { api } from "@/lib/api";
+import { api, money } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
-import { signOut, useSession } from "next-auth/react";
+import AppShell from "@/components/AppShell";
+import { EmptyState, LoadingState, PageHeader, StatCard, StatGrid, StatusBadge } from "@/components/ui/page";
+import { useSession } from "next-auth/react";
 import {
-  IconReceipt2,
   IconWallet,
   IconEye,
   IconX,
-  IconArrowLeft,
-  IconChevronRight,
   IconCheck,
   IconClock,
-  IconExclamationMark,
   IconBan,
   IconFileText,
   IconAlertCircle,
@@ -24,7 +21,6 @@ import {
   IconRefresh,
   IconArrowRight,
 } from "@tabler/icons-react";
-import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
 
 import type { Bill } from "@/types/database";
 
@@ -54,7 +50,6 @@ const STEP_TONE: Record<string, { icon: typeof IconCheck; className: string }> =
 export default function UserPage() {
   const { data: session } = useSession();
 
-  const [open, setOpen] = useState(false);
   const [employee, setEmployee] = useState<Employee | null>(null);
   const [balance, setBalance] = useState<number>(0);
   const [bills, setBills] = useState<Bill[]>([]);
@@ -294,329 +289,104 @@ export default function UserPage() {
     },
   ];
 
-  const StatCard = ({ title, value, icon, color, description }: {
-    title: string;
-    value: number;
-    icon: React.ReactNode;
-    color: string;
-    description: string;
-  }) => (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      className={`rounded-xl p-4 shadow-lg border-2 ${color} bg-white`}
-    >
-      <div className="flex items-center justify-between">
-        <div>
-          <p className="text-sm font-medium text-gray-600">{title}</p>
-          <p className="text-2xl font-bold text-gray-900">{value}</p>
-          <p className="text-xs text-gray-500 mt-1">{description}</p>
-        </div>
-        <div className="text-3xl opacity-70">
-          {icon}
-        </div>
-      </div>
-    </motion.div>
-  );
+  const toneFor: Record<string, string> = {
+    approved: "border-l-green-500", rejected: "border-l-red-500", hold: "border-l-amber-500", pending: "border-l-blue-500", unknown: "border-l-slate-400",
+  };
+  const badgeFor: Record<string, string> = {
+    approved: "Accepted", rejected: "Rejected", hold: "Hold", pending: "Pending", unknown: "",
+  };
 
   return (
-    <div className="flex w-screen h-screen overflow-hidden">
+    <AppShell desk="My bills" nav={links.map((l) => ({ label: l.label, icon: l.icon, href: l.href, active: true }))}>
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
-      {/* Sidebar */}
-      <Sidebar open={open} setOpen={setOpen}>
-        <SidebarBody className="justify-between gap-6 md:gap-10">
-          <div className="flex flex-1 flex-col">
-            {open ? <Logo /> : <LogoIcon />}
-            <div className="mt-4 md:mt-8 flex flex-col gap-2">
-              {links.map((link, idx) => (
-                <SidebarLink key={idx} link={link} />
-              ))}
-            </div>
-          </div>
-
-          {/* User info and logout (collapse behavior) */}
-          <div className="flex flex-col gap-3 items-center">
-            {open ? (
-              <>
-                <SidebarLink
-                  link={{
-                    label: employee?.employee_name || session?.user?.username || "User",
-                    href: "#",
-                    icon: (
-                      <Image
-                        src="/iit.png"
-                        className="h-7 w-7 shrink-0 rounded-full"
-                        width={50}
-                        height={50}
-                        alt="IIT Mandi Logo"
-                      />
-                    ),
-                  }}
-                />
-                <button
-                  onClick={() => signOut({ callbackUrl: "/login" })}
-                  className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full"
-                >
-                  <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700" />
-                  <span>Logout</span>
-                </button>
-              </>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Image
-                  src="/iit.png"
-                  className="h-7 w-7 rounded-full"
-                  width={40}
-                  height={40}
-                  alt="IIT Mandi"
-                />
-                <button
-                  onClick={() => setOpen(true)}
-                  title="Expand sidebar"
-                  aria-label="Expand sidebar"
-                  className="p-1 rounded-full bg-white border shadow-sm hover:bg-gray-100"
-                >
-                  <IconChevronRight className="h-4 w-4 text-neutral-700" />
-                </button>
-              </div>
-            )}
-          </div>
-        </SidebarBody>
-      </Sidebar>
-
-      {/* Main Dashboard */}
-      <div className="flex-1 flex flex-col bg-gray-50 overflow-y-auto p-4 md:p-6">
-        {loading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p className="text-gray-500">Loading dashboard...</p>
-            </div>
-          </div>
-        ) : (
-          <>
-            {/* Welcome Section */}
-            <motion.div 
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-6"
-            >
-              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">
-                Welcome, {employee?.employee_name || session?.user?.username}
-              </h1>
-              <p className="text-gray-600 text-sm md:text-base">
-                Integrated Finance Management Portal - IIT Mandi
-              </p>
-            </motion.div>
-
-            {/* PDA Balance Section */}
-            <motion.div 
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mb-6"
-            >
+      {loading ? <LoadingState label="Loading dashboard…" /> : (
+        <>
+          <PageHeader
+            title={`Welcome, ${employee?.employee_name || session?.user?.username || ""}`}
+            description="Track the bills filed for you and your PDA balance."
+            actions={
               <button
                 onClick={() => setShowBalance(!showBalance)}
-                className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors shadow-md"
+                aria-expanded={showBalance}
+                className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50"
               >
-                {showBalance ? "Hide PDA Balance" : "Show PDA Balance"}
+                <IconWallet className="size-4" />
+                {showBalance ? `PDA balance: ${money(balance)}` : "Show PDA balance"}
               </button>
-              <AnimatePresence>
-                {showBalance && (
-                  <motion.div
-                    initial={{ opacity: 0, height: 0 }}
-                    animate={{ opacity: 1, height: "auto" }}
-                    exit={{ opacity: 0, height: 0 }}
-                    className="mt-3 p-4 bg-green-50 border border-green-200 rounded-lg"
-                  >
-                    <p className="text-lg md:text-xl font-bold text-green-800">
-                      Current PDA Balance: ₹{balance.toLocaleString()}
-                    </p>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </motion.div>
+            }
+          />
 
-            {/* Statistics Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-              <StatCard
-                title="Total Bills"
-                value={billStats.total}
-                icon={<IconFileText />}
-                color="border-blue-200"
-                description="All submitted bills"
-              />
-              <StatCard
-                title="Pending"
-                value={billStats.pending}
-                icon={<IconClock />}
-                color="border-yellow-200"
-                description="Under review"
-              />
-              <StatCard
-                title="Approved"
-                value={billStats.approved}
-                icon={<IconCheck />}
-                color="border-green-200"
-                description="Fully approved"
-              />
-              <StatCard
-                title="Rejected"
-                value={billStats.rejected}
-                icon={<IconBan />}
-                color="border-red-200"
-                description="Rejected bills"
-              />
-              <StatCard
-                title="On Hold"
-                value={billStats.onHold}
-                icon={<IconAlertCircle />}
-                color="border-orange-200"
-                description="Temporarily paused"
-              />
-            </div>
+          <StatGrid>
+            <StatCard label="Total Bills" value={billStats.total} hint="All submitted bills" icon={<IconFileText />} />
+            <StatCard label="Pending" value={billStats.pending} hint="Under review" tone="blue" icon={<IconClock />} />
+            <StatCard label="Approved" value={billStats.approved} hint="Fully approved" tone="green" icon={<IconCheck />} />
+            <StatCard label="Rejected" value={billStats.rejected} hint="Not approved" tone="red" icon={<IconBan />} />
+            <StatCard label="On Hold" value={billStats.onHold} hint="Waiting for correction" tone="amber" icon={<IconAlertCircle />} />
+          </StatGrid>
 
-            {/* Bills Section */}
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="bg-white rounded-xl shadow-lg p-6"
-            >
-              <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-                <IconReceipt2 className="text-blue-600" />
-                Your Bill Applications
-              </h2>
-              
-              {bills.length === 0 ? (
-                <div className="text-center py-12">
-                  <IconFileText className="h-16 w-16 text-gray-300 mx-auto mb-4" />
-                  <p className="text-gray-500 text-lg">No bills submitted yet.</p>
-                  <p className="text-gray-400 text-sm">Your submitted bills will appear here.</p>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {bills.map((bill, index) => {
-                    const { statusLabel, statusType } = getBillStatus(bill);
-                    const remarks = getBillRemarks(bill);
+          <section className="space-y-4">
+            <h2 className="text-base font-semibold text-slate-900">Your bills</h2>
+            {bills.length === 0 ? (
+              <EmptyState icon={<IconFileText />} title="No bills submitted yet" description="Bills filed for you will appear here." />
+            ) : (
+              <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+                {bills.map((bill) => {
+                  const { statusLabel, statusType } = getBillStatus(bill);
+                  const remarks = getBillRemarks(bill);
+                  return (
+                    <article key={bill.id} className={`flex flex-col rounded-xl border border-l-4 border-slate-200 bg-white p-5 shadow-sm ${toneFor[statusType] ?? toneFor.unknown}`}>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="font-mono text-xs text-slate-500">{bill.bill_number ?? "—"}</p>
+                          <h3 className="mt-0.5 line-clamp-2 font-semibold text-slate-900">{bill.item_description || "No description available"}</h3>
+                          <p className="mt-0.5 truncate text-sm text-slate-600">{bill.supplier_name || "Supplier not recorded"}</p>
+                        </div>
+                        <p className="shrink-0 text-lg font-semibold tabular-nums">{money(bill.po_value)}</p>
+                      </div>
 
-                    const cardColors = {
-                      approved: "border-green-500 bg-green-50",
-                      rejected: "border-red-500 bg-red-50",
-                      hold: "border-orange-500 bg-orange-50",
-                      pending: "border-blue-500 bg-blue-50",
-                      unknown: "border-gray-500 bg-gray-50",
-                    };
+                      <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
+                        <div><dt className="text-xs text-slate-500">Category</dt><dd>{bill.item_category || "—"}</dd></div>
+                        <div><dt className="text-xs text-slate-500">Quantity</dt><dd>{bill.qty || 0}</dd></div>
+                        <div><dt className="text-xs text-slate-500">Filed</dt><dd>{bill.created_at ? new Date(bill.created_at).toLocaleDateString("en-IN") : "—"}</dd></div>
+                      </dl>
 
-                    const statusIcons = {
-                      approved: <IconCheck className="text-green-600" />,
-                      rejected: <IconBan className="text-red-600" />,
-                      hold: <IconAlertCircle className="text-orange-600" />,
-                      pending: <IconClock className="text-blue-600" />,
-                      unknown: <IconExclamationMark className="text-gray-600" />,
-                    };
+                      <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
+                        {badgeFor[statusType] && <StatusBadge value={badgeFor[statusType]} />}
+                        <span className="text-slate-700">{statusLabel}</span>
+                      </div>
 
-                    return (
-                      <motion.div
-                        key={bill.id}
-                        initial={{ opacity: 0, y: 20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        transition={{ delay: index * 0.1 }}
-                        className={`rounded-xl p-5 border-2 shadow-md hover:shadow-lg transition-all duration-300 ${
-                          cardColors[statusType as keyof typeof cardColors]
-                        }`}
-                      >
-                        {/* Header */}
-                        <div className="flex items-start justify-between mb-4">
-                          <div className="flex-1">
-                            <h3 className="text-lg font-bold text-gray-800 line-clamp-2">
-                              {bill.item_description || "No description available"}
-                            </h3>
-                            <p className="text-sm text-gray-600 mt-1">
-                              PO: {bill.po_details || "N/A"} | Supplier: {bill.supplier_name || "N/A"}
+                      {remarks.length > 0 && (
+                        <div className="mt-3 space-y-1">
+                          {remarks.map((remark, idx) => (
+                            <p key={idx} className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-700">
+                              <span className="font-medium text-slate-900">{remark.department}:</span> {remark.remark}
                             </p>
-                          </div>
-                          <div className="ml-3">
-                            {statusIcons[statusType as keyof typeof statusIcons]}
-                          </div>
+                          ))}
                         </div>
+                      )}
 
-                        {/* Details */}
-                        <div className="space-y-2 mb-4">
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Amount:</span>
-                            <span className="font-semibold">₹{bill.po_value?.toLocaleString()}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Quantity:</span>
-                            <span className="font-semibold">{bill.qty || 0}</span>
-                          </div>
-                          <div className="flex justify-between text-sm">
-                            <span className="text-gray-600">Category:</span>
-                            <span className="font-semibold">{bill.item_category || "N/A"}</span>
-                          </div>
-                        </div>
-
-                        {/* Status */}
-                        <div className="mb-4">
-                          <p className="text-sm font-medium text-gray-700 mb-1">Current Status:</p>
-                          <p className={`text-sm font-bold ${
-                            statusType === "approved" ? "text-green-700" :
-                            statusType === "rejected" ? "text-red-700" :
-                            statusType === "hold" ? "text-orange-700" :
-                            statusType === "pending" ? "text-blue-700" : "text-gray-700"
-                          }`}>
-                            {statusLabel}
-                          </p>
-                        </div>
-
-                        {/* Remarks */}
-                        {remarks.length > 0 && (
-                          <div className="mb-4">
-                            <p className="text-sm font-medium text-gray-700 mb-2">Department Remarks:</p>
-                            <div className="space-y-1">
-                              {remarks.map((remark, idx) => (
-                                <div key={idx} className="text-xs bg-white bg-opacity-50 rounded p-2 border">
-                                  <span className="font-semibold text-gray-800">{remark.department}:</span>
-                                  <span className="text-gray-700 ml-2">{remark.remark}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Submission Date */}
-                        <div className="mb-4">
-                          <p className="text-xs text-gray-500">
-                            Submitted: {bill.created_at ? new Date(bill.created_at).toLocaleDateString() : "N/A"}
-                          </p>
-                        </div>
-
-                        {/* Actions */}
-                        <div className="flex justify-end">
-                          <button
-                            onClick={() => setSelectedBill(bill)}
-                            className="flex items-center gap-2 px-4 py-2 bg-white bg-opacity-80 hover:bg-opacity-100 text-gray-700 hover:text-gray-900 rounded-lg border border-gray-300 hover:border-gray-400 transition-all text-sm font-medium"
-                          >
-                            <IconEye size={16} />
-                            View Details
-                          </button>
-                        </div>
-                      </motion.div>
-                    );
-                  })}
-                </div>
-              )}
-            </motion.div>
-          </>
-        )}
-      </div>
+                      <div className="mt-auto flex justify-end pt-4">
+                        <button
+                          onClick={() => setSelectedBill(bill)}
+                          className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                        >
+                          <IconEye size={16} /> View details
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            )}
+          </section>
+        </>
+      )}
 
       {/* Detailed Bill Modal */}
       <AnimatePresence>
         {selectedBill && (
           <motion.div
-            className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50 p-4"
+            className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
@@ -745,22 +515,9 @@ export default function UserPage() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </AppShell>
   );
 }
 
 /* Sidebar Logos */
-const Logo = () => (
-  <a href="#" className="flex items-center space-x-2 py-1 text-sm font-semibold text-black">
-    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-7 w-7" />
-    <motion.span initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="whitespace-pre text-black">
-      IIT Mandi Finance
-    </motion.span>
-  </a>
-);
 
-const LogoIcon = () => (
-  <a href="#" className="flex items-center space-x-2 py-1 text-sm font-semibold text-black">
-    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-7 w-7" />
-  </a>
-);

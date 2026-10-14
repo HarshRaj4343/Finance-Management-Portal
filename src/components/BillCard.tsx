@@ -1,19 +1,34 @@
-import React from 'react';
+import React, { type ReactNode } from 'react';
+import Link from "next/link";
 import { escapeHtml } from "@/lib/security";
 import { deskLabel } from "@/lib/roles";
+import { when } from "@/lib/api";
 import { Bill } from '@/types/database';
 import BillItems from './BillItems';
+import { StatusBadge } from "./ui/page";
 
 interface BillCardProps {
   bill: Bill;
   showBankGuarantee?: boolean;
   className?: string;
+  /** A desk's decision controls, shown in the card's footer. */
+  children?: ReactNode;
 }
 
-export const BillCard: React.FC<BillCardProps> = ({ 
-  bill, 
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-xs text-slate-500">{label}</dt>
+      <dd className="mt-0.5 break-words text-sm text-slate-900">{children || "—"}</dd>
+    </div>
+  );
+}
+
+export const BillCard: React.FC<BillCardProps> = ({
+  bill,
   showBankGuarantee = true,
-  className = ''
+  className = '',
+  children,
 }) => {
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'N/A';
@@ -108,179 +123,99 @@ export const BillCard: React.FC<BillCardProps> = ({
   };
 
 
+  const remarks = [
+    ["Store and Purchase Department", bill.remarks1],
+    ["Audit", bill.remarks2],
+    ["Finance Admin", bill.remarks],
+    ["Other", bill.remarks3],
+    ["Additional", bill.remarks4],
+  ].filter(([, text]) => text) as [string, string][];
+
   return (
-    <div className={`bg-white rounded-lg shadow-md p-6 border border-gray-200 ${className}`}>
-      <BillItems bill={bill} />
-      {/* Basic Bill Information */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-4">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900 mb-2">
-            {bill.item_description || "No description"}
-          </h3>
-          <div className="space-y-1 text-sm text-gray-600">
-            <p><span className="font-medium">Supplier:</span> {bill.supplier_name || "N/A"}</p>
-            <p><span className="font-medium">Amount:</span> {formatCurrency(bill.po_value)}</p>
-            <p><span className="font-medium">Category:</span> {bill.item_category || "N/A"}</p>
-            <p><span className="font-medium">Status:</span> {deskLabel(bill.status) || "N/A"}</p>
-          </div>
-        </div>
-        
-        <div>
-          <h4 className="font-medium text-gray-700 mb-2">Purchase Details</h4>
-          <div className="space-y-1 text-sm text-gray-600">
-            <p><span className="font-medium">PO:</span> {bill.po_details || "N/A"}</p>
-            <p><span className="font-medium">Quantity:</span> {bill.qty || 0}</p>
-            <p><span className="font-medium">Indenter:</span> {bill.indenter_name || "N/A"}</p>
-            <p><span className="font-medium">Location:</span> {bill.location || "N/A"}</p>
-          </div>
-        </div>
-        
-        <div>
-          <h4 className="font-medium text-gray-700 mb-2">Workflow Status</h4>
-          <div className="space-y-1 text-sm">
-            <p>
-              <span className="font-medium">Store and Purchase Department:</span>
-              <span className={`ml-1 px-2 py-1 rounded text-xs ${
-                bill.snp === 'Approved' ? 'bg-green-100 text-green-800' :
-                bill.snp === 'Reject' ? 'bg-red-100 text-red-800' :
-                bill.snp === 'Hold' ? 'bg-yellow-100 text-yellow-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
-                {bill.snp || 'Pending'}
-              </span>
-            </p>
-            <p>
-              <span className="font-medium">Audit:</span> 
-              <span className={`ml-1 px-2 py-1 rounded text-xs ${
-                bill.audit === 'Approved' ? 'bg-green-100 text-green-800' :
-                bill.audit === 'Reject' ? 'bg-red-100 text-red-800' :
-                bill.audit === 'Hold' ? 'bg-yellow-100 text-yellow-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
-                {bill.audit || 'Pending'}
-              </span>
-            </p>
-            <p>
-              <span className="font-medium">Finance:</span> 
-              <span className={`ml-1 px-2 py-1 rounded text-xs ${
-                bill.finance_admin === 'Approved' ? 'bg-green-100 text-green-800' :
-                bill.finance_admin === 'Reject' ? 'bg-red-100 text-red-800' :
-                bill.finance_admin === 'Hold' ? 'bg-yellow-100 text-yellow-800' :
-                'bg-gray-100 text-gray-800'
-              }`}>
-                {bill.finance_admin || 'Pending'}
-              </span>
-            </p>
-          </div>
-        </div>
-      </div>
-
-      {/* Bank Guarantee Information */}
-      {showBankGuarantee && (
-        <div className="border-t pt-4">
-          <h4 className="font-medium text-purple-800 mb-3 flex items-center gap-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-            Bank Guarantee Information
-          </h4>
-          
-          {bill.has_bank_guarantee ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-purple-50 p-4 rounded-lg">
-              <div>
-                <p className="text-sm font-medium text-purple-800">Bank Guarantee</p>
-                <p className="flex items-center gap-1 text-sm text-green-700 font-medium">
-                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Required
-                </p>
-              </div>
-              
-              {bill.bank_guarantee_details && (
-                <div className="md:col-span-1">
-                  <p className="text-sm font-medium text-purple-800">Details</p>
-                  <p className="text-sm text-gray-700">{bill.bank_guarantee_details}</p>
-                </div>
-              )}
-              
-              {bill.bank_guarantee_amount && (
-                <div>
-                  <p className="text-sm font-medium text-purple-800">Amount</p>
-                  <p className="text-sm text-gray-700">{formatCurrency(bill.bank_guarantee_amount)}</p>
-                </div>
-              )}
-              
-              {bill.date_of_installation && (
-                <div>
-                  <p className="text-sm font-medium text-purple-800">Installation Date</p>
-                  <p className="text-sm text-gray-700">{formatDate(bill.date_of_installation)}</p>
-                </div>
-              )}
-              
-              {bill.date_of_delivery && (
-                <div>
-                  <p className="text-sm font-medium text-purple-800">Delivery Date</p>
-                  <p className="text-sm text-gray-700">{formatDate(bill.date_of_delivery)}</p>
-                </div>
-              )}
+    <article className={`rounded-xl border border-slate-200 bg-white shadow-sm ${className}`}>
+      <div className="space-y-4 p-5">
+        <header className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-mono text-xs text-slate-500">{bill.bill_number ?? "Unnumbered bill"}</span>
+              <StatusBadge value={bill.status} />
+              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{bill.item_category}</span>
             </div>
-          ) : (
-            <div className="bg-gray-50 p-4 rounded-lg">
-              <p className="text-sm text-gray-600 flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                </svg>
-                No bank guarantee required for this bill
-              </p>
-            </div>
-          )}
-        </div>
-      )}
+            <h3 className="mt-1 text-base font-semibold text-slate-900">{bill.item_description || "No description"}</h3>
+            <p className="text-sm text-slate-600">{bill.supplier_name || "Supplier not recorded"}</p>
+          </div>
+          <div className="text-right">
+            <p className="text-xl font-semibold tabular-nums text-slate-900">{formatCurrency(bill.po_value)}</p>
+            <p className="text-xs text-slate-500">{bill.employee_name} ({bill.employee_id})</p>
+          </div>
+        </header>
 
-      {/* Additional Remarks */}
-      {(bill.remarks1 || bill.remarks2 || bill.remarks3 || bill.remarks4) && (
-        <div className="border-t pt-4 mt-4">
-          <h4 className="font-medium text-gray-700 mb-3">Remarks</h4>
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+          <Field label="PO">{bill.po_details}</Field>
+          <Field label="Quantity">{bill.qty ?? 0}</Field>
+          <Field label="Location">{bill.location}</Field>
+          <Field label="Department">{bill.employee_department}</Field>
+          <Field label="Filed">{when(bill.created_at)}</Field>
+        </dl>
+
+        <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-lg bg-slate-50 px-4 py-3 text-sm">
+          {([["Store and Purchase", bill.snp], ["Audit", bill.audit], ["Finance Admin", bill.finance_admin]] as const).map(([desk, state]) => (
+            <span key={desk} className="flex items-center gap-2">
+              <span className="text-slate-600">{desk}</span>
+              {state ? <StatusBadge value={state} /> : <span className="text-xs text-slate-400" title="Not on this bill's route, or not reached yet">—</span>}
+            </span>
+          ))}
+        </div>
+
+        {bill.form_data && (
+          <details className="group rounded-lg border border-slate-200">
+            <summary className="cursor-pointer select-none px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+              Item and price breakdown ({bill.form_data.lines.length} {bill.form_data.lines.length === 1 ? "item" : "items"})
+            </summary>
+            <div className="border-t border-slate-200 px-4"><BillItems bill={bill} /></div>
+          </details>
+        )}
+
+        {showBankGuarantee && (
+          <div className="rounded-lg border border-violet-200 bg-violet-50 px-4 py-3 text-sm">
+            <p className="font-medium text-violet-900">Bank guarantee</p>
+            {bill.has_bank_guarantee ? (
+              <dl className="mt-2 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                <Field label="Details">{bill.bank_guarantee_details}</Field>
+                <Field label="Amount">{formatCurrency(bill.bank_guarantee_amount)}</Field>
+                <Field label="Delivery">{bill.date_of_delivery ? formatDate(bill.date_of_delivery) : null}</Field>
+                <Field label="Installation">{bill.date_of_installation ? formatDate(bill.date_of_installation) : null}</Field>
+              </dl>
+            ) : (
+              <p className="mt-1 text-violet-800">Not required for this bill.</p>
+            )}
+          </div>
+        )}
+
+        {remarks.length > 0 && (
           <div className="space-y-2">
-            {bill.remarks1 && (
-              <div className="bg-purple-50 p-3 rounded">
-                <p className="text-sm font-medium text-purple-800">Store and Purchase Department Remark</p>
-                <p className="text-sm text-purple-700">{bill.remarks1}</p>
-              </div>
-            )}
-            {bill.remarks2 && (
-              <div className="bg-green-50 p-3 rounded">
-                <p className="text-sm font-medium text-green-800">Audit Remark</p>
-                <p className="text-sm text-green-700">{bill.remarks2}</p>
-              </div>
-            )}
-            {bill.remarks3 && (
-              <div className="bg-blue-50 p-3 rounded">
-                <p className="text-sm font-medium text-blue-800">Finance Admin Remark</p>
-                <p className="text-sm text-blue-700">{bill.remarks3}</p>
-              </div>
-            )}
-            {bill.remarks4 && (
-              <div className="bg-gray-50 p-3 rounded">
-                <p className="text-sm font-medium text-gray-800">Additional Remark</p>
-                <p className="text-sm text-gray-700">{bill.remarks4}</p>
-              </div>
-            )}
+            <p className="text-sm font-medium text-slate-700">Remarks</p>
+            {remarks.map(([desk, text]) => (
+              <p key={desk} className="rounded-lg border-l-4 border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                <span className="font-medium text-slate-900">{desk}:</span> {text}
+              </p>
+            ))}
           </div>
-        </div>
-      )}
-
-      <div className="mt-6">
-        <button
-          onClick={handlePrintBill}
-          className="px-4 py-2 bg-blue-600 text-white rounded shadow hover:bg-blue-700"
-        >
-          Print Bill
-        </button>
+        )}
       </div>
 
-    </div>
+      {children && <div className="border-t border-slate-200 p-5">{children}</div>}
+
+      <footer className="flex flex-wrap gap-2 border-t border-slate-200 px-5 py-3">
+        <Link href={`/bill/${bill.id}`} className="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          View details
+        </Link>
+        <button type="button" onClick={handlePrintBill}
+          className="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          Print bill
+        </button>
+      </footer>
+    </article>
   );
 };
 

@@ -1,155 +1,21 @@
 
 "use client";
 
-import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
-import { api, money } from "@/lib/api";
+import { api, money, when } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
+import AppShell from "@/components/AppShell";
+import { PageHeader } from "@/components/ui/page";
+import { IconWallet, IconX } from "@tabler/icons-react";
 import { normaliseRole } from "@/lib/roles";
 import { useConfirm } from "@/components/ConfirmProvider";
 import type { PdaBalanceRow } from "@/types/database";
-import { useSession, signOut } from "next-auth/react";
-
-/**
- * Small local Sidebar implementation (drop-in).
- * If you already have a Sidebar component, you can replace these exports/imports.
- */
-function IconClose(props: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
-      <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-    </svg>
-  );
-}
-
-function Sidebar({
-  open,
-  setOpen,
-  className,
-  children,
-}: {
-  open: boolean;
-  setOpen: (v: boolean) => void;
-  className?: string;
-  children?: React.ReactNode;
-}) {
-  // sidebar root uses width toggle w-64 (open) / w-20 (closed)
-  return (
-    <aside
-      className={`relative z-10 flex flex-col transition-all duration-200 ease-in-out overflow-hidden border-r border-neutral-200 bg-white ${
-        open ? "w-64" : "w-20"
-      } ${className ?? ""}`}
-      aria-hidden={!open}
-    >
-      {/* top toggle */}
-      <div className="flex items-center justify-between px-3 py-3 border-b border-neutral-100">
-        <div className="flex items-center gap-2">
-          <div className="h-8 w-8 rounded bg-neutral-100" >
-            <Image width={80} height={80} src='/iit.png' alt='IIT Mandi'/>
-            </div>
-          {open && <span className="font-semibold text-neutral-800">IIT Mandi</span>}
-        </div>
-        <button
-          onClick={() => setOpen(!open)}
-          aria-label={open ? "Collapse sidebar" : "Expand sidebar"}
-          className="rounded px-2 py-1 text-neutral-600 hover:bg-neutral-100"
-        >
-          {open ? "«" : "»"}
-        </button>
-      </div>
-
-      <div className="flex-1 overflow-auto">{children}</div>
-    </aside>
-  );
-}
-
-function SidebarBody({ className, children }: { className?: string; children?: React.ReactNode }) {
-  return <div className={className}>{children}</div>;
-}
+import { useSession } from "next-auth/react";
 
 /* -------------------------------------------------------------------------- */
 /* ---------------------------- PDA Manager Page ---------------------------- */
 /* -------------------------------------------------------------------------- */
 
-const DEPARTMENTS = [
-  "Staff Recruitment Section",
-  "Dean Infrastructure (I&S)/Land Acquisition",
-  "Dean Resource Generation & Alumni Relations",
-  "Central Dak Section",
-  "Health Center",
-  "School of Computing & Electrical Engineering",
-  "School of Chemical Sciences",
-  "School of Physical Sciences",
-  "School of Mathematical & Statistical Sciences",
-  "School of Biosciences & Bio Engineering",
-  "School of Mechanical & Materials Engineering",
-  "School of Civil & Environmental Engineering",
-  "School of Humanities & Social Sciences",
-  "School of Management",
-  "Advanced Materials Research Center (AMRC)",
-  "Centre of Artificial Intelligence and Robotics (CAIR)",
-  "Center for Quantum Science and Technologies (CQST)",
-  "Centre for Design & Fabrication of Electronic Devices (C4DFED)",
-  "Center for Human-Computer Interaction (CHCI)",
-  "Center for Climate Change and Disaster Management (C3DAR)",
-  "IIT Mandi i-Hub & HCI",
-  "IKSMHA Center",
-  "Centre for Continuing Education (CCE)",
-  "JEE CELL",
-  "JAM",
-  "GATE",
-  "Office of Chief Warden",
-  "Parashar Hostel",
-  "Chandertaal Hostel",
-  "Suvalsar Hostel",
-  "Nako Hostel",
-  "Dashir Hostel",
-  "Beas Kund Hostel",
-  "Manimahesh Hostel",
-  "Suraj Taal Hostel",
-  "Gauri Kund Hostel",
-  "Central Mess",
-  "Sports",
-  "NSS",
-  "Guidance & Counselling Cell",
-  "Construction & Maintainance Cell",
-  "Transportation",
-  "Guest House",
-  "Housekeeping Services & Waste Management",
-  "Creche",
-  "Security Unit",
-  "Common Rooms",
-  "Career & Placement Cell",
-  "IIT Mandi Catalyst",
-  "Recreation Center",
-  "CPWD",
-  "Banks",
-  "IPDC",
-  "IR",
-  "Mind Tree School",
-  "Renuka Hostel",
-  "Rewalsar",
-  "Director Office",
-  "Deans",
-  "Associate Deans",
-  "Registrar Office",
-  "Administration and Establishment Section",
-  "Faculty Establishment and Recruitment",
-  "Finance and Accounts",
-  "Store and Purchase Section",
-  "Rajbhasa Section",
-  "Ranking Cell (RC)",
-  "Media Cell",
-  "Academics Section",
-  "Academic Affairs",
-  "Research Affairs",
-  "Legal Section",
-  "Internal Audit",
-  "Central Library",
-  "DIGITAL AND COMPUTING SERVICES",
-  "Dean (SRIC & IR ) Office",
-  "Dean (Students) Office",
-];
 
 // The shared row type, plus the name the API joins on from `employees`.
 type PdaBalance = PdaBalanceRow & {
@@ -157,12 +23,28 @@ type PdaBalance = PdaBalanceRow & {
   employee_type?: string | null;
 };
 
+/** A small labelled modal for this page's forms. */
+function Dialog({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode }) {
+  return (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label={title}>
+    <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-xl">
+      <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+        <button onClick={onClose} className="rounded-md p-1 text-slate-500 hover:bg-slate-100" aria-label="Close">
+          <IconX className="size-4" />
+        </button>
+      </div>
+      <div className="space-y-4 px-6 py-5">{children}</div>
+      <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">{footer}</div>
+    </div>
+  </div>
+);
+}
+
 export default function PdaManagerPage() {
   const { data: session, status } = useSession();
   const confirm = useConfirm();
 
-  // sidebar open state
-  const [open, setOpen] = useState(true);
 
   const [rows, setRows] = useState<PdaBalance[]>([]);
   const [total, setTotal] = useState(0);
@@ -325,14 +207,16 @@ export default function PdaManagerPage() {
     await fetchPaged();
   };
 
+  const [bulk, setBulk] = useState<string | null>(null);
+
   const handleAddAmountToAll = async () => {
-    const raw = prompt("Amount to add to every PDA allocation:");
-    if (raw == null) return;
-    const delta = parseFloat(raw);
+    if (bulk === null) return;
+    const delta = parseFloat(bulk);
     if (!Number.isFinite(delta)) {
       setNotice({ kind: "bad", text: "That is not a valid amount." });
       return;
     }
+    setBulk(null);
     if (!(await confirm({
       title: "Add this amount to every PDA allocation?",
       details: [["Amount per account", money(delta)]],
@@ -399,248 +283,148 @@ export default function PdaManagerPage() {
   const canPrev = page > 1;
   const canNext = page * pageSize < total;
 
+  const input = "h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 read-only:bg-slate-50 read-only:text-slate-600";
+  const th = "px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
+  const cancelBtn = "inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50";
+  const primaryBtn = "inline-flex h-9 items-center rounded-md bg-blue-700 px-4 text-sm font-medium text-white hover:bg-blue-800";
+
   return (
-    <div className="min-h-screen flex bg-neutral-50">
+    <AppShell desk="PDA Manager" nav={[{ label: "PDA Accounts", icon: <IconWallet />, active: true, onClick: () => undefined }]}>
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
-      {/* Sidebar (left) */}
-     <Sidebar open={open} setOpen={setOpen} className="hidden md:flex">
-  <SidebarBody className="flex flex-col h-full p-0">
+      <PageHeader
+        title="PDA Accounts"
+        description="Open accounts and set allocations. Money already committed to bills or spent is never touched."
+        actions={
+          <>
+            <button onClick={() => setIsAdding(true)} className={primaryBtn}>Open account</button>
+            <button onClick={() => setBulk("")} className={cancelBtn}>Add amount to all</button>
+            <button onClick={handleResetAll} className="inline-flex h-9 items-center rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50">
+              Remove all free balance
+            </button>
+          </>
+        }
+      />
 
-    
-
-    {/* Divider */}
-    <div className="border-b border-neutral-300"></div>
-
-    {/* Logout button ONLY */}
-    <button
-      onClick={() => signOut({ callbackUrl: "/login" })}
-      className="w-full text-left px-4 py-3 text-neutral-800 hover:bg-neutral-100"
-    >
-      {open ? "Logout" : "⟵"}
-    </button>
-
-  </SidebarBody>
-</Sidebar>
-
-
-
-
-      {/* Main content */}
-      <main className="flex-1">
-        {/* full width wrapper with padding; removes mx-auto max-w-7xl to use full width */}
-        <div className="w-full px-6 py-6">
-          {/* Header */}
-          <div className="mb-6 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <h1 className="text-2xl font-semibold text-neutral-900">PDA Manager</h1>
-              <p className="text-sm text-neutral-500">Manage PDA members, balances, and departments.</p>
-            </div>
-
-            <div className="flex flex-wrap items-center gap-2">
-              <button onClick={() => setIsAdding(true)} className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
-                Add Member
-              </button>
-              <button onClick={handleAddAmountToAll} className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-indigo-700">
-                Add Amount to All
-              </button>
-              <button onClick={handleResetAll} className="rounded-md bg-rose-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-rose-700">
-                Reset All to Zero
-              </button>
-            </div>
-          </div>
-
-          {/* Card */}
-          <div className="rounded-xl border border-neutral-200 bg-white shadow-sm">
-            {/* Controls row */}
-            <div className="flex flex-col gap-3 border-b border-neutral-200 px-4 py-3 md:flex-row md:items-center md:justify-between">
-              <div className="flex items-center gap-2">
-                <input
-                  placeholder="Search employee, department or email..."
-                  value={search}
-                  onChange={(e) => {
-                    setPage(1);
-                    setSearch(e.target.value);
-                  }}
-                  className="w-72 rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <div className="text-sm text-neutral-600">
-                  Showing {start}-{end} of {total}
-                </div>
-              </div>
-            </div>
-
-            {/* Table */}
-            <div className="overflow-x-auto">
-              <table className="min-w-full table-auto text-sm">
-                <thead className="sticky top-0 z-10 bg-neutral-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-600">Employee ID</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-600">Balance</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-600">Department</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-600">Email</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-600">Last Updated</th>
-                    <th className="px-4 py-3 text-left font-medium text-neutral-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((r, idx) => (
-                    <tr key={r.id} className={idx % 2 === 0 ? "bg-white" : "bg-neutral-50 hover:bg-neutral-100"}>
-                      <td className="px-4 py-3 font-medium text-neutral-900">{r.employee_id}</td>
-                      <td className="px-4 py-3 text-neutral-900">{r.balance}</td>
-                      <td className="px-4 py-3 text-neutral-900">{r.department}</td>
-                      <td className="px-4 py-3 text-neutral-900">{r.email ?? "-"}</td>
-                      <td className="px-4 py-3 text-neutral-900">{r.updated_at ? new Date(r.updated_at).toLocaleString() : "-"}</td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <button onClick={() => setEditing(r)} className="text-blue-600 hover:text-blue-700">
-                            Edit
-                          </button>
-                          <button onClick={() => handleDelete(r.id)} className="text-rose-600 hover:text-rose-700">
-                            Delete
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-
-                  {!loading && rows.length === 0 && (
-                    <tr>
-                      <td colSpan={6} className="px-4 py-8 text-center text-neutral-500">
-                        No records found.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Footer / Pagination */}
-            <div className="flex flex-col items-center justify-between gap-3 border-t border-neutral-200 px-4 py-3 md:flex-row">
-              <div className="text-sm text-neutral-600">Showing {start}-{end} of {total}</div>
-
-              <div className="flex items-center gap-3">
-                <label className="text-sm text-neutral-600">Rows per page</label>
-                <select
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPage(1);
-                    setPageSize(parseInt(e.target.value, 10));
-                  }}
-                  className="rounded-md border border-neutral-200 bg-white px-2 py-1 text-sm shadow-sm focus:border-blue-500 focus:outline-none"
-                >
-                  {[5, 10, 20, 50].map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-
-                <div className="flex items-center gap-1">
-                  <button
-                    disabled={!canPrev}
-                    onClick={() => canPrev && setPage((p) => p - 1)}
-                    className={`rounded-md px-3 py-1 text-sm ${canPrev ? "text-neutral-700 hover:bg-neutral-100" : "cursor-not-allowed text-neutral-400"}`}
-                  >
-                    Prev
-                  </button>
-                  <span className="text-sm text-neutral-600">Page {page} of {Math.max(Math.ceil(total / pageSize), 1)}</span>
-                  <button
-                    disabled={!canNext}
-                    onClick={() => canNext && setPage((p) => p + 1)}
-                    className={`rounded-md px-3 py-1 text-sm ${canNext ? "text-neutral-700 hover:bg-neutral-100" : "cursor-not-allowed text-neutral-400"}`}
-                  >
-                    Next
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Add Member Modal */}
-          {isAdding && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="w-full max-w-5xl rounded-xl border border-neutral-200 bg-white p-6 shadow-xl">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-neutral-900">Add Member</h2>
-                  <button onClick={() => setIsAdding(false)} className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100" aria-label="Close">
-                    <IconClose className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <input type="text" placeholder="Employee ID" value={form.employee_id} onChange={(e) => setForm((f) => ({ ...f, employee_id: e.target.value }))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
-                  <input type="number" placeholder="Balance" value={String(form.balance)} onChange={(e) => setForm((f) => ({ ...f, balance: e.target.value === "" ? 0 : parseFloat(e.target.value) }))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
-                  <select value={form.department} onChange={(e) => setForm((f) => ({ ...f, department: e.target.value }))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none">
-                    <option value="">Select Department</option>
-                    {DEPARTMENTS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                  <input type="email" placeholder="Email" value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
-                </div>
-
-                <div className="mt-6 flex items-center justify-end gap-2">
-                  <button onClick={() => setIsAdding(false)} className="rounded-md px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100">
-                    Cancel
-                  </button>
-                  <button onClick={handleAdd} className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700">
-                    Save
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Edit Member Modal */}
-          {editing && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-              <div className="w-full max-w-5xl rounded-xl border border-neutral-200 bg-white p-6 shadow-xl">
-                <div className="mb-4 flex items-center justify-between">
-                  <h2 className="text-xl font-semibold text-neutral-900">Edit Member</h2>
-                  <button onClick={() => setEditing(null)} className="rounded-md px-2 py-1 text-neutral-500 hover:bg-neutral-100" aria-label="Close">
-                    <IconClose className="h-4 w-4" />
-                  </button>
-                </div>
-
-                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                  <input type="text" aria-label="Employee ID" readOnly value={editing.employee_id} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
-                  <input type="number" aria-label="Total allocation" placeholder="Total allocation" value={String(editing.allocated)} onChange={(e) => setEditing((prev) => (prev ? { ...prev, allocated: e.target.value === "" ? 0 : parseFloat(e.target.value) } : prev))} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
-                  <select aria-label="Department (managed in the employee directory)" disabled value={editing.department} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none">
-                    <option value="">Select Department</option>
-                    {DEPARTMENTS.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                  <input type="email" aria-label="Email (managed in the employee directory)" readOnly value={editing.email ?? ""} className="w-full rounded-md border border-neutral-200 bg-white px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none" />
-                </div>
-
-                <div className="mt-6 flex items-center justify-end gap-2">
-                  <button onClick={() => setEditing(null)} className="rounded-md px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-100">
-                    Cancel
-                  </button>
-                  <button onClick={handleUpdate} className="rounded-md bg-green-600 px-3 py-2 text-sm font-medium text-white shadow-sm hover:bg-green-700">
-                    Save
-                  </button>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Loading overlay */}
-          {loading && (
-            <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/20">
-              <div className="h-10 w-10 animate-spin rounded-full border-2 border-white border-t-blue-600" />
-            </div>
-          )}
+      <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 md:flex-row md:items-center md:justify-between">
+          <label className="relative w-full md:w-80">
+            <span className="sr-only">Search</span>
+            <input
+              type="search"
+              placeholder="Search employee, department or email"
+              value={search}
+              onChange={(e) => { setPage(1); setSearch(e.target.value); }}
+              className={input}
+            />
+          </label>
+          <p className="text-sm text-slate-600">Showing {start}–{end} of {total}</p>
         </div>
-      </main>
-    </div>
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className={th}>Employee</th>
+                <th className={`${th} text-right`}>Free balance</th>
+                <th className={`${th} text-right`}>Allocated</th>
+                <th className={th}>Department</th>
+                <th className={th}>Last updated</th>
+                <th className={th}><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {rows.map((r) => (
+                <tr key={r.id} className="hover:bg-slate-50">
+                  <td className="whitespace-nowrap px-4 py-3">
+                    <p className="font-medium text-slate-900">{r.employee_name ?? r.employee_id}</p>
+                    <p className="text-xs text-slate-500">{r.employee_id}{r.email ? ` · ${r.email}` : ""}</p>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right font-medium tabular-nums">{money(r.balance)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-600">
+                    {money(r.allocated)}
+                    {Number(r.committed) > 0 && <span className="block text-xs text-slate-500">{money(r.committed)} committed</span>}
+                  </td>
+                  <td className="min-w-[14rem] px-4 py-3 text-slate-700">{r.department}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{when(r.updated_at)}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right">
+                    <button onClick={() => setEditing(r)} className="rounded-md px-2 py-1 font-medium text-blue-700 hover:bg-blue-50">Set allocation</button>
+                    <button onClick={() => handleDelete(r.id)} className="ml-1 rounded-md px-2 py-1 font-medium text-red-700 hover:bg-red-50">Close account</button>
+                  </td>
+                </tr>
+              ))}
+              {!loading && rows.length === 0 && (
+                <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">No accounts found.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex flex-col items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 md:flex-row">
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            Rows per page
+            <select
+              value={pageSize}
+              onChange={(e) => { setPage(1); setPageSize(parseInt(e.target.value, 10)); }}
+              className="h-8 rounded-md border border-slate-300 bg-white px-2 text-sm"
+            >
+              {[5, 10, 20, 50].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+          <div className="flex items-center gap-2">
+            <button disabled={!canPrev} onClick={() => canPrev && setPage((p) => p - 1)} className={`${cancelBtn} disabled:cursor-not-allowed disabled:opacity-50`}>Previous</button>
+            <span className="text-sm text-slate-600">Page {page} of {Math.max(Math.ceil(total / pageSize), 1)}</span>
+            <button disabled={!canNext} onClick={() => canNext && setPage((p) => p + 1)} className={`${cancelBtn} disabled:cursor-not-allowed disabled:opacity-50`}>Next</button>
+          </div>
+        </div>
+      </section>
+
+      {isAdding && (
+        <Dialog title="Open a PDA account" onClose={() => setIsAdding(false)}
+          footer={<><button onClick={() => setIsAdding(false)} className={cancelBtn}>Cancel</button><button onClick={handleAdd} className={primaryBtn}>Open account</button></>}>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Employee ID</span>
+            <input type="text" value={form.employee_id} onChange={(e) => setForm((f) => ({ ...f, employee_id: e.target.value }))} className={input} placeholder="e.g. E001" />
+          </label>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Opening allocation (₹)</span>
+            <input type="number" min={0} step="0.01" value={String(form.balance)} onChange={(e) => setForm((f) => ({ ...f, balance: e.target.value === "" ? 0 : parseFloat(e.target.value) }))} className={input} />
+          </label>
+          <p className="text-xs text-slate-500">Department and email are taken from the employee directory, so the account always matches the person.</p>
+        </Dialog>
+      )}
+
+      {editing && (
+        <Dialog title={`Set allocation for ${editing.employee_id}`} onClose={() => setEditing(null)}
+          footer={<><button onClick={() => setEditing(null)} className={cancelBtn}>Cancel</button><button onClick={handleUpdate} className={primaryBtn}>Save allocation</button></>}>
+          <dl className="grid grid-cols-3 gap-3 rounded-lg bg-slate-50 p-3 text-sm">
+            <div><dt className="text-xs text-slate-500">Free</dt><dd className="font-medium tabular-nums">{money(editing.balance)}</dd></div>
+            <div><dt className="text-xs text-slate-500">Committed</dt><dd className="font-medium tabular-nums">{money(editing.committed)}</dd></div>
+            <div><dt className="text-xs text-slate-500">Spent</dt><dd className="font-medium tabular-nums">{money(editing.spent)}</dd></div>
+          </dl>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Total allocation (₹)</span>
+            <input type="number" min={0} step="0.01" value={String(editing.allocated)} onChange={(e) => setEditing((prev) => (prev ? { ...prev, allocated: e.target.value === "" ? 0 : parseFloat(e.target.value) } : prev))} className={input} />
+            <span className="mt-1 block text-xs text-slate-500">Cannot be less than committed + spent ({money(Number(editing.committed) + Number(editing.spent))}).</span>
+          </label>
+          <p className="text-xs text-slate-500">{editing.department}{editing.email ? ` · ${editing.email}` : ""} — managed in the employee directory.</p>
+        </Dialog>
+      )}
+
+      {bulk !== null && (
+        <Dialog title="Add an amount to every allocation" onClose={() => setBulk(null)}
+          footer={<><button onClick={() => setBulk(null)} className={cancelBtn}>Cancel</button><button onClick={handleAddAmountToAll} className={primaryBtn}>Continue</button></>}>
+          <label className="block text-sm">
+            <span className="mb-1 block font-medium text-slate-700">Amount per account (₹)</span>
+            <input type="number" min={0} step="0.01" autoFocus value={bulk} onChange={(e) => setBulk(e.target.value)} className={input} />
+          </label>
+        </Dialog>
+      )}
+
+      {loading && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/20" role="status" aria-label="Working">
+          <div className="size-10 animate-spin rounded-full border-2 border-white border-t-blue-600" />
+        </div>
+      )}
+    </AppShell>
   );
 }

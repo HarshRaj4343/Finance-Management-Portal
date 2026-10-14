@@ -244,7 +244,7 @@ export function SummaryPanel({
 
   if (variant === "side") {
     return (
-      <aside aria-label="Bill summary" className="sticky top-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <aside aria-label="Bill summary" className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="mb-4 text-sm font-semibold text-slate-900">Summary</h2>
         {body}
       </aside>

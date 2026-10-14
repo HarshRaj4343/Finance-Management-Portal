@@ -1,11 +1,15 @@
 "use client";
 
-import { deskLabel } from "@/lib/roles";
+import { homeFor } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, money } from "@/lib/api";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import AppShell, { canOpenPortalPages, sharedLinks } from "@/components/AppShell";
+import { PageHeader, StatusBadge } from "@/components/ui/page";
 import { BillWithEmployee } from "@/types/database";
 import { Input } from "@/components/ui/input";
-import { Table, TableHeader, TableBody, TableRow, TableCell, TableHead } from "@/components/ui/table";
 
 // Allowed departments from database types
 const DEPARTMENTS = [
@@ -114,17 +118,17 @@ function istDay(ts: string | null | undefined): string | null {
   return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
-function getStatusColor(status: string | null | undefined) {
-  switch (status) {
-    case "Pending": return "text-yellow-600 bg-yellow-100";
-    case "Approved": return "text-green-600 bg-green-100";
-    case "Reject": return "text-red-600 bg-red-100";
-    case "Hold": return "text-orange-600 bg-orange-100";
-    default: return "text-gray-600 bg-gray-100";
-  }
-}
 
 export default function AllBillsPage() {
+  const router = useRouter();
+  const { data: session, status } = useSession();
+  const role = session?.user?.employee_type;
+  // RBAC: the portal-wide bill list is a Dean-only page.
+  const allowed = status === "authenticated" && canOpenPortalPages(role);
+  useEffect(() => {
+    if (status === "unauthenticated") window.location.href = "/login";
+    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(homeFor(role));
+  }, [status, role]);
   const [bills, setBills] = useState<BillWithEmployee[]>([]);
   const [filtered, setFiltered] = useState<BillWithEmployee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -162,8 +166,8 @@ export default function AllBillsPage() {
       setError(null);
       setBills(data!.bills);
     }
-    fetchBills();
-  }, []);
+    if (allowed) fetchBills();
+  }, [allowed]);
 
   useEffect(() => {
     // If no filters are set, show all
@@ -212,172 +216,123 @@ export default function AllBillsPage() {
   // Pagination
   const totalPages = Math.ceil(filtered.length / PAGE_SIZE) || 1;
   const billsToShow = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+  const field = "h-9 w-full rounded-md border border-slate-300 bg-white px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30";
+  const th = "whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
+  const anyFilter = Object.values(filters).some(Boolean);
 
-  // Collect options - using fixed categories
+  if (!allowed) return null;
 
   return (
-    <div className="h-screen flex flex-col">
-      <div className="flex-shrink-0 p-4 pb-2">
-        <div className="flex flex-wrap items-end gap-4 mb-3 justify-between">
-          <h2 className="text-2xl font-semibold">All Bills History</h2>
-          <div className="flex flex-wrap gap-2 items-end">
-          <select
-            className="border rounded-md h-9 px-2 text-sm"
-            value={filters.category}
-            onChange={e => setFilters(f => ({ ...f, category: e.target.value }))}
-          >
-            <option value="">Category</option>
-            {CATEGORIES.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-          <Input
-            placeholder="Employee ID"
-            value={filters.employeeId}
-            className="w-32"
-            onChange={e => setFilters(f => ({ ...f, employeeId: e.target.value }))}
-          />
-          <select
-            className="border rounded-md h-9 px-2 text-sm"
-            value={filters.dept || ''}
-            onChange={e => setFilters(f => ({ ...f, dept: e.target.value }))}
-          >
-            <option value="">Department</option>
-            {DEPARTMENTS.map(d => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </select>
-          <Input
-            placeholder="Bill ID"
-            value={filters.billId}
-            className="w-36"
-            onChange={e => setFilters(f => ({ ...f, billId: e.target.value }))}
-          />
-          <Input
-            placeholder="Bill Value Min"
-            type="number"
-            value={filters.valueMin}
-            className="w-32"
-            onChange={e => setFilters(f => ({ ...f, valueMin: e.target.value }))}
-          />
-          <Input
-            placeholder="Bill Value Max"
-            type="number"
-            value={filters.valueMax}
-            className="w-32"
-            onChange={e => setFilters(f => ({ ...f, valueMax: e.target.value }))}
-          />
-          <select
-            aria-label="Finance Admin decision"
-            className="border rounded-md h-9 px-2 text-sm"
-            value={filters.financeAdmin}
-            onChange={e => setFilters(f => ({ ...f, financeAdmin: e.target.value }))}
-          >
-            <option value="">Finance Admin</option>
-            {FINANCE_STATES.map(s => (
-              <option key={s} value={s}>{s === "Reject" ? "Rejected" : s}</option>
-            ))}
-          </select>
-          <label className="flex flex-col text-xs text-gray-600">
-            Filed from
-            <Input
-              type="date"
-              value={filters.dateFrom}
-              max={filters.dateTo || undefined}
-              className="w-40"
-              onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))}
-            />
+    <AppShell desk="All Bills" nav={[]} links={sharedLinks(session?.user?.employee_type, "bills")}>
+      <PageHeader title="All Bills" description="Every bill you are allowed to see, newest first. Select a row to open the bill." />
+
+      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Filters">
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Category</span>
+            <select className={field} value={filters.category} onChange={e => setFilters(f => ({ ...f, category: e.target.value }))}>
+              <option value="">All categories</option>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
           </label>
-          <label className="flex flex-col text-xs text-gray-600">
-            Filed to
-            <Input
-              type="date"
-              value={filters.dateTo}
-              min={filters.dateFrom || undefined}
-              className="w-40"
-              onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))}
-            />
+          <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Department</span>
+            <select className={field} value={filters.dept || ""} onChange={e => setFilters(f => ({ ...f, dept: e.target.value }))}>
+              <option value="">All departments</option>
+              {DEPARTMENTS.map(d => <option key={d} value={d}>{d}</option>)}
+            </select>
           </label>
-          {Object.values(filters).some(Boolean) && (
-            <button
-              type="button"
-              onClick={() => setFilters(initialFilters)}
-              className="h-9 px-3 text-sm rounded-md border bg-white hover:bg-gray-50"
-            >
+          <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Finance Admin decision</span>
+            <select className={field} value={filters.financeAdmin} onChange={e => setFilters(f => ({ ...f, financeAdmin: e.target.value }))}>
+              <option value="">Any</option>
+              {FINANCE_STATES.map(st => <option key={st} value={st}>{st === "Reject" ? "Rejected" : st}</option>)}
+            </select>
+          </label>
+          <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Employee ID</span>
+            <Input placeholder="e.g. E001" value={filters.employeeId} className={field} onChange={e => setFilters(f => ({ ...f, employeeId: e.target.value }))} />
+          </label>
+          <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Bill ID</span>
+            <Input placeholder="Part of the bill ID" value={filters.billId} className={field} onChange={e => setFilters(f => ({ ...f, billId: e.target.value }))} />
+          </label>
+          <div className="text-sm"><span className="mb-1 block font-medium text-slate-700">Value (₹)</span>
+            <div className="flex gap-2">
+              <Input aria-label="Minimum value" placeholder="Min" type="number" value={filters.valueMin} className={field} onChange={e => setFilters(f => ({ ...f, valueMin: e.target.value }))} />
+              <Input aria-label="Maximum value" placeholder="Max" type="number" value={filters.valueMax} className={field} onChange={e => setFilters(f => ({ ...f, valueMax: e.target.value }))} />
+            </div>
+          </div>
+          <div className="text-sm sm:col-span-2"><span className="mb-1 block font-medium text-slate-700">Filed between</span>
+            <div className="flex gap-2">
+              <Input aria-label="Filed from" type="date" value={filters.dateFrom} max={filters.dateTo || undefined} className={field} onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))} />
+              <Input aria-label="Filed to" type="date" value={filters.dateTo} min={filters.dateFrom || undefined} className={field} onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))} />
+            </div>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+          <span>{loading ? "Loading…" : `${filtered.length} of ${bills.length} bills`}</span>
+          {anyFilter && (
+            <button type="button" onClick={() => setFilters(initialFilters)} className="rounded-md px-3 py-1.5 font-medium text-slate-700 hover:bg-slate-100">
               Clear filters
             </button>
           )}
         </div>
-        </div>
+      </section>
 
-        {error && (
-          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-3 mx-4">
-            {error}
-          </div>
-        )}
-      </div>
+      {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>}
 
-      <div className="flex-1 mx-4 mb-4 overflow-hidden">
-        <div className="h-full bg-gray-100 rounded shadow-md flex flex-col">
-          <div className="flex-1 overflow-hidden">
-            <Table className="h-full">
-              <TableHeader>
-                <TableRow className="h-10">
-                  <TableHead className="py-3">Employee ID</TableHead>
-                  <TableHead className="py-3">Department</TableHead>
-                  <TableHead className="py-3">PO Details</TableHead>
-                  <TableHead className="py-3">PO Value</TableHead>
-                  <TableHead className="py-3">Category</TableHead>
-                  <TableHead className="py-3">Status</TableHead>
-                  <TableHead className="py-3">Store and Purchase Department</TableHead>
-                  <TableHead className="py-3">Audit</TableHead>
-                  <TableHead className="py-3">Finance Admin</TableHead>
-                  <TableHead className="py-3">Created At</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody className="bg-white">
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className={th}>Bill</th>
+                <th className={th}>Employee</th>
+                <th className={`${th} text-right`}>Value</th>
+                <th className={th}>Category</th>
+                <th className={th}>Status</th>
+                <th className={th}>Store and Purchase</th>
+                <th className={th}>Audit</th>
+                <th className={th}>Finance Admin</th>
+                <th className={th}>Filed</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
               {loading ? (
-                <TableRow className="h-12">
-                  <TableCell colSpan={10} className="py-4">
-                    <div className="flex items-center justify-center h-16">Loading...</div>
-                  </TableCell>
-                </TableRow>
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">Loading…</td></tr>
               ) : billsToShow.length === 0 ? (
-                <TableRow className="h-12">
-                  <TableCell colSpan={10} className="py-4">
-                    <div className="text-center p-6 text-gray-500">
-                      No bills found. Total bills in DB: {bills.length}
-                    </div>
-                  </TableCell>
-                </TableRow>
+                <tr><td colSpan={9} className="px-4 py-10 text-center text-slate-500">
+                  {bills.length ? "No bills match these filters." : "No bills yet."}
+                </td></tr>
               ) : billsToShow.map(bill => (
-                <TableRow key={bill.id} className="h-12 hover:bg-gray-50">
-                  <TableCell className="py-3">{bill.employee_id || "N/A"}</TableCell>
-                  <TableCell className="py-3">{bill.employee_department || "N/A"}</TableCell>
-                  <TableCell className="py-3">{bill.po_details || "N/A"}</TableCell>
-                  <TableCell className="py-3">₹ {bill.po_value?.toLocaleString() || '-'}</TableCell>
-                  <TableCell className="py-3"><span className="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-blue-100 text-blue-800">{bill.item_category}</span></TableCell>
-                  <TableCell className="py-3"><span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.status)}`}>{deskLabel(bill.status)}</span></TableCell>
-                  <TableCell className="py-3">{bill.snp ? <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.snp)}`}>{bill.snp}</span> : 'N/A'}</TableCell>
-                  <TableCell className="py-3">{bill.audit ? <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.audit)}`}>{bill.audit}</span> : 'N/A'}</TableCell>
-                  <TableCell className="py-3">{bill.finance_admin ? <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.finance_admin)}`}>{bill.finance_admin}</span> : 'N/A'}</TableCell>
-                  <TableCell className="py-3">{bill.created_at ? new Date(bill.created_at ?? '').toLocaleDateString() : '-'}</TableCell>
-                </TableRow>
+                <tr key={bill.id} className="cursor-pointer hover:bg-slate-50" onClick={() => router.push(`/bill/${bill.id}`)}>
+                  <td className="max-w-xs px-4 py-3">
+                    <Link href={`/bill/${bill.id}`} onClick={e => e.stopPropagation()} className="font-mono text-xs font-medium text-blue-700 hover:underline">
+                      {bill.bill_number ?? bill.id.slice(0, 8)}
+                    </Link>
+                    <p className="truncate text-slate-700" title={bill.po_details ?? ""}>{bill.po_details || "—"}</p>
+                  </td>
+                  <td className="px-4 py-3">
+                    <p className="whitespace-nowrap font-medium text-slate-900">{bill.employee_id || "—"}</p>
+                    <p className="max-w-[14rem] truncate text-xs text-slate-500" title={bill.employee_department ?? ""}>{bill.employee_department || "—"}</p>
+                  </td>
+                  <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{money(bill.po_value)}</td>
+                  <td className="whitespace-nowrap px-4 py-3">{bill.item_category}</td>
+                  <td className="px-4 py-3"><StatusBadge value={bill.status} /></td>
+                  <td className="px-4 py-3"><StatusBadge value={bill.snp} /></td>
+                  <td className="px-4 py-3"><StatusBadge value={bill.audit} /></td>
+                  <td className="px-4 py-3"><StatusBadge value={bill.finance_admin} /></td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{bill.created_at ? new Date(bill.created_at.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00")).toLocaleDateString("en-IN") : "—"}</td>
+                </tr>
               ))}
-              </TableBody>
-            </Table>
-          </div>
-          {/* Pagination */}
-          <div className="flex-shrink-0 flex justify-between items-center py-3 px-4 border-t bg-gray-50 rounded-b">
-            <div className="text-sm text-gray-600">Showing {billsToShow.length} of {filtered.length} bills</div>
-            <div className="flex gap-1">
-              <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50">Prev</button>
-              <span className="px-2">Page {page} of {totalPages}</span>
-              <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="px-3 py-1 bg-gray-100 rounded disabled:opacity-50">Next</button>
-            </div>
+            </tbody>
+          </table>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
+          <span>Showing {billsToShow.length} of {filtered.length} bills</span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1} className="h-8 rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Previous</button>
+            <span>Page {page} of {totalPages}</span>
+            <button onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages} className="h-8 rounded-md border border-slate-300 bg-white px-3 font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">Next</button>
           </div>
         </div>
-      </div>
-    </div>
+      </section>
+    </AppShell>
   );
 }

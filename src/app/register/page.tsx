@@ -1,24 +1,19 @@
 "use client";
 
-import Image from "next/image";
 import React, { useCallback, useEffect, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { signOut, useSession } from "next-auth/react";
+import { useSession } from "next-auth/react";
 import {
-  IconArrowLeft,
-  IconHome,
   IconListDetails,
-  IconSearch,
-  IconFilter,
   IconBook,
   IconCalendar,
   IconBuildingBank,
 } from "@tabler/icons-react";
-import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
-import { cn } from "@/lib/utils";
 import { api, money, qs, when } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
-import { normaliseRole } from "@/lib/roles";
+import AppShell, { canOpenPortalPages, sharedLinks } from "@/components/AppShell";
+import FilterBar, { FilterField, filterInput } from "@/components/FilterBar";
+import { PageHeader, StatCard } from "@/components/ui/page";
+import { homeFor, normaliseRole } from "@/lib/roles";
 import type { RegisterEntry, DepartmentRow } from "@/types/database";
 
 /**
@@ -39,34 +34,10 @@ type Totals = {
   current_year: string;
 };
 
-const Logo = () => (
-  <a
-    href="#"
-    className="relative z-20 flex items-center space-x-2 py-1 text-base font-semibold text-black"
-  >
-    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
-    <motion.span
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      className="whitespace-pre text-black"
-    >
-      Purchase Register
-    </motion.span>
-  </a>
-);
 
-const LogoIcon = () => (
-  <a
-    href="#"
-    className="relative z-20 flex items-center py-1 text-sm font-semibold text-black"
-  >
-    <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-8 w-8" />
-  </a>
-);
 
 export default function RegisterPage() {
   const { data: session, status } = useSession();
-  const [open, setOpen] = useState(false);
 
   const [entries, setEntries] = useState<RegisterEntry[]>([]);
   const [totals, setTotals] = useState<Totals | null>(null);
@@ -78,7 +49,6 @@ export default function RegisterPage() {
   const [notice, setNotice] = useState<NoticeState>(null);
 
   const [searchQuery, setSearchQuery] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
   const [department, setDepartment] = useState("");
   const [fy, setFy] = useState("");
   const [activeFilter, setActiveFilter] = useState("All");
@@ -88,15 +58,19 @@ export default function RegisterPage() {
   const role = normaliseRole((session?.user as { employee_type?: string })?.employee_type);
   const scoped = role === "User";
 
+  // RBAC: the purchase register is a Dean-only page; the API refuses everyone else too.
+  const allowed = status === "authenticated" && canOpenPortalPages(role);
   useEffect(() => {
     if (status === "unauthenticated") window.location.href = "/login";
-  }, [status]);
+    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(homeFor(role));
+  }, [status, role]);
 
   useEffect(() => {
+    if (!allowed) return;
     api
       .get<{ departments: DepartmentRow[] }>("/api/departments")
       .then(({ data }) => data && setDepartments(data.departments));
-  }, []);
+  }, [allowed]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -122,10 +96,10 @@ export default function RegisterPage() {
   }, [searchQuery, department, fy, page]);
 
   useEffect(() => {
-    if (status !== "authenticated") return;
+    if (!allowed) return;
     const t = setTimeout(load, 250);
     return () => clearTimeout(t);
-  }, [status, load]);
+  }, [allowed, load]);
 
 
   const pages = Math.ceil(total / pageSize);
@@ -171,205 +145,58 @@ export default function RegisterPage() {
     setPage(0);
   };
 
+  if (!allowed) return null;
+
   return (
-    <div className="flex w-full h-screen bg-white shadow-lg">
+    <AppShell
+      desk="Purchase Register"
+      nav={links.map((link) => ({ label: link.label, icon: link.icon, onClick: link.onClick, active: activeFilter === link.label }))}
+      links={sharedLinks(session?.user?.employee_type, "register")}
+    >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
+      <PageHeader
+        title="Purchase Register"
+        description={scoped
+          ? "Your purchases, as entered in the departmental register."
+          : "Every purchase that completed the approval workflow."}
+      />
 
-      {/* Sidebar */}
-      <Sidebar open={open} setOpen={setOpen}>
-        <SidebarBody className="flex flex-col justify-between h-full">
-          <div className="flex flex-col">
-            {open ? <Logo /> : <LogoIcon />}
-            <div className="mt-8 flex flex-col gap-2">
-              {links.map((link, idx) => (
-                <button
-                  key={idx}
-                  onClick={link.onClick}
-                  className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded text-left w-full transition-colors",
-                    activeFilter === link.label
-                      ? "bg-blue-100 font-medium text-blue-900"
-                      : "hover:bg-gray-100"
-                  )}
-                >
-                  {link.icon}
-                  {open && <span>{link.label}</span>}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Bottom links */}
-          <div className="flex flex-col gap-2">
-            <button
-              onClick={() => (window.location.href = "/")}
-              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full"
-            >
-              <IconHome className="h-5 w-5 shrink-0 text-neutral-700" />
-              {open && <span>Portal</span>}
-            </button>
-            <button
-              onClick={() => signOut({ callbackUrl: "/login" })}
-              className="flex items-center gap-2 px-3 py-2 rounded hover:bg-gray-100 text-left w-full"
-            >
-              <IconArrowLeft className="h-5 w-5 shrink-0 text-neutral-700" />
-              {open && <span>Logout</span>}
-            </button>
-          </div>
-        </SidebarBody>
-      </Sidebar>
-
-      {/* Main Content */}
-      <div className="flex flex-1 flex-col gap-6 p-4 md:p-8 overflow-y-auto bg-gray-50">
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center"
-        >
-          <h1 className="text-2xl md:text-3xl font-bold text-gray-800 mb-2">
-            Purchase Register
-          </h1>
-          <p className="text-gray-600 font-medium">
-            {scoped
-              ? "Your purchases, as entered in the departmental register"
-              : "Every purchase that completed the approval workflow"}
-          </p>
-        </motion.div>
-
-        {/* Summary cards */}
         {totals && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="rounded-lg bg-blue-50 shadow p-6 border border-blue-200"
-            >
-              <h2 className="text-gray-600 text-sm">Entries</h2>
-              <p className="text-2xl font-bold text-blue-700">
-                {totals.entries.toLocaleString("en-IN")}
-              </p>
-              <p className="text-xs text-gray-500 mt-1">Recorded purchases</p>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.2 }}
-              className="rounded-lg bg-green-50 shadow p-6 border border-green-200"
-            >
-              <h2 className="text-gray-600 text-sm">Total Value</h2>
-              <p className="text-2xl font-bold text-green-700">{money(totals.amount)}</p>
-              <p className="text-xs text-gray-500 mt-1">Across all entries</p>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.3 }}
-              className="rounded-lg bg-yellow-50 shadow p-6 border border-yellow-200"
-            >
-              <h2 className="text-gray-600 text-sm">Departments</h2>
-              <p className="text-2xl font-bold text-yellow-700">{totals.departments}</p>
-              <p className="text-xs text-gray-500 mt-1">With recorded purchases</p>
-            </motion.div>
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+            <StatCard label="Entries" value={totals.entries.toLocaleString("en-IN")} hint="Recorded purchases" tone="blue" />
+            <StatCard label="Total Value" value={money(totals.amount)} hint="Across these entries" tone="green" />
+            <StatCard label="Departments" value={totals.departments} hint="With recorded purchases" tone="amber" />
           </div>
         )}
 
-        {/* Search and Filter Section */}
-        <div className="bg-white rounded-lg shadow p-4 space-y-4">
-          <div className="flex flex-col md:flex-row gap-4">
-            <div className="flex-1 relative">
-              <IconSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-              <input
-                type="text"
-                placeholder="Search by serial number, item, supplier, employee..."
-                value={searchQuery}
-                onChange={(e) => {
-                  setPage(0);
-                  setSearchQuery(e.target.value);
-                }}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-            <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
-                showFilters
-                  ? "bg-blue-100 text-blue-700 border-blue-300"
-                  : "bg-gray-100 text-gray-700 border-gray-300"
-              }`}
-            >
-              <IconFilter className="h-5 w-5" />
-              Filters
-            </button>
-            <button
-              onClick={clearAll}
-              className="px-4 py-2 text-sm bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
-            >
-              Clear All
-            </button>
-          </div>
-
-          <AnimatePresence>
-            {showFilters && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t"
-              >
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    <IconBuildingBank className="inline h-4 w-4 mr-1" />
-                    Department
-                  </label>
-                  <select
-                    value={department}
-                    onChange={(e) => {
-                      setPage(0);
-                      setDepartment(e.target.value);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">All departments</option>
-                    {departments.map((d) => (
-                      <option key={d.name} value={d.name}>
-                        {d.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    <IconCalendar className="inline h-4 w-4 mr-1" />
-                    Financial Year
-                  </label>
-                  <select
-                    value={fy}
-                    onChange={(e) => {
-                      setPage(0);
-                      setFy(e.target.value);
-                    }}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="">All years</option>
-                    {years.map((y) => (
-                      <option key={y} value={y}>
-                        {y}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+        <FilterBar
+          search={searchQuery}
+          onSearch={(value) => { setPage(0); setSearchQuery(value); }}
+          placeholder="Search by serial number, item, supplier or employee"
+          onClear={clearAll}
+          active={Boolean(searchQuery || department || fy)}
+        >
+          <FilterField label="Department">
+            <select value={department} onChange={(e) => { setPage(0); setDepartment(e.target.value); }} className={filterInput}>
+              <option value="">All departments</option>
+              {departments.map((d) => (
+                <option key={d.name} value={d.name}>{d.name}</option>
+              ))}
+            </select>
+          </FilterField>
+          <FilterField label="Financial year">
+            <select value={fy} onChange={(e) => { setPage(0); setFy(e.target.value); }} className={filterInput}>
+              <option value="">All years</option>
+              {years.map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+          </FilterField>
+        </FilterBar>
 
         {/* The register itself */}
-        <div className="bg-white rounded-lg shadow overflow-hidden">
-          <div className="px-4 py-3 border-b bg-gray-50 flex items-center gap-2">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b bg-slate-50 flex items-center gap-2">
             <IconBook className="h-5 w-5 text-blue-600" />
             <h2 className="font-semibold text-gray-800">Register Entries</h2>
             <span className="ml-auto text-sm text-gray-500">
@@ -503,7 +330,6 @@ export default function RegisterPage() {
         <p className="text-xs text-gray-400 text-center pb-4">
           Register entries are permanent. They cannot be edited or deleted once written.
         </p>
-      </div>
-    </div>
+    </AppShell>
   );
 }
