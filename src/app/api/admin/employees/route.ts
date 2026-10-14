@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, actorQueryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireRole } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
-import { ROLES, normaliseRole } from "@/lib/roles";
+import { ROLES, ASSIGNABLE_ROLES, normaliseRole } from "@/lib/roles";
 import { isMoney } from "@/lib/security";
 
 export const runtime = "nodejs";
@@ -97,6 +97,7 @@ export async function POST(req: NextRequest) {
     if (!isMoney(allocated)) return badRequest("Enter a finite allocation of zero or more, with at most two decimal places.");
     if (allocated > 0 && actor.role !== "Dean") return badRequest("Only the Dean or PDA Manager may allocate funds. Add the employee without an allocation first.");
     if (b.employee_type !== undefined && !ROLES.includes(String(b.employee_type) as (typeof ROLES)[number])) return badRequest("Choose a recognised role.");
+    if (!ASSIGNABLE_ROLES.includes(role)) return badRequest("The Bill Editor role has been retired. Use Bill Employee, which files and corrects bills.");
     const data = await actorQueryOne(actor.code,
       `with person as (
          insert into public.employees

@@ -5,10 +5,20 @@ import Link from "next/link";
 import { api, money, when } from "@/lib/api";
 import { billScopeQuery, isUmbrellaDepartment, deskLabel } from "@/lib/roles";
 import { Bill } from "./types";
+import EditBillModal from "./EditBillModal";
+import { canCorrectBill, deskRemark, editWindowLeft, heldAtCurrentDesk } from "@/lib/bill-review";
+
+const countdown = (ms: number) => {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
 
 /**
  * Bills this department has filed that are still moving: sitting at a desk
  * or on hold. Accepted and rejected bills have their own tabs.
+ *
+ * A bill can be corrected here during its edit window straight after
+ * filing, and again once a desk puts it on hold.
  */
 const isPending = (b: Bill) => b.status !== "Accepted" && b.status !== "Rejected";
 
@@ -16,6 +26,9 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
   const [bills, setBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [editing, setEditing] = useState<Bill | null>(null);
+  const [reload, setReload] = useState(0);
+  const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
     if (!department) {
@@ -31,10 +44,21 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
       setError(error);
       setBills(data ? data.bills.filter(isPending) : []);
     })();
-  }, [department, refreshKey]);
+  }, [department, refreshKey, reload]);
 
-  const heldAt = (b: Bill) =>
-    [b.snp, b.audit, b.finance_admin].some((d) => d === "Hold") ? "On hold" : "In progress";
+  // Tick only while some bill is still inside its edit window.
+  const ticking = bills.some((b) => editWindowLeft(b, now) > 0);
+  useEffect(() => {
+    if (!ticking) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [ticking]);
+
+  const heldAt = (b: Bill) => {
+    const left = editWindowLeft(b, now);
+    if (left > 0) return `Editable for ${countdown(left)}, then sent to the desk`;
+    return heldAtCurrentDesk(b) ? "On hold" : "In progress";
+  };
 
   return (
     <div className="mx-auto w-full max-w-6xl">
@@ -52,14 +76,15 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
               <th className="px-4 py-3 text-right font-medium">Amount</th>
               <th className="px-4 py-3 font-medium">With</th>
               <th className="px-4 py-3 font-medium">Filed</th>
+              <th className="px-4 py-3 font-medium">Correct</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {loading && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">Loading…</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">Loading…</td></tr>
             )}
             {!loading && bills.length === 0 && (
-              <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-500">No bills are pending.</td></tr>
+              <tr><td colSpan={6} className="px-4 py-8 text-center text-slate-500">No bills are pending.</td></tr>
             )}
             {bills.map((b) => (
               <tr key={b.id}>
@@ -77,13 +102,30 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
                 <td className="px-4 py-3">
                   <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-900">{deskLabel(b.status)}</span>
                   <p className="mt-1 text-xs text-slate-500">{heldAt(b)}</p>
+                  {heldAtCurrentDesk(b) && deskRemark(b) && (
+                    <p className="mt-1 max-w-xs text-xs text-amber-900">Remark: {deskRemark(b)}</p>
+                  )}
                 </td>
                 <td className="whitespace-nowrap px-4 py-3 text-slate-600">{when(b.created_at)}</td>
+                <td className="px-4 py-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(b)}
+                    disabled={!canCorrectBill(b, now)}
+                    title={canCorrectBill(b, now) ? "Correct this bill" : "Editable only within the first minutes after filing, or after a desk holds or rejects it"}
+                    className="rounded-md bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                  >
+                    Edit
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+      {editing && (
+        <EditBillModal bill={editing} onClose={() => setEditing(null)} onBillUpdated={() => setReload((n) => n + 1)} />
+      )}
     </div>
   );
 };

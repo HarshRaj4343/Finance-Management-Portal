@@ -21,13 +21,19 @@ export default function EmployeeDashboard() {
   const [open, setOpen] = useState(false);
   const [bills, setBills] = useState<Bill[]>([]);
   const [loading, setLoading] = useState(true);
+  const canFile = normaliseRole(session?.user?.employee_type) === "Bill Employee";
   const [activePage, setActivePage] = useState<PageView>("upload");
+  useEffect(() => {
+    if (session && !canFile) setActivePage((p) => (p === "upload" ? "pending" : p));
+  }, [session, canFile]);
   const [department, setDepartment] = useState<string | null>(null);
   const [submittedCount, setSubmittedCount] = useState(0);
 
   const [notice, setNotice] = useState<NoticeState>(null);
 
-  // This desk is for the "Bill Employee" clerk role only. The department
+  // This desk is for the "Bill Employee" clerk role, which files bills and
+  // corrects them. The retired "Bill Editor" role still lands here so that
+  // existing accounts can correct bills, but cannot file new ones. The department
   // guard inside UploadBill assumes the filer belongs to a real,
   // multi-person department -- it was never meant to field people like the
   // Dean, whose "department" is a placeholder for a role of one.
@@ -39,7 +45,7 @@ export default function EmployeeDashboard() {
       return;
     }
 
-    if (session && normaliseRole(session.user?.employee_type) !== "Bill Employee") {
+    if (session && !["Bill Employee", "Bill Editor"].includes(normaliseRole(session.user?.employee_type))) {
       window.location.href = "/";
     }
   }, [status, session]);
@@ -132,14 +138,16 @@ export default function EmployeeDashboard() {
             {open ? <Logo /> : <LogoIcon />}
             <div className="mt-8 flex flex-col gap-2">
               {/* === Sidebar Links === */}
-              <button
-                onClick={() => setActivePage("upload")}
-                className={`flex items-center gap-2 px-3 py-2 rounded ${
-                  activePage === "upload" ? "bg-gray-200 font-semibold" : "hover:bg-gray-100"
-                }`}
-              >
-                {open && "Apply Bill"}
-              </button>
+              {canFile && (
+                <button
+                  onClick={() => setActivePage("upload")}
+                  className={`flex items-center gap-2 px-3 py-2 rounded ${
+                    activePage === "upload" ? "bg-gray-200 font-semibold" : "hover:bg-gray-100"
+                  }`}
+                >
+                  {open && "Apply Bill"}
+                </button>
+              )}
 
               <button
                 onClick={() => setActivePage("pending")}
@@ -184,7 +192,7 @@ export default function EmployeeDashboard() {
 
       {/* Main Content */}
       <div className="flex flex-1 p-6 overflow-y-auto bg-gray-50">
-        {activePage === "upload" && (
+        {activePage === "upload" && canFile && (
           <UploadBill onBillSubmitted={handleBillSubmitted} department={department} />
         )}
 
@@ -198,7 +206,6 @@ export default function EmployeeDashboard() {
             loading={loading}
             onBillUpdated={handleBillUpdated}
             allowNote
-            enableEdit={false}
             onBillNoted={handleBillNoted}
           />
         )}

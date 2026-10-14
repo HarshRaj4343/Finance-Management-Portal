@@ -81,8 +81,6 @@ export function StepReview({
           rows={[
             ["Bill number", f.billNo],
             ["Bill date", shortDate(f.billDate)],
-            ["Bill amount", inr(T.basic)],
-            ["Other charges", inr(T.other)],
             ["Total bill amount", <strong key="t">{inr(T.total)}</strong>],
             ["Delivered", f.deliveryDate ? shortDate(f.deliveryDate) : "—"],
             ["Installation", f.installRequired === "yes" ? `Done on ${shortDate(f.installDate)}` : "Not required"],

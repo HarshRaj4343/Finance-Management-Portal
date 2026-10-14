@@ -4,6 +4,8 @@ import React, { useState } from "react";
 import { api } from "@/lib/api";
 import { Bill } from "./types";
 import EditBillModal from "./EditBillModal";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { canCorrectBill, deskRemark } from "@/lib/bill-review";
 
 interface BillsHistoryProps {
   bills: Bill[];
@@ -22,14 +24,13 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
   enableEdit = true,
   onBillNoted,
 }) => {
+  const confirm = useConfirm();
   const [editingBill, setEditingBill] = useState<Bill | null>(null);
   const [notingId, setNotingId] = useState<string | null>(null);
   const [noteError, setNoteError] = useState<string | null>(null);
 
-  const canEditBill = (bill: Bill) => {
-    // Otherwise only when on hold in any dept
-    return !["Accepted", "Rejected"].includes(bill.status) && (bill.snp === "Hold" || bill.audit === "Hold" || bill.finance_admin === "Hold");
-  };
+  // Held or rejected by a desk, or still inside its edit window.
+  const canEditBill = (bill: Bill) => canCorrectBill(bill);
 
   /**
    * Acknowledge a rejected bill and clear it from this list.
@@ -42,9 +43,11 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
   const handleNoted = async (billId: string) => {
     if (!allowNote || !onBillNoted) return;
 
-    const confirmed = window.confirm(
-      "Note this rejected bill? It will be cleared from this list. The bill and its history will remain in the portal."
-    );
+    const confirmed = await confirm({
+      title: "Dismiss this rejected bill?",
+      description: "It will be cleared from this list and can no longer be edited and resubmitted from here. The bill and its history remain in the portal.",
+      confirmLabel: "Dismiss",
+    });
     if (!confirmed) return;
 
     setNotingId(billId);
@@ -138,6 +141,9 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
                 Finance Admin
               </th>
               <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                Remark
+              </th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                 Created At
               </th>
               {enableEdit && (
@@ -147,7 +153,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
               )}
               {allowNote && (
                 <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Noted
+                  Dismiss
                 </th>
               )}
             </tr>
@@ -204,6 +210,9 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
                     "N/A"
                   )}
                 </td>
+                <td className="px-3 py-4 text-sm text-gray-900 max-w-xs">
+                  {deskRemark(bill) ?? "—"}
+                </td>
                 <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
                   {new Date(bill.created_at).toLocaleDateString()}
                 </td>
@@ -226,10 +235,11 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
                   <td className="px-3 py-4 whitespace-nowrap text-sm font-medium">
                     <button
                       onClick={() => handleNoted(bill.id)}
+                      title="Clear this bill from the list without resubmitting it"
                       disabled={notingId === bill.id}
                       className="inline-flex items-center px-3 py-1 rounded-md transition-colors disabled:opacity-50 text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100"
                     >
-                      {notingId === bill.id ? "Noting..." : "Noted"}
+                      {notingId === bill.id ? "Dismissing..." : "Dismiss"}
                     </button>
                   </td>
                 )}

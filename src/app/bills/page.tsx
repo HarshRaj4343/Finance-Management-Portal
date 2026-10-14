@@ -97,8 +97,22 @@ const initialFilters = {
   dept: "",
   billId: "",
   valueMin: "",
-  valueMax: ""
+  valueMax: "",
+  financeAdmin: "",
+  dateFrom: "",
+  dateTo: "",
 };
+
+const FINANCE_STATES = ["Pending", "Hold", "Approved", "Reject"];
+
+/** The IST calendar day a timestamp falls on, as YYYY-MM-DD. */
+function istDay(ts: string | null | undefined): string | null {
+  if (!ts) return null;
+  // Postgres text timestamps look like "2026-10-14 20:43:23.1+05:30" or "...+00".
+  const date = new Date(ts.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"));
+  if (Number.isNaN(date.getTime())) return null;
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Kolkata", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+}
 
 function getStatusColor(status: string | null | undefined) {
   switch (status) {
@@ -117,6 +131,19 @@ export default function AllBillsPage() {
   const [filters, setFilters] = useState(initialFilters);
   const [page, setPage] = useState(1);
   const [error, setError] = useState<string | null>(null);
+
+  // Dashboards link here with a filter already chosen, e.g. ?finance_admin=Reject.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const fa = q.get("finance_admin") ?? "";
+    const day = (v: string | null) => (v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : "");
+    setFilters((f) => ({
+      ...f,
+      financeAdmin: FINANCE_STATES.includes(fa) ? fa : "",
+      dateFrom: day(q.get("from")),
+      dateTo: day(q.get("to")),
+    }));
+  }, []);
 
   useEffect(() => {
     // Scoped by the server: a plain user gets only their own bills, an
@@ -140,13 +167,13 @@ export default function AllBillsPage() {
 
   useEffect(() => {
     // If no filters are set, show all
-    if (!filters.category && !filters.employeeId && !filters.dept && !filters.billId && !filters.valueMin && !filters.valueMax) {
+    if (Object.values(filters).every((v) => !v)) {
       setFiltered(bills);
       setPage(1);
       return;
     }
     let result = [...bills];
-    const { category, employeeId, dept, billId, valueMin, valueMax } = filters;
+    const { category, employeeId, dept, billId, valueMin, valueMax, financeAdmin, dateFrom, dateTo } = filters;
     
     // All filtering is case-sensitive - "User" and "USER" are treated as different values
     if (category) {
@@ -167,6 +194,15 @@ export default function AllBillsPage() {
       result = result.filter(b => {
         const val = b.po_value ? Number(b.po_value) : 0;
         return val >= min && val <= max;
+      });
+    }
+    if (financeAdmin) {
+      result = result.filter(b => b.finance_admin === financeAdmin);
+    }
+    if (dateFrom || dateTo) {
+      result = result.filter(b => {
+        const day = istDay(b.created_at);
+        return Boolean(day) && (!dateFrom || day! >= dateFrom) && (!dateTo || day! <= dateTo);
       });
     }
     setFiltered(result);
@@ -231,6 +267,46 @@ export default function AllBillsPage() {
             className="w-32"
             onChange={e => setFilters(f => ({ ...f, valueMax: e.target.value }))}
           />
+          <select
+            aria-label="Finance Admin decision"
+            className="border rounded-md h-9 px-2 text-sm"
+            value={filters.financeAdmin}
+            onChange={e => setFilters(f => ({ ...f, financeAdmin: e.target.value }))}
+          >
+            <option value="">Finance Admin</option>
+            {FINANCE_STATES.map(s => (
+              <option key={s} value={s}>{s === "Reject" ? "Rejected" : s}</option>
+            ))}
+          </select>
+          <label className="flex flex-col text-xs text-gray-600">
+            Filed from
+            <Input
+              type="date"
+              value={filters.dateFrom}
+              max={filters.dateTo || undefined}
+              className="w-40"
+              onChange={e => setFilters(f => ({ ...f, dateFrom: e.target.value }))}
+            />
+          </label>
+          <label className="flex flex-col text-xs text-gray-600">
+            Filed to
+            <Input
+              type="date"
+              value={filters.dateTo}
+              min={filters.dateFrom || undefined}
+              className="w-40"
+              onChange={e => setFilters(f => ({ ...f, dateTo: e.target.value }))}
+            />
+          </label>
+          {Object.values(filters).some(Boolean) && (
+            <button
+              type="button"
+              onClick={() => setFilters(initialFilters)}
+              className="h-9 px-3 text-sm rounded-md border bg-white hover:bg-gray-50"
+            >
+              Clear filters
+            </button>
+          )}
         </div>
         </div>
 

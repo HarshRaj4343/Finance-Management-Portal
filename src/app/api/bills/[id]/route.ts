@@ -63,11 +63,13 @@ export async function GET(
 }
 
 /**
- * PATCH /api/bills/:id — correct a bill that came back on hold.
+ * PATCH /api/bills/:id — correct a bill within its edit window, or after a
+ * desk held or rejected it.
  *
- * fn_amend_bill moves the PDA reservation with the amount, in the same
- * transaction, invalidates previous approvals, and restarts the required
- * route. It rejects non-held bills and stale correction versions.
+ * fn_amend_bill moves the PDA reservation with the amount (reserving it
+ * afresh for a rejected bill), invalidates previous approvals, restarts
+ * the required route and opens a new edit window, all in one transaction.
+ * It refuses any other state and stale correction versions.
  */
 export async function PATCH(
   req: NextRequest,

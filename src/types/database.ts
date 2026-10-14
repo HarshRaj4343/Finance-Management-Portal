@@ -116,6 +116,10 @@ export interface BillRow {
   decided_at: string | null;
   created_at: string;
   updated_at: string;
+  /** Until this instant the filer may correct the bill and no desk sees it. */
+  editable_until?: string | null;
+  /** When the bill reached the desk it is at now (list endpoint only). */
+  stage_entered_at?: string | null;
 }
 
 /** One entry in the workflow event log. Append-only. */

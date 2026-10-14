@@ -5,6 +5,7 @@ import React, { useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { api } from "@/lib/api";
 import SnpReviewPanel from "@/components/SnpReviewPanel";
+import { latestArrivalFirst } from "@/lib/bill-review";
 import Notice from "@/components/Notice";
 import { normaliseRole, deskLabel } from "@/lib/roles";
 import { signOut, useSession } from "next-auth/react";
@@ -136,7 +137,8 @@ export default function SnpDashboard() {
       );
     }
 
-    setFilteredBills(filtered);
+    // Newest arrival at this desk first.
+    setFilteredBills([...filtered].sort(latestArrivalFirst));
   }, [bills, activeFilter, searchQuery, categoryFilter, amountFilter, dateFilter, locationFilter]);
 
   const pendingCount = bills.filter((b) => b.snp === "Pending").length;

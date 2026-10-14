@@ -2,7 +2,7 @@
 
 import React from "react";
 import { Banner, Card, ComboField, Full, Grid, MoneyField, ReadOnlyField, SelectField, TextField, AreaField } from "./ui";
-import { FormState, inr, shortDate, todayISO, totals } from "./model";
+import { FormState, shortDate, todayISO } from "./model";
 import { PURCHASE_TYPES, SUPPLIERS } from "./masters";
 
 export type StepProps = {
@@ -152,8 +152,6 @@ export function StepSupplier({ f, set, errors }: StepProps) {
 // ---------------------------------------------------------------------
 
 export function StepBill({ f, set, errors }: StepProps) {
-  const T = totals(f);
-
   return (
     <div className="space-y-8">
       <Card title="Bill Details" description="Copy these from the supplier's invoice.">
@@ -179,30 +177,6 @@ export function StepBill({ f, set, errors }: StepProps) {
             error={errors["f-bill-date"]}
             hint={f.billDate ? shortDate(f.billDate) : undefined}
           />
-        </Grid>
-      </Card>
-
-      <Card
-        title="Other Charges"
-        description="The bill total is calculated from item quantities and unit prices in the next step."
-      >
-        <Grid>
-          <MoneyField
-            id="f-other"
-            label="Other Charges (₹)"
-            value={f.otherCharges}
-            onChange={(v) => set({ otherCharges: v })}
-            error={errors["f-other"]}
-            hint="Freight, packing and similar."
-          />
-          <Full>
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
-              <span className="text-sm font-medium text-slate-700">Total Bill Amount</span>
-              <span className="text-lg font-semibold tabular-nums text-slate-900" aria-live="polite">
-                {T.total > 0 ? inr(T.total) : "—"}
-              </span>
-            </div>
-          </Full>
         </Grid>
       </Card>
 

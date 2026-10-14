@@ -22,11 +22,18 @@ export const ROLES = [
 
 export type Role = (typeof ROLES)[number];
 
+/**
+ * Roles the Dean may hand out. "Bill Editor" is retired: correcting bills
+ * now happens on the Bill Employee desk. It stays in ROLES only so that
+ * existing records still load.
+ */
+export const ASSIGNABLE_ROLES: readonly Role[] = ROLES.filter((r) => r !== "Bill Editor");
+
 /** Landing page for each role, straight after login. */
 export const ROLE_HOME: Record<Role, string> = {
   "User": "/user",
   "Bill Employee": "/apply-bill",
-  "Bill Editor": "/bill-editor",
+  "Bill Editor": "/apply-bill",
   "Student Purchase": "/student-purchase",
   "Audit": "/audit",
   "Finance Admin": "/finance-admin",

@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api, money } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import { normaliseRole } from "@/lib/roles";
+import { useConfirm } from "@/components/ConfirmProvider";
 import type { PdaBalanceRow } from "@/types/database";
 import { useSession, signOut } from "next-auth/react";
 
@@ -158,6 +159,7 @@ type PdaBalance = PdaBalanceRow & {
 
 export default function PdaManagerPage() {
   const { data: session, status } = useSession();
+  const confirm = useConfirm();
 
   // sidebar open state
   const [open, setOpen] = useState(true);
@@ -247,6 +249,11 @@ export default function PdaManagerPage() {
       setNotice({ kind: "bad", text: "An employee ID is required." });
       return;
     }
+    if (!(await confirm({
+      title: "Open this PDA account?",
+      details: [["Employee", code], ["Allocation", money(Number.isFinite(form.balance) ? form.balance : 0)]],
+      confirmLabel: "Open account",
+    }))) return;
 
     setLoading(true);
     // Department and email are taken from the employees table, so an
@@ -269,6 +276,11 @@ export default function PdaManagerPage() {
 
   const handleUpdate = async () => {
     if (!editing) return;
+    if (!(await confirm({
+      title: "Set this allocation?",
+      details: [["Employee", editing.employee_id], ["New allocation", money(Number(editing.allocated))]],
+      confirmLabel: "Set allocation",
+    }))) return;
     setLoading(true);
     const { data, error } = await api.patch<{ account: PdaBalance }>("/api/admin/pda", {
       employee_id: editing.employee_id.trim(),
@@ -289,7 +301,13 @@ export default function PdaManagerPage() {
   };
 
   const handleDelete = async (employeeId: string) => {
-    if (!confirm(`Close the PDA account for ${employeeId}?`)) return;
+    if (!(await confirm({
+      title: "Close this PDA account?",
+      description: "A closed account cannot fund new bills. Its history is kept.",
+      details: [["Employee", employeeId]],
+      confirmLabel: "Close account",
+      tone: "danger",
+    }))) return;
     setLoading(true);
     const { error } = await api.del(
       `/api/admin/pda?employee_id=${encodeURIComponent(employeeId)}`
@@ -315,6 +333,11 @@ export default function PdaManagerPage() {
       setNotice({ kind: "bad", text: "That is not a valid amount." });
       return;
     }
+    if (!(await confirm({
+      title: "Add this amount to every PDA allocation?",
+      details: [["Amount per account", money(delta)]],
+      confirmLabel: "Add to all",
+    }))) return;
 
     setLoading(true);
     const { data } = await api.get<{ accounts: PdaBalance[] }>("/api/admin/pda");
@@ -342,14 +365,12 @@ export default function PdaManagerPage() {
   };
 
   const handleResetAll = async () => {
-    if (
-      !confirm(
-        "Reduce every allocation to what is already committed or spent?\n\n" +
-          "This leaves nothing free for new bills. Money already promised to " +
-          "bills in progress is not touched. This cannot be undone."
-      )
-    )
-      return;
+    if (!(await confirm({
+      title: "Reduce every allocation to what is already committed or spent?",
+      description: "This leaves nothing free for new bills. Money already promised to bills in progress is not touched. This cannot be undone.",
+      confirmLabel: "Reduce all",
+      tone: "danger",
+    }))) return;
 
     setLoading(true);
     const { data } = await api.get<{ accounts: PdaBalance[] }>("/api/admin/pda");

@@ -2,6 +2,13 @@ import type { Bill } from "@/types/database";
 import { money } from "@/lib/api";
 import { lineTotal, placeLabel } from "@/app/apply-bill/bill-form/model";
 
+/** Bills filed before the field was removed may still carry other charges. */
+function legacyCharges(bill: Bill): number {
+  const raw = (bill.form_data as { otherCharges?: unknown } | null)?.otherCharges;
+  const value = Number(String(raw ?? "").replace(/[₹,\s]/g, ""));
+  return Number.isFinite(value) ? value : 0;
+}
+
 export default function BillItems({ bill }: { bill: Bill }) {
   if (!bill.form_data) return null;
   return (
@@ -15,7 +22,7 @@ export default function BillItems({ bill }: { bill: Bill }) {
           <td className="border p-2">{line.qtyIssued} / {line.custodian} / {placeLabel(line)}</td>
         </tr>)}</tbody>
       </table>
-      <p className="mt-2 text-sm">Other charges: {money(bill.form_data.otherCharges.replace(/[₹,\s]/g, ""))}</p>
+      {legacyCharges(bill) > 0 && <p className="mt-2 text-sm">Other charges (older form): {money(legacyCharges(bill))}</p>}
     </div>
   );
 }

@@ -1,12 +1,60 @@
 import type { Bill } from "@/types/database";
 import { normaliseRole } from "./roles";
 
-export function canReviewSnp(bill: Bill, code: string | null | undefined, role: string | null | undefined) {
-  return Boolean(code && normaliseRole(role) === "Student Purchase" && bill.status === "Student Purchase"
-    && (bill.snp === "Pending" || bill.snp === "Hold") && code !== bill.employee_id && code !== bill.created_by);
+/** Mirrors fn_edit_window in 0006_edit_window.sql. The database enforces it. */
+export const EDIT_WINDOW_MINUTES = 5;
+
+type WindowBill = Pick<Bill, "status" | "editable_until">;
+type DeskBill = Pick<Bill, "status" | "snp" | "audit" | "finance_admin">;
+
+/** Freshly filed or corrected: only the filer sees and may change it. */
+export function inEditWindow(bill: WindowBill, now = Date.now()): boolean {
+  if (!bill.editable_until || bill.status === "Accepted" || bill.status === "Rejected") return false;
+  return Date.parse(bill.editable_until) > now;
 }
 
-function isoDay(value: string | null | undefined): string | null {
+/** Milliseconds left in the edit window, or 0. */
+export function editWindowLeft(bill: WindowBill, now = Date.now()): number {
+  return inEditWindow(bill, now) ? Date.parse(bill.editable_until!) - now : 0;
+}
+
+/** The desk the bill is sitting at has put it on hold. */
+export function heldAtCurrentDesk(bill: DeskBill): boolean {
+  return (bill.status === "Student Purchase" && bill.snp === "Hold")
+    || (bill.status === "Audit" && bill.audit === "Hold")
+    || (bill.status === "Finance Admin" && bill.finance_admin === "Hold");
+}
+
+/** Mirrors the states fn_amend_bill accepts. */
+export function canCorrectBill(bill: WindowBill & DeskBill, now = Date.now()): boolean {
+  return bill.status !== "Accepted" && (inEditWindow(bill, now) || bill.status === "Rejected" || heldAtCurrentDesk(bill));
+}
+
+/** The remark explaining the current hold or the rejection, if any. */
+export function deskRemark(bill: Bill): string | null {
+  if (bill.finance_admin === "Hold" || bill.finance_admin === "Reject") return bill.remarks;
+  if (bill.audit === "Hold" || bill.audit === "Reject") return bill.remarks2;
+  if (bill.snp === "Hold" || bill.snp === "Reject") return bill.remarks1;
+  return null;
+}
+
+/** When the bill reached the desk it is at now; a desk sees it only after the edit window. */
+export function arrivedAt(bill: Pick<Bill, "stage_entered_at" | "editable_until" | "updated_at" | "created_at">): number {
+  const times = [bill.stage_entered_at, bill.editable_until].map((t) => (t ? Date.parse(t) : NaN)).filter(Number.isFinite);
+  return times.length ? Math.max(...times) : Date.parse(bill.updated_at ?? bill.created_at) || 0;
+}
+
+/** Queue order: the bill that most recently arrived at the desk comes first. */
+export const latestArrivalFirst = (a: Bill, b: Bill) => arrivedAt(b) - arrivedAt(a);
+
+export function canReviewSnp(bill: Bill, code: string | null | undefined, role: string | null | undefined) {
+  return Boolean(code && normaliseRole(role) === "Student Purchase" && bill.status === "Student Purchase"
+    && (bill.snp === "Pending" || bill.snp === "Hold") && code !== bill.employee_id && code !== bill.created_by
+    && !inEditWindow(bill));
+}
+
+/** A calendar day in India, YYYY-MM-DD. */
+export function isoDay(value: string | null | undefined): string | null {
   if (!value) return null;
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const date = new Date(value);

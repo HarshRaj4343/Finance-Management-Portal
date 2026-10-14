@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { queryOne, actorQueryOne, Params } from "@/server/db";
 import { requireRole } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
-import { ROLES, normaliseRole } from "@/lib/roles";
+import { ROLES, ASSIGNABLE_ROLES, normaliseRole } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -25,6 +25,7 @@ export async function PATCH(
     if (b.employee_type !== undefined) {
       const role = normaliseRole(String(b.employee_type));
       if (!ROLES.includes(String(b.employee_type) as (typeof ROLES)[number])) return badRequest("That is not a role we recognise.");
+      if (!ASSIGNABLE_ROLES.includes(role)) return badRequest("The Bill Editor role has been retired. Use Bill Employee, which files and corrects bills.");
 
       // architecture.jpeg puts one person in charge of who is what. This is
       // that gate: a Finance Admin can correct a name or an email, but only

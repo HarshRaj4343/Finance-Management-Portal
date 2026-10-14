@@ -13,7 +13,10 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
   const department = "School of Computing & Electrical Engineering";
   const payload = (f: FormState) => ({ ...toPayload(f), form_data: f, invoice_no: f.billNo, invoice_date: f.billDate,
     date_of_delivery: f.deliveryDate, date_of_installation: f.installRequired === "yes" ? f.installDate : null, submission_key: randomUUID() });
-  const submit = async (p: Record<string, unknown> = payload(billForm()), actor = filer) => (await db.query("select public.fn_submit_bill($1,$2) as bill", [p, actor])).rows[0].bill;
+  const fileBill = async (p: Record<string, unknown> = payload(billForm()), actor = filer) => (await db.query("select public.fn_submit_bill($1,$2) as bill", [p, actor])).rows[0].bill;
+  // Most tests decide straight away, so close the five-minute edit window first.
+  const closeWindow = async (b: { id: string }) => (await db.query("update public.bills set editable_until=now() where id=$1 returning to_jsonb(bills.*) as bill", [b.id])).rows[0].bill;
+  const submit = async (p: Record<string, unknown> = payload(billForm()), actor = filer) => closeWindow(await fileBill(p, actor));
   const decide = async (b: { id: string; revision: number }, role = "Finance Admin", action = "Approved", extra = {}) => {
     const code = role === "Finance Admin" ? "TEST-F" : role === "Audit" ? "TEST-A" : "TEST-S";
     return (await db.query("select public.fn_bill_action($1,$2,$2,$3,$4,$5,$6) as bill", [b.id, code, role, action, action === "Approved" ? null : "Test decision", { ...extra, expected_revision: b.revision }])).rows[0].bill;
@@ -51,7 +54,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     await expect(amend(p)).rejects.toThrow(/hold/);
     b = await decide(b, "Finance Admin", "Hold");
     const next = payload({ ...p.form_data, category: "Major", poValue: "90000", lines: [{ ...p.form_data.lines[0], unitPrice: "90000" }] });
-    b = (await amend(next)).rows[0].bill;
+    b = await closeWindow((await amend(next)).rows[0].bill);
     expect(b).toMatchObject({ status: "Student Purchase", snp: "Pending", audit: null, finance_admin: null, po_value: 90000 });
     await expect(decide(b)).rejects.toThrow(/not Finance Admin/);
     b = await decide(b, "Student Purchase"); expect(b.status).toBe("Audit");
@@ -161,22 +164,23 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     const before = (await db.query("select sum(po_value) as total,count(*) as n from public.bills")).rows[0];
     await db.query(readFileSync("db/migrations/0004_integrity.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0005_bill_form_review.sql", "utf8"));
+    await db.query(readFileSync("db/migrations/0006_edit_window.sql", "utf8"));
     expect((await db.query("select sum(po_value) as total,count(*) as n from public.bills")).rows[0]).toEqual(before);
     await expect(db.query("update public.change_log set actor_code='forged'")).rejects.toThrow(/append-only/);
     expect((await db.query("select count(*)::integer as n from public.pda_balances where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
   });
-  it("matches purchase value to quantity times unit price plus charges without reserving invalid bills", async () => {
+  it("matches purchase value to quantity times unit price, ignoring legacy charges, without reserving invalid bills", async () => {
     const before = (await db.query("select balance,committed,spent from public.pda_balances where employee_id='TEST-U'")).rows[0];
     const counts = (await db.query("select (select count(*) from public.bills) bills,(select count(*) from public.bill_approvals) events")).rows[0];
-    const f = billForm(); f.lines[0].qty = "3"; f.lines[0].unitPrice = "123.45"; f.otherCharges = "10.15";
-    for (const amount of ["380.49", "380.51"]) {
+    const f = billForm(); f.lines[0].qty = "3"; f.lines[0].unitPrice = "123.45";
+    for (const amount of ["370.34", "370.36", "380.50"]) {
       f.poValue = amount;
       await expect(submit(payload(f))).rejects.toThrow(/purchase value/);
     }
     expect((await db.query("select balance,committed,spent from public.pda_balances where employee_id='TEST-U'")).rows[0]).toEqual(before);
     expect((await db.query("select (select count(*) from public.bills) bills,(select count(*) from public.bill_approvals) events")).rows[0]).toEqual(counts);
-    f.poValue = "380.50";
-    const b = await submit(payload(f)); expect(Number(b.po_value)).toBe(380.5);
+    f.poValue = "370.35";
+    const b = await submit(payload(f)); expect(Number(b.po_value)).toBe(370.35);
   });
   it("enforces invoice before delivery and installation even for direct SQL calls, allowing equality", async () => {
     const f = billForm(); f.installRequired = "yes"; f.installDone = "yes"; f.installDate = "2026-01-03";
@@ -232,6 +236,41 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     expect((await db.query("select * from public.bills order by id")).rows).toEqual(beforeBills);
     expect((await db.query("select * from public.bill_approvals order by bill_id,seq")).rows).toEqual(beforeEvents);
     expect((await db.query("select * from public.purchase_register order by id")).rows).toEqual(beforeRegister);
-    expect((await db.query("select count(*)::integer as n from public.change_log where actor_code='demo-seed'")).rows[0].n).toBe(32);
+    expect((await db.query("select count(*)::integer as n from public.change_log where actor_code='demo-seed'")).rows[0].n).toBe(30);
+    expect((await db.query("select count(*)::integer as n from public.employees where employee_code='Bill-edit'")).rows[0].n).toBe(0);
+  });
+  it("keeps a new bill with its filer for the edit window, then lets the desk decide", async () => {
+    const p = payload(billForm("TEST-U", 1200)); let b = await fileBill(p);
+    expect(new Date(b.editable_until).getTime()).toBeGreaterThan(Date.now() + 4 * 60_000);
+    await expect(decide(b)).rejects.toThrow(/correction window/);
+    await expect(db.query("update public.bills set finance_admin='Approved' where id=$1", [b.id])).rejects.toThrow(/correction window/);
+    const before = (await db.query("select balance,committed from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    const next = payload({ ...p.form_data, poValue: "1500", lines: [{ ...p.form_data.lines[0], unitPrice: "1500" }] });
+    b = (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...next, expected_revision: b.revision }, filer])).rows[0].bill;
+    expect(Number(b.po_value)).toBe(1500);
+    const after = (await db.query("select balance,committed from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    expect(Number(after.committed) - Number(before.committed)).toBe(300);
+    b = await closeWindow(b);
+    await expect(db.query("select public.fn_amend_bill($1,$2,$3)", [b.id, { ...next, expected_revision: b.revision }, filer])).rejects.toThrow(/only within/);
+    expect((await decide(b)).status).toBe("Accepted");
+  });
+  it("lets the filer correct a rejected bill, reserving its funds again and restarting the route", async () => {
+    const p = payload(billForm("TEST-U", 2000, "Minor")); let b = await submit(p);
+    b = await decide(b, "Student Purchase", "Rejected");
+    const released = (await db.query("select balance,committed from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    b = (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...p, expected_revision: b.revision }, filer])).rows[0].bill;
+    expect(b).toMatchObject({ status: "Student Purchase", snp: "Pending", decided_at: null, pda_committed: true, noted: false });
+    const reserved = (await db.query("select balance,committed from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    expect(Number(released.balance) - Number(reserved.balance)).toBe(2000);
+    expect(Number(reserved.committed) - Number(released.committed)).toBe(2000);
+    b = await closeWindow(b); b = await decide(b, "Student Purchase"); b = await decide(b);
+    expect(b.status).toBe("Accepted");
+    expect((await db.query("select count(*)::integer as n from public.pda_balances where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
+  });
+  it("refuses to reopen a rejected bill whose invoice was already refiled", async () => {
+    const p = payload(billForm("TEST-U", 700)); let b = await submit(p);
+    b = await decide(b, "Finance Admin", "Rejected");
+    await submit({ ...p, submission_key: randomUUID() });
+    await expect(db.query("select public.fn_amend_bill($1,$2,$3)", [b.id, { ...p, expected_revision: b.revision }, filer])).rejects.toThrow(/already uses this supplier invoice/);
   });
 });

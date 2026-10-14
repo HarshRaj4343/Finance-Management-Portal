@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
-import { canSeeAllBills } from "@/lib/roles";
+import { canSeeAllBills, isApprover } from "@/lib/roles";
 import { findEmployee } from "@/server/employee";
 import { assertBillWriter, billPayload } from "@/server/bill-validation";
 import { pagination } from "@/lib/security";
@@ -19,7 +19,13 @@ const BILL_COLUMNS = `
   date_of_installation, date_of_delivery,
   status, snp, audit, finance_admin, noted,
   remarks, remarks1, remarks2, remarks3, remarks4,
-  decided_at, created_at::text, updated_at::text
+  decided_at, created_at::text, updated_at::text, editable_until,
+  greatest(
+    (select max(a.created_at) from public.bill_approvals a
+      where a.bill_id = bills.id and a.to_status = bills.status
+        and a.from_status is distinct from a.to_status),
+    editable_until
+  ) as stage_entered_at
 `;
 
 /**
@@ -33,6 +39,7 @@ const BILL_COLUMNS = `
  *   ?status=Accepted      by final state
  *   ?employee=E001        one person's bills (approvers only)
  *   ?q=pump               free text over item, supplier, bill number, PO
+ *   ?from=2026-04-01 &to=  filed between these IST dates, inclusive
  *   ?limit= &offset=      paging, default 100
  */
 export async function GET(req: NextRequest) {
@@ -50,6 +57,19 @@ export async function GET(req: NextRequest) {
       where.push(`employee_id = ${params.add(actor.code)}`);
     } else if (p.get("employee")) {
       where.push(`employee_id = ${params.add(p.get("employee")!.trim())}`);
+    }
+
+    // A freshly filed bill stays with its filer for the edit window; the
+    // desks see it only afterwards. fn_bill_window_guard enforces the same.
+    if (isApprover(actor.role)) {
+      where.push("(editable_until is null or editable_until <= now())");
+    }
+
+    for (const [key, op] of [["from", ">="], ["to", "<="]] as const) {
+      const day = p.get(key);
+      if (!day) continue;
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || Number.isNaN(Date.parse(day))) return badRequest("Dates must be YYYY-MM-DD.");
+      where.push(`(created_at at time zone 'Asia/Kolkata')::date ${op} ${params.add(day)}::date`);
     }
 
     if (p.get("stage")) where.push(`status = ${params.add(p.get("stage"))}`);

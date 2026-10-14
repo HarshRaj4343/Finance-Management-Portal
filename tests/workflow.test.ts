@@ -9,6 +9,7 @@ import {
   AUDIT_THRESHOLD,
   ROLES,
   ROLE_HOME,
+  ASSIGNABLE_ROLES,
 } from "@/lib/roles";
 
 /**
@@ -138,6 +139,12 @@ describe("landing pages", () => {
     for (const role of ROLES) {
       expect(real.has(ROLE_HOME[role])).toBe(true);
     }
+  });
+
+  it("sends the retired Bill Editor role to the Bill Employee desk and no longer hands it out", () => {
+    expect(ROLE_HOME["Bill Editor"]).toBe("/apply-bill");
+    expect(ASSIGNABLE_ROLES).not.toContain("Bill Editor");
+    expect(ASSIGNABLE_ROLES).toContain("Bill Employee");
   });
 
   it("never leaves anybody without a destination", () => {

@@ -24,12 +24,16 @@ import {
 import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import BillCard from "@/components/BillCard";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { billDecisionPrompt } from "@/components/confirmBillDecision";
+import { latestArrivalFirst } from "@/lib/bill-review";
 
 /* ---------- Interfaces ---------- */
 import type { Bill } from "@/types/database";
 
 export default function AuditDashboard() {
   const { data: session, status } = useSession();
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
   const [bills, setBills] = useState<Bill[]>([]);
   const [filteredBills, setFilteredBills] = useState<Bill[]>([]);
@@ -148,7 +152,8 @@ export default function AuditDashboard() {
       );
     }
 
-    setFilteredBills(filtered);
+    // Newest arrival at this desk first.
+    setFilteredBills([...filtered].sort(latestArrivalFirst));
   }, [bills, activeFilter, searchQuery, categoryFilter, amountFilter, dateFilter, locationFilter]);
 
   /**
@@ -169,6 +174,13 @@ export default function AuditDashboard() {
       });
       return;
     }
+
+    if (!(await confirm(billDecisionPrompt(bill, action, remark,
+      action === "Approved"
+        ? "The bill moves on to Finance Admin."
+        : action === "Hold"
+        ? "The bill stays at Audit with its funds reserved, and the filer may correct it."
+        : `The bill is rejected and ${money(Number(bill.po_value))} goes back to the applicant's PDA. The filer may correct and resubmit it.`)))) return;
 
     setBusy(bill.id);
     setNotice(null);

@@ -35,11 +35,12 @@ describe("simplified bill formation", () => {
     expect(Number.isNaN(toNum(""))).toBe(true);
   });
 
-  it("calculates the bill from multiple items plus other charges", () => {
+  it("calculates the bill from multiple items, with no separate other charges", () => {
     const f = filled();
     f.lines.push({ ...f.lines[0], qty: "1", unitPrice: "1234.50", qtyIssued: "0" });
-    f.otherCharges = "100";
-    expect(totals(f)).toMatchObject({ itemsSum: 81234.5, total: 81334.5, units: 3, issued: 2 });
+    expect(totals(f)).toMatchObject({ itemsSum: 81234.5, total: 81234.5, units: 3, issued: 2 });
+    expect(totals(f)).not.toHaveProperty("other");
+    expect(f).not.toHaveProperty("otherCharges");
     expect(totals(f)).not.toHaveProperty("poBalance");
   });
 
@@ -61,7 +62,7 @@ describe("simplified bill formation", () => {
       expect(validateStep(5, f, ctx)["f-total"]).toBeTruthy();
       expect(purchaseMatchesTotal(f)).toBe(false);
     }
-    f.otherCharges = "1234.50";
+    f.lines.push({ ...f.lines[0], qty: "1", unitPrice: "1234.50", qtyIssued: "0" });
     f.poValue = "₹ 81,234.50";
     expect(purchaseMatchesTotal(f)).toBe(true);
     expect(validateStep(5, f, ctx)).toEqual({});

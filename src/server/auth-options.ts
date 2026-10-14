@@ -31,7 +31,7 @@ const DEMO_LOGIN_ENABLED =
   (process.env.DEMO_LOGIN_ENABLED === "true" ||
     (!IS_PRODUCTION && process.env.DEMO_LOGIN_ENABLED !== "false"));
 const DEMO_ACCOUNTS = [
-  "Dean", "Finance Admin", "Audit", "SNP", "Bill-form", "Bill-edit",
+  "Dean", "Finance Admin", "Audit", "SNP", "Bill-form",
   "pda manager", "User", "E001", "E002", "E003", "E004", "E005", "E006", "E007", "E008",
 ];
 

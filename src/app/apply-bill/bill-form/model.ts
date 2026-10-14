@@ -35,7 +35,6 @@ export type FormState = {
 
   billNo: string;
   billDate: string;
-  otherCharges: string;
   remarks: string;
 
   delivered: "" | "yes" | "no";
@@ -92,7 +91,6 @@ export const emptyForm = (): FormState => ({
   supplierAddress: "",
   billNo: "",
   billDate: "",
-  otherCharges: "",
   remarks: "",
   delivered: "",
   deliveryDate: "",
@@ -167,15 +165,18 @@ export const lineQty = (l: Line) => {
 };
 export const lineTotal = (l: Line) => r2(lineQty(l) * orZero(toNum(l.unitPrice)));
 
+/**
+ * The bill total is the sum of quantity x unit price. There is no separate
+ * "other charges" field: the filer enters unit prices that already include
+ * freight, packing and similar charges.
+ */
 export function totals(f: FormState) {
   const itemsSum = r2(f.lines.reduce((s, l) => s + lineTotal(l), 0));
-  const basic = itemsSum;
-  const other = orZero(toNum(f.otherCharges));
-  const total = r2(basic + other);
+  const total = itemsSum;
   const units = f.lines.reduce((s, l) => s + lineQty(l), 0);
   const issued = f.lines.reduce((s, l) => s + orZero(toNum(l.qtyIssued)), 0);
   const poValue = toNum(f.poValue);
-  return { itemsSum, basic, other, total, units, issued, poValue };
+  return { itemsSum, total, units, issued, poValue };
 }
 
 export const needsMakeModel = (l: Line, category = "Minor") => Boolean(findItemType(category, l.group, l.type)?.requiresMakeModel);
@@ -237,7 +238,6 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
     if (!f.billDate) e["f-bill-date"] = "Enter the bill date.";
     else if (f.billDate > todayISO()) e["f-bill-date"] = "Bill date cannot be in the future.";
     else if (f.purchaseType === "po" && f.poDate && f.billDate < f.poDate) e["f-bill-date"] = "Bill date cannot be before the PO date.";
-    if (f.otherCharges.trim() && !(toNum(f.otherCharges) >= 0)) e["f-other"] = "Other charges cannot be negative.";
     if (!f.delivered) e["f-delivered"] = "Say whether the goods have been delivered.";
     else if (f.delivered === "yes") {
       if (!f.deliveryDate) e["f-delivery-date"] = "Enter the delivery date.";
@@ -285,7 +285,7 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
       if (l.type === "Miscellaneous" && (!l.descriptionEdited || l.description.trim() === "Miscellaneous")) e[id("description")] = "Describe your custom item.";
 
     });
-    if (T.total > 0 && !purchaseMatchesTotal(f)) e["f-total"] = `Bill total ${inr(T.total)} (quantities × unit prices + other charges) must match purchase value ${inr(T.poValue)}.`;
+    if (T.total > 0 && !purchaseMatchesTotal(f)) e["f-total"] = `Bill total ${inr(T.total)} (quantities × unit prices) must match purchase value ${inr(T.poValue)}.`;
   }
 
   if (step === 4) {
@@ -306,7 +306,7 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
     if (!f.declaration) e["f-declaration"] = "Confirm the declaration to submit.";
     if (!f.totalConfirmed) e["f-total-confirmed"] = "Confirm the total matches the supplier's bill.";
     if (!(T.total > 0)) e["f-total"] = "The bill total must be greater than zero.";
-    else if (!purchaseMatchesTotal(f)) e["f-total"] = "Bill total including quantities and extra charges must match the PO / purchase value.";
+    else if (!purchaseMatchesTotal(f)) e["f-total"] = "Bill total (quantities × unit prices) must match the PO / purchase value.";
 
   }
 
@@ -317,7 +317,7 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
 export function stepOfField(id: string): number {
   if (id === "f-requester") return 0;
   if (/^f-(purchase-type|po-|supplier|address)/.test(id)) return 1;
-  if (/^f-(bill-|other|remarks|deliver|install)/.test(id)) return 2;
+  if (/^f-(bill-|remarks|deliver|install)/.test(id)) return 2;
   if (/^f-(category)/.test(id) || /^line-\d+-(group|type|brand|model|description|qty$|uom|price)/.test(id)) return 3;
   if (/^f-fund/.test(id) || /^line-\d+-(custodian|qty-issued|room|building|floor)/.test(id)) return 4;
   return 5;
@@ -347,7 +347,7 @@ export function toPayload(f: FormState) {
 
   const billDetails = [
     `Bill No. ${f.billNo.trim()} dated ${shortDate(f.billDate)}`,
-    `Amount ${inr(T.basic)}, other ${inr(T.other)}, total ${inr(T.total)}`,
+    `Total ${inr(T.total)}`,
     `Delivered ${shortDate(f.deliveryDate)}`,
     f.installRequired === "yes" ? `Installed ${shortDate(f.installDate)}` : "No installation required",
     f.remarks.trim() && `Remarks: ${f.remarks.trim()}`,

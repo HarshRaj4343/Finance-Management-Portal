@@ -20,7 +20,8 @@ import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import { api, money, qs, when } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
-import { ROLES, normaliseRole, deskLabel, type Role } from "@/lib/roles";
+import { ROLES, ASSIGNABLE_ROLES, normaliseRole, deskLabel, type Role } from "@/lib/roles";
+import { useConfirm } from "@/components/ConfirmProvider";
 import type { Employee, PdaBalanceRow, DepartmentRow } from "@/types/database";
 
 /**
@@ -82,6 +83,7 @@ const LogoIcon = () => (
 
 export default function AdminPage() {
   const { data: session, status } = useSession();
+  const confirm = useConfirm();
   const myRole = normaliseRole((session?.user as { employee_type?: string })?.employee_type);
 
   const [open, setOpen] = useState(false);
@@ -136,6 +138,13 @@ export default function AdminPage() {
   /* -------------------------------------------------------- actions */
 
   const changeRole = async (person: EmployeeWithPda, role: Role) => {
+    if (!(await confirm({
+      title: "Change this person's role?",
+      description: "Their access changes on their next request.",
+      details: [["Employee", `${person.employee_name} (${person.employee_code})`],
+        ["From", deskLabel(normaliseRole(person.employee_type))], ["To", deskLabel(role)]],
+      confirmLabel: "Change role",
+    }))) return;
     setBusy(person.employee_code);
     const { data, error } = await api.patch<{ employee: Employee }>(
       `/api/admin/employees/${encodeURIComponent(person.employee_code)}`,
@@ -159,6 +168,11 @@ export default function AdminPage() {
 
   const saveEdit = async () => {
     if (!editing) return;
+    if (!(await confirm({
+      title: "Save these employee details?",
+      details: [["Employee", `${editing.employee_name} (${editing.employee_code})`], ["Email", editing.email], ["Department", editing.department ?? "—"]],
+      confirmLabel: "Save changes",
+    }))) return;
     setBusy(editing.employee_code);
     const { data, error } = await api.patch<{ employee: Employee }>(
       `/api/admin/employees/${encodeURIComponent(editing.employee_code)}`,
@@ -184,6 +198,13 @@ export default function AdminPage() {
 
   const addPerson = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!(await confirm({
+      title: "Add this employee?",
+      details: [["Name", draft.employee_name], ["Code", draft.employee_code], ["Email", draft.email],
+        ["Department", draft.department || "—"], ["Role", deskLabel(draft.employee_type)],
+        ["PDA allocation", draft.allocated ? money(Number(draft.allocated)) : "None"]],
+      confirmLabel: "Add employee",
+    }))) return;
     setBusy("new");
     const { data, error } = await api.post<{ employee: Employee; note: string | null }>(
       "/api/admin/employees",
@@ -204,14 +225,13 @@ export default function AdminPage() {
   };
 
   const deactivate = async (person: EmployeeWithPda) => {
-    if (
-      !confirm(
-        `Deactivate ${person.employee_name}?\n\n` +
-          "They will not be able to sign in. Their bills, approvals and register " +
-          "entries are kept — those are part of the permanent record."
-      )
-    )
-      return;
+    if (!(await confirm({
+      title: `Deactivate ${person.employee_name}?`,
+      description: "They will not be able to sign in. Their bills, approvals and register entries are kept — those are part of the permanent record.",
+      details: [["Employee", `${person.employee_name} (${person.employee_code})`]],
+      confirmLabel: "Deactivate",
+      tone: "danger",
+    }))) return;
 
     setBusy(person.employee_code);
     const { data, error } = await api.del<{ note: string }>(
@@ -233,6 +253,11 @@ export default function AdminPage() {
       setNotice({ kind: "bad", text: "Enter an amount to add." });
       return;
     }
+    if (!(await confirm({
+      title: "Add to this PDA allocation?",
+      details: [["Employee", `${toppingUp.employee_name} (${toppingUp.employee_code})`], ["Amount", money(amount)]],
+      confirmLabel: "Add funds",
+    }))) return;
     setBusy(toppingUp.employee_code);
     const { data, error } = await api.patch<{ account: PdaBalanceRow }>("/api/admin/pda", {
       employee_id: toppingUp.employee_code,
@@ -257,6 +282,11 @@ export default function AdminPage() {
   };
 
   const openPda = async (person: EmployeeWithPda) => {
+    if (!(await confirm({
+      title: "Open a PDA account?",
+      details: [["Employee", `${person.employee_name} (${person.employee_code})`], ["Starting allocation", money(0)]],
+      confirmLabel: "Open account",
+    }))) return;
     setBusy(person.employee_code);
     const { error } = await api.post("/api/admin/pda", {
       employee_id: person.employee_code,
@@ -571,7 +601,7 @@ export default function AdminPage() {
                     }
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
                   >
-                    {ROLES.map((r) => (
+                    {ASSIGNABLE_ROLES.map((r) => (
                       <option key={r} value={r}>
                         {deskLabel(r)}
                       </option>
@@ -669,8 +699,8 @@ export default function AdminPage() {
                               ROLE_TONE[normaliseRole(p.employee_type)]
                             }`}
                           >
-                            {ROLES.map((r) => (
-                              <option key={r} value={r} className="bg-white text-gray-900">
+                            {[...ASSIGNABLE_ROLES, ...(normaliseRole(p.employee_type) === "Bill Editor" ? ["Bill Editor" as const] : [])].map((r) => (
+                              <option key={r} value={r} className="bg-white text-gray-900" disabled={r === "Bill Editor"}>
                                 {deskLabel(r)}
                               </option>
                             ))}

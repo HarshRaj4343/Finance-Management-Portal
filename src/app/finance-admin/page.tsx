@@ -22,6 +22,9 @@ import { Sidebar, SidebarBody } from "@/components/ui/sidebar";
 import { cn } from "@/lib/utils";
 import EditEmployeeForm from "@/components/EditEmployeeForm";
 import BillCard from "@/components/BillCard";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { billDecisionPrompt } from "@/components/confirmBillDecision";
+import { latestArrivalFirst } from "@/lib/bill-review";
 
 // Allowed departments
 const DEPARTMENTS = [
@@ -113,6 +116,7 @@ type PageView = "dashboard" | "review-bills" | "hold-bills" | "employees";
 
 export default function FinanceAdminDashboard() {
   const { data: session,status} = useSession();
+  const confirm = useConfirm();
   const [open, setOpen] = useState(false);
 
   const [bills, setBills] = useState<Bill[]>([]);
@@ -197,6 +201,11 @@ export default function FinanceAdminDashboard() {
       setNotice({ kind: "bad", text: "That record has no employee code, so it cannot be saved." });
       return;
     }
+    if (!(await confirm({
+      title: "Save these employee details?",
+      details: [["Employee", `${updatedEmployee.employee_name} (${updatedEmployee.employee_code})`], ["Email", updatedEmployee.email], ["Department", updatedEmployee.department ?? "—"]],
+      confirmLabel: "Save changes",
+    }))) return;
 
     const { data, error } = await api.patch<{ employee: Employee }>(
       `/api/admin/employees/${encodeURIComponent(updatedEmployee.employee_code)}`,
@@ -248,6 +257,13 @@ export default function FinanceAdminDashboard() {
       return;
     }
 
+    if (!(await confirm(billDecisionPrompt(bill, action, remark,
+      action === "Approved"
+        ? `This is the final approval: ${money(Number(bill.po_value))} will be debited from the applicant's PDA and entered in the purchase register.`
+        : action === "Hold"
+        ? "The bill stays at Finance Admin with its funds reserved, and the filer may correct it."
+        : `The bill is rejected and ${money(Number(bill.po_value))} goes back to the applicant's PDA. The filer may correct and resubmit it.`)))) return;
+
     setBusy(bill.id);
     setNotice(null);
     const { data, error } = await api.post<{ bill: Bill }>(
@@ -285,7 +301,13 @@ export default function FinanceAdminDashboard() {
    * would orphan records that are meant to be permanent.
    */
   const handleDeleteEmployee = async (code: string) => {
-    if (!confirm("Deactivate this employee? Their financial history will be kept.")) return;
+    if (!(await confirm({
+      title: "Deactivate this employee?",
+      description: "They will no longer be able to sign in. Their financial history will be kept.",
+      details: [["Employee", code]],
+      confirmLabel: "Deactivate",
+      tone: "danger",
+    }))) return;
     const { data, error } = await api.del<{ employee: Employee; note: string }>(
       `/api/admin/employees/${encodeURIComponent(code)}`
     );
@@ -316,6 +338,11 @@ export default function FinanceAdminDashboard() {
       setNotice({ kind: "bad", text: "A name, an email address and an employee code are all required." });
       return;
     }
+    if (!(await confirm({
+      title: "Add this employee?",
+      details: [["Name", newEmployee.employee_name], ["Code", newEmployee.employee_code], ["Email", newEmployee.email], ["Department", newEmployee.department], ["Role", "User"]],
+      confirmLabel: "Add employee",
+    }))) return;
 
     const { data, error } = await api.post<{ employee: Employee; note: string | null }>(
       "/api/admin/employees",
@@ -479,62 +506,34 @@ export default function FinanceAdminDashboard() {
               Finance Admin Dashboard
             </motion.h1>
 
-            {/* Stats Cards */}
+            {/* Stats Cards: each opens the section it counts */}
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-8">
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="rounded-lg bg-white shadow p-6 border"
-              >
-                <h2 className="text-gray-600 text-sm">Total Bills</h2>
-                <p className="text-2xl font-bold text-gray-900">{totalBills}</p>
-                <p className="text-xs text-gray-500 mt-1">All submissions</p>
-              </motion.div>
-
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                className="rounded-lg bg-green-50 shadow p-6 border border-green-200"
-              >
-                <h2 className="text-gray-600 text-sm">Approved</h2>
-                <p className="text-2xl font-bold text-green-700">{approvedCount}</p>
-                <p className="text-xs text-gray-500 mt-1">Ready for payment</p>
-              </motion.div>
-
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.3 }}
-                className="rounded-lg bg-yellow-50 shadow p-6 border border-yellow-200"
-              >
-                <h2 className="text-gray-600 text-sm">Hold</h2>
-                <p className="text-2xl font-bold text-yellow-700">{holdCount}</p>
-                <p className="text-xs text-gray-500 mt-1">Needs attention</p>
-              </motion.div>
-
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.4 }}
-                className="rounded-lg bg-red-50 shadow p-6 border border-red-200"
-              >
-                <h2 className="text-gray-600 text-sm">Rejected</h2>
-                <p className="text-2xl font-bold text-red-700">{rejectCount}</p>
-                <p className="text-xs text-gray-500 mt-1">Not approved</p>
-              </motion.div>
-
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.5 }}
-                className="rounded-lg bg-blue-50 shadow p-6 border border-blue-200"
-              >
-                <h2 className="text-gray-600 text-sm">Pending</h2>
-                <p className="text-2xl font-bold text-blue-700">{pendingCount}</p>
-                <p className="text-xs text-gray-500 mt-1">Awaiting review</p>
-              </motion.div>
+              {[
+                { label: "Total Bills", value: totalBills, hint: "All submissions", tone: "bg-white border-gray-200", text: "text-gray-900",
+                  open: () => window.location.assign("/bills") },
+                { label: "Approved", value: approvedCount, hint: "Ready for payment", tone: "bg-green-50 border-green-200", text: "text-green-700",
+                  open: () => window.location.assign("/bills?finance_admin=Approved") },
+                { label: "Hold", value: holdCount, hint: "Needs attention", tone: "bg-yellow-50 border-yellow-200", text: "text-yellow-700",
+                  open: () => setActivePage("hold-bills") },
+                { label: "Rejected", value: rejectCount, hint: "Not approved", tone: "bg-red-50 border-red-200", text: "text-red-700",
+                  open: () => window.location.assign("/bills?finance_admin=Reject") },
+                { label: "Pending", value: pendingCount, hint: "Awaiting review", tone: "bg-blue-50 border-blue-200", text: "text-blue-700",
+                  open: () => setActivePage("review-bills") },
+              ].map((card, i) => (
+                <motion.button
+                  key={card.label}
+                  type="button"
+                  onClick={card.open}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 * (i + 1) }}
+                  className={`rounded-lg shadow p-6 border text-left cursor-pointer transition hover:shadow-md hover:-translate-y-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${card.tone}`}
+                >
+                  <h2 className="text-gray-600 text-sm">{card.label}</h2>
+                  <p className={`text-2xl font-bold ${card.text}`}>{card.value}</p>
+                  <p className="text-xs text-gray-500 mt-1">{card.hint} →</p>
+                </motion.button>
+              ))}
             </div>
 
             {/* Recent Activity */}
@@ -550,7 +549,7 @@ export default function FinanceAdminDashboard() {
               ) : (
                 <div className="space-y-4">
                   {bills.slice(0, 5).map((bill) => (
-                    <BillCard key={bill.id} bill={bill} showBankGuarantee={true} />
+                    <BillCard key={bill.id} bill={bill} showBankGuarantee={false} />
                   ))}
                 </div>
               )}
@@ -576,6 +575,8 @@ export default function FinanceAdminDashboard() {
                     bill.finance_admin === "Hold" || 
                     (bill.status === "Finance Admin" && (bill.finance_admin === null || bill.finance_admin === undefined))
                   )
+                  // Newest arrival at this desk first, e.g. a bill Store and Purchase just approved.
+                  .sort(latestArrivalFirst)
                   .map((bill, index) => {
                     const locked = bill.finance_admin === "Approved" || bill.finance_admin === "Reject";
 
@@ -586,7 +587,7 @@ export default function FinanceAdminDashboard() {
                         animate={{ opacity: 1, y: 0 }}
                         transition={{ delay: index * 0.05 }}
                       >
-                        <BillCard bill={bill} showBankGuarantee={true} />
+                        <BillCard bill={bill} showBankGuarantee={false} />
 
                         {/* Finance Admin Actions */}
                         {!locked && (

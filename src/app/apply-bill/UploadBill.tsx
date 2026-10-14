@@ -25,6 +25,8 @@ import {
 import { Lookup, StepBill, StepSubmitter, StepSupplier } from "./bill-form/steps-basic";
 import { StepFunding, StepItems } from "./bill-form/steps-items";
 import { StepReview, SummaryPanel } from "./bill-form/review";
+import { useConfirm } from "@/components/ConfirmProvider";
+import { EDIT_WINDOW_MINUTES } from "@/lib/bill-review";
 
 interface UploadBillProps {
   onBillSubmitted: () => void;
@@ -32,7 +34,12 @@ interface UploadBillProps {
   initialBill?: BillRow;
 }
 
-type Done = { id: string; number: string; total: number; status: string; supplier: string; at: Date };
+type Done = { id: string; number: string; total: number; status: string; supplier: string; at: Date; bill: BillRow; editUntil: number };
+
+const countdown = (ms: number) => {
+  const s = Math.ceil(ms / 1000);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+};
 
 const LAST = STEPS.length - 1;
 /** Errors on these only make sense once the person has tried to submit. */
@@ -40,6 +47,7 @@ const DECLARATIONS = ["f-declaration", "f-total-confirmed"];
 
 const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, initialBill }) => {
   const { data: session } = useSession();
+  const confirm = useConfirm();
   const draftKey = `iitm-bill-draft:${session?.user?.id ?? "anon"}:${initialBill ? `${initialBill.id}:${initialBill.revision}` : "new"}`;
 
   const [f, setF] = useState<FormState>(() => initialBill?.form_data ?? {
@@ -56,6 +64,15 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [done, setDone] = useState<Done | null>(null);
+  const [correcting, setCorrecting] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
+  const editLeft = done ? Math.max(0, done.editUntil - clock) : 0;
+  // Count down the edit window on the confirmation screen.
+  useEffect(() => {
+    if (!done || correcting || done.editUntil <= Date.now()) return;
+    const t = setInterval(() => setClock(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [done, correcting]);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [pending, setPending] = useState<Draft | null>(null);
@@ -215,6 +232,18 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
       }
     }
 
+    const T = totals(f);
+    if (!(await confirm({
+      title: initialBill ? "Resubmit this corrected bill?" : "Submit this bill?",
+      description: initialBill
+        ? "Earlier approvals are cleared and the bill starts its approval route again."
+        : `${inr(T.total)} will be reserved against the applicant's PDA.`,
+      details: [["Applicant", `${lookup.name ?? f.requesterName} (${lookup.code ?? f.requesterCode})`],
+        ["Supplier", f.supplierName], ["Invoice", f.billNo], ["Total", inr(T.total)],
+        ["Next", `You can still correct it for ${EDIT_WINDOW_MINUTES} minutes; then it goes to ${deskLabel(routeAfter("Submit", f.category, T.total))}.`]],
+      confirmLabel: initialBill ? "Resubmit" : "Submit bill",
+    }))) return;
+
     setSubmitting(true);
     setSubmitError(null);
     const form = { ...f, requesterCode: lookup.code ?? f.requesterCode, requesterName: lookup.name ?? f.requesterName };
@@ -234,7 +263,13 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
     }
     clearDraft(draftKey);
     lastSaved.current = "";
+    // The server's window is authoritative; fall back to the local clock if it cannot be read.
+    const until = Date.parse(String(data.bill.editable_until ?? ""));
+    setClock(Date.now());
+    setCorrecting(false);
     setDone({
+      bill: data.bill,
+      editUntil: Number.isFinite(until) ? until : Date.now() + EDIT_WINDOW_MINUTES * 60_000,
       id: data.bill.id,
       number: data.bill.bill_number ?? "",
       total: totals(f).total,
@@ -253,6 +288,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
     setAttempted(false);
     setSubmitError(null);
     setDone(null);
+    setCorrecting(false);
     setSavedAt(null);
     lastSaved.current = "";
     setLookup({ state: "idle" });
@@ -262,6 +298,19 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
   // ---------------------------------------------------------------------
   // Confirmation
   // ---------------------------------------------------------------------
+  if (done && correcting && editLeft > 0) {
+    return (
+      <div className="flex h-full min-h-0 w-full flex-col">
+        <div className="mx-auto mb-3 flex w-full max-w-6xl flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900">
+          <span>Editing {done.number || "your bill"} · {countdown(editLeft)} left to save corrections</span>
+          <Button variant="text" onClick={() => setCorrecting(false)}>Back to confirmation</Button>
+        </div>
+        <UploadBill key={`${done.bill.id}:${done.bill.revision}`} initialBill={done.bill} department={department}
+          onBillSubmitted={onBillSubmitted} />
+      </div>
+    );
+  }
+
   if (done) {
     return (
       <div className="mx-auto h-full w-full max-w-2xl overflow-y-auto">
@@ -273,7 +322,12 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
               <h1 className="text-xl font-semibold text-slate-900">Bill submitted</h1>
               <p className="mt-1 text-sm text-slate-600">
                 The bill of {inr(done.total)} has been submitted.
-                It is now with <strong>{deskLabel(done.status)}</strong>.
+                It goes to <strong>{deskLabel(done.status)}</strong> in {EDIT_WINDOW_MINUTES} minutes.
+              </p>
+              <p className="no-print mt-1 text-sm text-slate-600">
+                {editLeft > 0
+                  ? <>Until then you can edit it here or from <strong>Pending Bills</strong>. After that it can be corrected only if a desk holds or rejects it.</>
+                  : <>The edit window has closed. It can now be corrected only if a desk holds or rejects it.</>}
               </p>
             </div>
           </div>
@@ -302,6 +356,11 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
             >
               View Bill
             </a>
+            {editLeft > 0 && (
+              <Button variant="outline" onClick={() => setCorrecting(true)}>
+                Edit Bill <span className="ml-1 tabular-nums text-slate-500">({countdown(editLeft)} left)</span>
+              </Button>
+            )}
             <Button variant="outline" onClick={() => window.print()}>
               Print / Save Acknowledgement as PDF
             </Button>
@@ -331,7 +390,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
         </nav>
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
           <h1 className="text-2xl font-semibold text-slate-900">
-            New Bill{department ? <span className="font-normal text-slate-500"> · {department}</span> : null}
+            {initialBill ? "Correct Bill" : "New Bill"}{department ? <span className="font-normal text-slate-500"> · {department}</span> : null}
           </h1>
           <div className="flex items-center gap-3 text-xs">
             <span className="rounded-full bg-slate-200 px-2.5 py-1 font-medium text-slate-700">Draft</span>

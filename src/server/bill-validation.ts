@@ -15,7 +15,10 @@ export function assertBillWriter(actor: Actor, employeeCode: string, department:
 /** Shape-check before shared validation; never trust a browser's flattened amount. */
 export function validateBillForm(value: unknown): FormState {
   if (!value || typeof value !== "object" || Array.isArray(value)) throw new HttpError(400, "The complete bill form is required.");
-  const raw = value as Record<string, unknown>;
+  // Other charges were removed from the form: unit prices now include them.
+  // Drop the key from older drafts and bills so the database never adds it.
+  const { otherCharges: _legacyCharges, ...raw } = value as Record<string, unknown>;
+  void _legacyCharges;
   for (const [key, template] of Object.entries(emptyForm())) {
     if (key !== "lines" && (typeof raw[key] !== typeof template || (typeof raw[key] === "string" && raw[key].length > 2000))) throw new HttpError(400, `Invalid bill field: ${key}.`);
   }
@@ -32,7 +35,7 @@ export function validateBillForm(value: unknown): FormState {
   for (const date of [form.billDate, form.deliveryDate, ...(form.purchaseType === "po" ? [form.poDate] : []), ...(form.installRequired === "yes" ? [form.installDate] : [])]) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) throw new HttpError(400, "Enter valid calendar dates.");
   }
-  for (const amount of [form.poValue, form.otherCharges || "0", ...form.lines.map((line) => line.unitPrice)]) {
+  for (const amount of [form.poValue, ...form.lines.map((line) => line.unitPrice)]) {
     const number = toNum(amount);
     if (!isMoney(number)) throw new HttpError(400, "Amounts must be finite, within range, and have at most two decimal places.");
   }

@@ -10,7 +10,6 @@ insert into public.employees (employee_code, employee_name, email, department, e
   ('Audit',         'Demo Auditor',          'demo.audit@iitmandi.ac.in',   'Internal Audit',             'Audit'),
   ('SNP',           'Demo Store & Purchase', 'demo.snp@iitmandi.ac.in',     'Store and Purchase Section', 'Student Purchase'),
   ('Bill-form',     'Demo Bill Filer',       'demo.billform@iitmandi.ac.in','Store and Purchase Section', 'Bill Employee'),
-  ('Bill-edit',     'Demo Bill Editor',      'demo.billedit@iitmandi.ac.in','Store and Purchase Section', 'Bill Editor'),
   ('pda manager',   'Demo PDA Manager',      'demo.pda@iitmandi.ac.in',     'Finance and Accounts',       'PDA Manager'),
   ('User',          'Demo User',             'demo.user@iitmandi.ac.in',    'School of Computing & Electrical Engineering', 'User'),
   ('E001', 'Aarav Sharma',   'e001@students.iitmandi.ac.in', 'School of Computing & Electrical Engineering',  'User'),
