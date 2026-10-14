@@ -8,7 +8,6 @@ import {
   IconUsers,
   IconUserPlus,
   IconBook,
-  IconWallet,
   IconAlertCircle,
 } from "@tabler/icons-react";
 import { api, money, qs, when } from "@/lib/api";
@@ -16,6 +15,7 @@ import Notice, { NoticeState } from "@/components/Notice";
 import AppShell from "@/components/AppShell";
 import FilterBar, { FilterField, filterInput } from "@/components/FilterBar";
 import { PageHeader } from "@/components/ui/page";
+import Modal, { btn, Field, fieldClass } from "@/components/ui/modal";
 import { ROLES, ASSIGNABLE_ROLES, normaliseRole, deskLabel, type Role } from "@/lib/roles";
 import { useConfirm } from "@/components/ConfirmProvider";
 import type { Employee, PdaBalanceRow, DepartmentRow } from "@/types/database";
@@ -40,7 +40,7 @@ const ROLE_TONE: Record<Role, string> = {
   "PDA Manager": "bg-green-100 text-green-800",
   "Bill Employee": "bg-indigo-100 text-indigo-800",
   "Bill Editor": "bg-teal-100 text-teal-800",
-  User: "bg-gray-100 text-gray-600",
+  User: "bg-slate-100 text-slate-600",
 };
 
 const BLANK = {
@@ -220,7 +220,7 @@ export default function AdminPage() {
   const topUp = async () => {
     if (!toppingUp) return;
     const amount = Number(topUpAmount);
-    if (!Number.isFinite(amount) || amount === 0) {
+    if (!Number.isFinite(amount) || amount <= 0) {
       setNotice({ kind: "bad", text: "Enter an amount to add." });
       return;
     }
@@ -279,22 +279,22 @@ export default function AdminPage() {
 
   if (status === "loading") {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50">
+      <div className="flex items-center justify-center h-screen bg-slate-50">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        <span className="ml-3 text-gray-600">Loading...</span>
+        <span className="ml-3 text-slate-600">Loading...</span>
       </div>
     );
   }
 
   if (myRole !== "Dean" && myRole !== "Finance Admin") {
     return (
-      <div className="flex items-center justify-center h-screen bg-gray-50 p-4">
+      <div className="flex items-center justify-center h-screen bg-slate-50 p-4">
         <div className="bg-white rounded-lg shadow p-8 text-center max-w-md">
-          <IconAlertCircle className="h-10 w-10 mx-auto mb-3 text-gray-300" />
-          <h1 className="text-xl font-bold text-gray-800 mb-2">
+          <IconAlertCircle className="h-10 w-10 mx-auto mb-3 text-slate-300" />
+          <h1 className="text-xl font-bold text-slate-800 mb-2">
             This page is for the Dean of Finance
           </h1>
-          <p className="text-gray-600 mb-4">You are signed in as {myRole}.</p>
+          <p className="text-slate-600 mb-4">You are signed in as {myRole}.</p>
           <Link
             href="/"
             className="inline-block px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
@@ -411,8 +411,8 @@ export default function AdminPage() {
               onSubmit={addPerson}
               className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm overflow-hidden"
             >
-              <h2 className="font-semibold text-gray-800 mb-1">Add a person</h2>
-              <p className="text-sm text-gray-500 mb-4">
+              <h2 className="font-semibold text-slate-800 mb-1">Add a person</h2>
+              <p className="text-sm text-slate-500 mb-4">
                 Add somebody before their first sign-in, so they land on the right desk
                 straight away instead of the plain user page.
               </p>
@@ -426,7 +426,7 @@ export default function AdminPage() {
                   ] as const
                 ).map(([key, label, hint]) => (
                   <div key={key}>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">
                       {label}
                     </label>
                     <input
@@ -434,20 +434,20 @@ export default function AdminPage() {
                       value={draft[key]}
                       placeholder={hint}
                       onChange={(e) => setDraft({ ...draft, [key]: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                     />
                   </div>
                 ))}
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Department
                   </label>
                   <select
                     required
                     value={draft.department}
                     onChange={(e) => setDraft({ ...draft, department: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="">Choose...</option>
                     {departments.map((d) => (
@@ -459,7 +459,7 @@ export default function AdminPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Role {myRole !== "Dean" && "(Dean only)"}
                   </label>
                   <select
@@ -468,7 +468,7 @@ export default function AdminPage() {
                     onChange={(e) =>
                       setDraft({ ...draft, employee_type: e.target.value as Role })
                     }
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-gray-100 disabled:text-gray-400"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400"
                   >
                     {ASSIGNABLE_ROLES.map((r) => (
                       <option key={r} value={r}>
@@ -479,7 +479,7 @@ export default function AdminPage() {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
                     Opening PDA allocation
                   </label>
                   <input
@@ -488,7 +488,7 @@ export default function AdminPage() {
                     value={draft.allocated}
                     placeholder="0"
                     onChange={(e) => setDraft({ ...draft, allocated: e.target.value })}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -508,51 +508,51 @@ export default function AdminPage() {
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b bg-slate-50 flex items-center gap-2">
             <IconUsers className="h-5 w-5 text-blue-600" />
-            <h2 className="font-semibold text-gray-800">{activeFilter}</h2>
-            <span className="ml-auto text-sm text-gray-500">{shown.length} people</span>
+            <h2 className="font-semibold text-slate-800">{activeFilter}</h2>
+            <span className="ml-auto text-sm text-slate-500">{shown.length} people</span>
           </div>
 
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-3 text-gray-600">Loading people...</span>
+              <span className="ml-3 text-slate-600">Loading people...</span>
             </div>
           ) : shown.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <IconUsers className="h-10 w-10 mx-auto mb-3 text-gray-300" />
+            <div className="text-center py-12 text-slate-500">
+              <IconUsers className="h-10 w-10 mx-auto mb-3 text-slate-300" />
               <p>Nobody matches those filters.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
                   <tr>
                     {["Employee", "Department", "Role", "PDA", "Actions"].map((h) => (
-                      <th
+                      <th scope="col"
                         key={h}
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+                        className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap"
                       >
                         {h}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-slate-200">
                   {shown.map((p) => (
                     <tr
                       key={p.employee_code}
-                      className={`hover:bg-gray-50 ${p.is_active ? "" : "opacity-50"}`}
+                      className={`hover:bg-slate-50 ${p.is_active ? "" : "opacity-50"}`}
                     >
                       <td className="px-4 py-3">
-                        <span className="font-medium text-gray-900">
+                        <span className="font-medium text-slate-900">
                           {p.employee_name}
                         </span>
-                        <span className="block text-xs text-gray-400">
+                        <span className="block text-xs text-slate-500">
                           {p.employee_code} · {p.email}
                         </span>
                       </td>
 
-                      <td className="px-4 py-3 max-w-[14rem] text-gray-600">
+                      <td className="px-4 py-3 max-w-[14rem] text-slate-600">
                         <span className="block truncate" title={p.department}>
                           {p.department}
                         </span>
@@ -569,7 +569,7 @@ export default function AdminPage() {
                             }`}
                           >
                             {[...ASSIGNABLE_ROLES, ...(normaliseRole(p.employee_type) === "Bill Editor" ? ["Bill Editor" as const] : [])].map((r) => (
-                              <option key={r} value={r} className="bg-white text-gray-900" disabled={r === "Bill Editor"}>
+                              <option key={r} value={r} className="bg-white text-slate-900" disabled={r === "Bill Editor"}>
                                 {deskLabel(r)}
                               </option>
                             ))}
@@ -588,10 +588,10 @@ export default function AdminPage() {
                       <td className="min-w-[12rem] px-4 py-3">
                         {p.pda ? (
                           <>
-                            <span className="font-medium text-gray-800">
+                            <span className="font-medium text-slate-800">
                               {money(p.pda.balance)}
                             </span>
-                            <span className="block text-xs text-gray-400">
+                            <span className="block text-xs text-slate-500">
                               free of {money(p.pda.allocated)}
                               {Number(p.pda.committed) > 0 &&
                                 ` · ${money(p.pda.committed)} committed`}
@@ -633,7 +633,7 @@ export default function AdminPage() {
                               Deactivate
                             </button>
                           ) : (
-                            <span className="text-gray-400">Deactivated</span>
+                            <span className="text-slate-500">Deactivated</span>
                           )}
                         </div>
                       </td>
@@ -645,154 +645,60 @@ export default function AdminPage() {
           )}
         </div>
 
-      {/* Edit dialog */}
       {editing && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-lg shadow-xl w-full max-w-lg"
-          >
-            <div className="px-6 py-4 border-b border-gray-200">
-              <h2 className="text-lg font-semibold text-gray-800">
-                Edit {editing.employee_code}
-              </h2>
-              <p className="text-sm text-gray-500 mt-1">
-                The employee code cannot be changed — bills, approvals and register
-                entries all refer to it.
-              </p>
-            </div>
-
-            <div className="px-6 py-4 space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Full name
-                </label>
-                <input
-                  value={editing.employee_name}
-                  onChange={(e) =>
-                    setEditing({ ...editing, employee_name: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Email address
-                </label>
-                <input
-                  value={editing.email}
-                  onChange={(e) => setEditing({ ...editing, email: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Department
-                </label>
-                <select
-                  value={editing.department}
-                  onChange={(e) => setEditing({ ...editing, department: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-                >
-                  {departments.map((d) => (
-                    <option key={d.name} value={d.name}>
-                      {d.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setEditing(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={saveEdit}
-                disabled={busy === editing.employee_code}
-                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                Save
-              </button>
-            </div>
-          </motion.div>
-        </div>
+        <Modal
+          title={`Edit ${editing.employee_code}`}
+          description="The employee code cannot be changed — bills, approvals and register entries all refer to it."
+          onClose={() => setEditing(null)}
+          footer={<>
+            <button onClick={() => setEditing(null)} className={btn.secondary}>Cancel</button>
+            <button onClick={saveEdit} disabled={busy === editing.employee_code} className={btn.primary}>Save changes</button>
+          </>}
+        >
+          <Field label="Full name">
+            <input value={editing.employee_name} onChange={(e) => setEditing({ ...editing, employee_name: e.target.value })} className={fieldClass} autoComplete="name" />
+          </Field>
+          <Field label="Email address">
+            <input type="email" value={editing.email} onChange={(e) => setEditing({ ...editing, email: e.target.value })} className={fieldClass} autoComplete="email" />
+          </Field>
+          <Field label="Department">
+            <select value={editing.department} onChange={(e) => setEditing({ ...editing, department: e.target.value })} className={fieldClass}>
+              {departments.map((d) => <option key={d.name} value={d.name}>{d.name}</option>)}
+            </select>
+          </Field>
+        </Modal>
       )}
 
-      {/* Top-up dialog */}
       {toppingUp && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-lg shadow-xl w-full max-w-md"
-          >
-            <div className="px-6 py-4 border-b border-gray-200 flex items-center gap-2">
-              <IconWallet className="h-5 w-5 text-blue-600" />
-              <h2 className="text-lg font-semibold text-gray-800">
-                Top up {toppingUp.employee_name}
-              </h2>
-            </div>
-
-            <div className="px-6 py-4">
-              {toppingUp.pda && (
-                <dl className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1 mb-4">
-                  {[
-                    ["Allocated", toppingUp.pda.allocated],
-                    ["Free to commit", toppingUp.pda.balance],
-                    ["Committed to bills in progress", toppingUp.pda.committed],
-                    ["Spent", toppingUp.pda.spent],
-                  ].map(([label, value]) => (
-                    <div key={label as string} className="flex justify-between">
-                      <dt className="text-gray-500">{label}</dt>
-                      <dd className="font-medium text-gray-800">
-                        {money(value as number)}
-                      </dd>
-                    </div>
-                  ))}
-                  <p className="border-t pt-2 mt-2 text-xs text-gray-400">
-                    Last changed {when(toppingUp.pda.updated_at)}
-                  </p>
-                </dl>
-              )}
-
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Amount to add to the allocation
-              </label>
-              <input
-                type="number"
-                autoFocus
-                value={topUpAmount}
-                onChange={(e) => setTopUpAmount(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="mt-1 text-xs text-gray-400">
-                A negative number reduces it. It cannot go below what is already
-                committed or spent.
-              </p>
-            </div>
-
-            <div className="px-6 py-4 border-t border-gray-200 flex justify-end gap-3">
-              <button
-                onClick={() => setToppingUp(null)}
-                className="px-4 py-2 border border-gray-300 rounded-lg hover:bg-gray-50"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={topUp}
-                disabled={busy === toppingUp.employee_code}
-                className="px-5 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-              >
-                Add
-              </button>
-            </div>
-          </motion.div>
-        </div>
+        <Modal
+          title={`Top up ${toppingUp.employee_name}`}
+          onClose={() => setToppingUp(null)}
+          size="sm"
+          footer={<>
+            <button onClick={() => setToppingUp(null)} className={btn.secondary}>Cancel</button>
+            <button onClick={topUp} disabled={busy === toppingUp.employee_code} className={btn.primary}>Add funds</button>
+          </>}
+        >
+          {toppingUp.pda && (
+            <dl className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm">
+              {([
+                ["Allocated", toppingUp.pda.allocated],
+                ["Free to commit", toppingUp.pda.balance],
+                ["Committed to bills in progress", toppingUp.pda.committed],
+                ["Spent", toppingUp.pda.spent],
+              ] as const).map(([label, value]) => (
+                <div key={label} className="flex justify-between">
+                  <dt className="text-slate-600">{label}</dt>
+                  <dd className="font-medium tabular-nums text-slate-900">{money(value)}</dd>
+                </div>
+              ))}
+              <p className="mt-2 border-t border-slate-200 pt-2 text-xs text-slate-500">Last changed {when(toppingUp.pda.updated_at)}</p>
+            </dl>
+          )}
+          <Field label="Amount to add (₹)" hint="A positive amount. To reduce an allocation, set it on the PDA Accounts page; it cannot go below what is committed or spent.">
+            <input type="number" min={0} step="0.01" autoFocus value={topUpAmount} onChange={(e) => setTopUpAmount(e.target.value)} className={fieldClass} />
+          </Field>
+        </Modal>
       )}
     </AppShell>
   );

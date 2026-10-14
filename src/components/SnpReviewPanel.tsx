@@ -72,10 +72,10 @@ export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }
     <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm">
       <h3 className="mb-2 font-semibold">Dates recorded in the bill form</h3>
       <dl className="grid gap-3 sm:grid-cols-2">
-        <div><dt className="text-gray-600">Date of Delivery</dt><dd className="font-medium">{dates.delivery ? shortDate(dates.delivery) : "Not recorded in this legacy bill"}</dd></div>
-        <div><dt className="text-gray-600">Date of Installation</dt><dd className="font-medium">{dates.installationNotRequired ? "Not required" : dates.installation ? shortDate(dates.installation) : "Not recorded in this legacy bill"}</dd></div>
+        <div><dt className="text-slate-600">Date of Delivery</dt><dd className="font-medium">{dates.delivery ? shortDate(dates.delivery) : "Not recorded in this legacy bill"}</dd></div>
+        <div><dt className="text-slate-600">Date of Installation</dt><dd className="font-medium">{dates.installationNotRequired ? "Not required" : dates.installation ? shortDate(dates.installation) : "Not recorded in this legacy bill"}</dd></div>
       </dl>
-      <p className="mt-2 text-xs text-gray-600">Read-only applicant facts. {dates.legacy ? "Legacy dates are extracted from the original saved bill text; no records were rewritten." : bill.form_data ? "Copied from the submitted bill form." : "This older bill has no verifiable recorded dates."}</p>
+      <p className="mt-2 text-xs text-slate-600">Read-only applicant facts. {dates.legacy ? "Legacy dates are extracted from the original saved bill text; no records were rewritten." : bill.form_data ? "Copied from the submitted bill form." : "This older bill has no verifiable recorded dates."}</p>
     </div>
     {message && <p role={message.error ? "alert" : "status"} className={`rounded-lg p-3 text-sm ${message.error ? "bg-red-50 text-red-700" : "bg-green-50 text-green-800"}`}>{message.text}</p>}
     {allowed && <fieldset disabled={busy || pending !== null} className="space-y-4 disabled:opacity-70">

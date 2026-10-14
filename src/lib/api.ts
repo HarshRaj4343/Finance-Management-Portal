@@ -80,6 +80,7 @@ export function qs(params: Record<string, string | number | undefined | null>): 
   return s ? `?${s}` : "";
 }
 
+/** ₹1,25,000.00 -- every amount in the portal, Indian digit grouping. */
 export const money = (n: number | string | null | undefined) =>
   "₹" +
   Number(n ?? 0).toLocaleString("en-IN", {
@@ -87,9 +88,28 @@ export const money = (n: number | string | null | undefined) =>
     maximumFractionDigits: 2,
   });
 
-export const when = (ts: string | null | undefined) =>
-  ts
-    ? new Date(ts).toLocaleString("en-IN", {
+/** 1,25,000 -- counts. */
+export const count = (n: number | string | null | undefined) => Number(n ?? 0).toLocaleString("en-IN");
+
+/**
+ * Any timestamp the API returns: ISO, or Postgres text such as
+ * "2026-10-14 21:04:00.12+05:30" / "...+00", which Safari cannot parse as is.
+ * A bare YYYY-MM-DD is a calendar day, not an instant.
+ */
+export function parseTs(ts: string | Date | null | undefined): Date | null {
+  if (!ts) return null;
+  if (ts instanceof Date) return Number.isNaN(ts.getTime()) ? null : ts;
+  const text = /^\d{4}-\d{2}-\d{2}$/.test(ts) ? `${ts}T00:00:00+05:30` : ts.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00");
+  const date = new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** 14 Oct 2026, 09:04 pm -- date and time, always in IST. */
+export const when = (ts: string | Date | null | undefined) => {
+  const d = parseTs(ts);
+  return d
+    ? d.toLocaleString("en-IN", {
+        timeZone: "Asia/Kolkata",
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -97,3 +117,10 @@ export const when = (ts: string | null | undefined) =>
         minute: "2-digit",
       })
     : "—";
+};
+
+/** 14 Oct 2026 -- a calendar day, always in IST. */
+export const dateOnly = (ts: string | Date | null | undefined) => {
+  const d = parseTs(ts);
+  return d ? d.toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "2-digit", month: "short", year: "numeric" }) : "—";
+};

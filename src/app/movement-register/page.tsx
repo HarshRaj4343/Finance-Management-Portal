@@ -7,8 +7,8 @@ import { IconArrowDownLeft, IconArrowUpRight } from "@tabler/icons-react";
 import AppShell, { sharedLinks } from "@/components/AppShell";
 import Notice, { type NoticeState } from "@/components/Notice";
 import FilterBar, { FilterField, filterInput } from "@/components/FilterBar";
-import { EmptyState, LoadingState, PageHeader } from "@/components/ui/page";
-import { api, money, qs, when } from "@/lib/api";
+import { EmptyState, ExportButton, LoadingState, PageHeader } from "@/components/ui/page";
+import { api, money, qs, when, count } from "@/lib/api";
 import { canOpenMovementRegister, deskLabel, homeFor, normaliseRole } from "@/lib/roles";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 
@@ -111,6 +111,7 @@ export default function MovementRegisterPage() {
     >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
       <PageHeader
+        actions={<ExportButton href={"/api/movements" + qs({ register, desk, fy, q: search.trim(), format: "csv" })} />}
         title={inward ? "Inward Register" : "Outward Register"}
         description={inward
           ? "Every bill received at a desk, and where it came from."
@@ -123,7 +124,7 @@ export default function MovementRegisterPage() {
         placeholder="Search by serial, bill number, employee, item or desk"
         onClear={() => { setSearch(""); setFy(""); setDesk(role === "Dean" ? "" : role); setPage(0); }}
         active={Boolean(search || fy || desk !== (role === "Dean" ? "" : role))}
-        summary={`${total.toLocaleString("en-IN")} ${inward ? "inward" : "outward"} entries${desk ? ` at ${deskLabel(desk)}` : " across all desks"}, newest first`}
+        summary={`${count(total)} ${inward ? "inward" : "outward"} entries${desk ? ` at ${deskLabel(desk)}` : " across all desks"}, newest first`}
         actions={
           <select aria-label="Desk" value={desk} onChange={(e) => { setDesk(e.target.value); setPage(0); }} className={`${filterInput} md:w-56`}>
             <option value="">All desks</option>
@@ -147,13 +148,13 @@ export default function MovementRegisterPage() {
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className={th}>{inward ? "Inward no. / received" : "Outward no. / dispatched"}</th>
-                  <th className={th}>Bill</th>
-                  <th className={`${th} text-right`}>Amount</th>
-                  <th className={th}>{inward ? "From" : "To"}</th>
-                  <th className={th}>Movement</th>
-                  {!inward && <th className={th}>At desk</th>}
-                  <th className={th}>Remarks</th>
+                  <th scope="col" className={th}>{inward ? "Inward no. / received" : "Outward no. / dispatched"}</th>
+                  <th scope="col" className={th}>Bill</th>
+                  <th scope="col" className={`${th} text-right`}>Amount</th>
+                  <th scope="col" className={th}>{inward ? "From" : "To"}</th>
+                  <th scope="col" className={th}>Movement</th>
+                  {!inward && <th scope="col" className={th}>At desk</th>}
+                  <th scope="col" className={th}>Remarks</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -191,7 +192,7 @@ export default function MovementRegisterPage() {
           </div>
         </section>
       )}
-      <p className="text-center text-xs text-slate-400">Register entries are permanent. They are written automatically as bills move and cannot be edited or deleted.</p>
+      <p className="text-center text-xs text-slate-500">Register entries are permanent. They are written automatically as bills move and cannot be edited or deleted.</p>
     </AppShell>
   );
 }

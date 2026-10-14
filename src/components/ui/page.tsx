@@ -72,7 +72,7 @@ const STATUS_TEXT: Record<string, string> = { Reject: "Rejected", Hold: "On hold
  * "Audit" render neutral blue: the bill is waiting there.
  */
 export function StatusBadge({ value, className }: { value: string | null | undefined; className?: string }) {
-  if (!value) return <span className="text-sm text-slate-400">—</span>;
+  if (!value) return <span className="text-sm text-slate-500">—</span>;
   const tone = STATUS_TONE[value] ?? "bg-blue-50 text-blue-800 ring-blue-200";
   return (
     <span className={cn("inline-flex items-center whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset", tone, className)}>
@@ -114,5 +114,24 @@ export function LoadingState({ label = "Loading…" }: { label?: string }) {
       <span className="size-6 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" aria-hidden="true" />
       {label}
     </div>
+  );
+}
+
+/**
+ * Download the current view as a spreadsheet. The API applies the same
+ * filters and permissions as the page; Excel opens the CSV directly.
+ */
+export function ExportButton({ href, label = "Download Excel (CSV)" }: { href: string; label?: string }) {
+  return (
+    <a
+      href={href}
+      download
+      className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+    >
+      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+      </svg>
+      {label}
+    </a>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 import React, { useState } from "react";
+import Modal, { btn, Field, fieldClass } from "@/components/ui/modal";
 import { deskLabel } from "@/lib/roles";
 
 // allowed departments
@@ -134,79 +135,39 @@ const EditEmployeeForm: React.FC<EditEmployeeFormProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 flex justify-center items-center z-50">
-      <div className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md transform transition-all">
-        <h2 className="text-3xl font-bold mb-6 text-gray-800">Edit Employee</h2>
-        <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email</label>
-            <input
-              type="email"
-              id="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              className="mt-1 block w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            />
-          </div>
-          <div>
-            <label htmlFor="employee_type" className="block text-sm font-medium text-gray-700">Type</label>
-            <input id="employee_type" readOnly value={deskLabel(formData.employee_type)} className="mt-1 block w-full border rounded-md p-2 bg-gray-50" />
-          </div>
-          <div>
-            <label htmlFor="department" className="block text-sm font-medium text-gray-700">Department</label>
-            <select
-              id="department"
-              name="department"
-              value={formData.department}
-              onChange={handleChange}
-              className="mt-1 block w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            >
-              {DEPARTMENTS.map((d) => (
-                <option key={d} value={d}>
-                  {d}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label htmlFor="employee_code" className="block text-sm font-medium text-gray-700">Code</label>
-            <input
-              type="text"
-              id="employee_code"
-              name="employee_code"
-              value={formData.employee_code}
-              onChange={handleChange}
-              className="mt-1 block w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-            />
-          </div>
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={onCancel}
-              className="mr-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
-              disabled={isSaving}
-            >
-              {isSaving ? (
-                <>
-                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
-                  Saving...
-                </>
-              ) : "Save"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+    <Modal
+      title={`Edit ${formData.employee_name || formData.employee_code}`}
+      description="The employee code and role cannot be changed here; only the Dean assigns roles."
+      onClose={onCancel}
+      footer={<>
+        <button type="button" onClick={onCancel} className={btn.secondary}>Cancel</button>
+        <button type="submit" form="edit-employee" className={btn.primary} disabled={isSaving} aria-busy={isSaving}>
+          {isSaving ? "Saving…" : "Save changes"}
+        </button>
+      </>}
+    >
+      <form id="edit-employee" onSubmit={handleSubmit} className="space-y-4">
+        <Field label="Full name">
+          <input name="employee_name" value={formData.employee_name ?? ""} onChange={handleChange} className={fieldClass} autoComplete="name" required />
+        </Field>
+        <Field label="Email address">
+          <input type="email" name="email" value={formData.email ?? ""} onChange={handleChange} className={fieldClass} autoComplete="email" required />
+        </Field>
+        <Field label="Department">
+          <select name="department" value={formData.department ?? ""} onChange={handleChange} className={fieldClass}>
+            {DEPARTMENTS.map((d) => <option key={d} value={d}>{d}</option>)}
+          </select>
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Employee code">
+            <input readOnly value={formData.employee_code ?? ""} className={fieldClass} />
+          </Field>
+          <Field label="Role">
+            <input readOnly value={deskLabel(formData.employee_type)} className={fieldClass} />
+          </Field>
+        </div>
+      </form>
+    </Modal>
   );
 };
 

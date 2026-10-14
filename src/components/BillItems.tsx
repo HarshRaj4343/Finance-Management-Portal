@@ -15,7 +15,7 @@ export default function BillItems({ bill }: { bill: Bill }) {
     <div className="overflow-x-auto py-3">
       <table className="w-full text-sm border-collapse">
         <caption className="sr-only">Item and price breakdown</caption>
-        <thead><tr>{["Item", "Quantity", "Unit price", "Total", "Issued / custodian / location"].map((title) => <th key={title} className="border-b border-slate-200 px-2 py-2 text-left text-xs font-medium text-slate-500">{title}</th>)}</tr></thead>
+        <thead><tr>{["Item", "Quantity", "Unit price", "Total", "Issued / custodian / location"].map((title) => <th scope="col" key={title} className="border-b border-slate-200 px-2 py-2 text-left text-xs font-medium text-slate-500">{title}</th>)}</tr></thead>
         <tbody>{bill.form_data.lines.map((line, index) => <tr key={index}>
           <td className="border-b border-slate-100 px-2 py-2">{line.description}</td><td className="border-b border-slate-100 px-2 py-2">{line.qty} {line.uom}</td>
           <td className="border-b border-slate-100 px-2 py-2">{money(line.unitPrice.replace(/[₹,\s]/g, ""))}</td><td className="border-b border-slate-100 px-2 py-2">{money(lineTotal(line))}</td>

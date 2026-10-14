@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { query, queryOne, actorQueryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireRole } from "@/server/session";
+import { csvResponse, istStamp, toCsv } from "@/server/csv";
 import { fail, ok, badRequest } from "@/server/http";
 import { isMoney } from "@/lib/security";
 
@@ -46,6 +47,15 @@ export async function GET(req: NextRequest) {
       params.values
     );
 
+    if (p.get("format") === "csv") {
+      type Row = Record<string, unknown>;
+      return csvResponse("pda-accounts.csv", toCsv<Row>([
+        ["Employee ID", (a) => a.employee_id], ["Name", (a) => a.employee_name], ["Department", (a) => a.department],
+        ["Email", (a) => a.email], ["Allocated (INR)", (a) => Number(a.allocated).toFixed(2)],
+        ["Free balance (INR)", (a) => Number(a.balance).toFixed(2)], ["Committed (INR)", (a) => Number(a.committed).toFixed(2)],
+        ["Spent (INR)", (a) => Number(a.spent).toFixed(2)], ["Last updated (IST)", (a) => istStamp(a.updated_at)],
+      ], accounts as Row[]));
+    }
     return ok({ accounts, total: accounts.length });
   } catch (err) {
     return fail(err, "Could not load PDA accounts.");

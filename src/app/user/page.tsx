@@ -2,10 +2,11 @@
 
 import { deskLabel } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
-import { api, money } from "@/lib/api";
+import { api, money, when, dateOnly } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import AppShell from "@/components/AppShell";
+import RouteTracker from "@/components/RouteTracker";
+import Modal, { btn } from "@/components/ui/modal";
 import { EmptyState, LoadingState, PageHeader, StatCard, StatGrid, StatusBadge } from "@/components/ui/page";
 import { useSession } from "next-auth/react";
 import {
@@ -43,8 +44,8 @@ const STEP_TONE: Record<string, { icon: typeof IconCheck; className: string }> =
   Rejected: { icon: IconX, className: "bg-red-100 text-red-800" },
   "On Hold": { icon: IconPlayerPause, className: "bg-orange-100 text-orange-800" },
   "In Progress": { icon: IconRefresh, className: "bg-blue-100 text-blue-800" },
-  Skipped: { icon: IconArrowRight, className: "bg-gray-100 text-gray-800" },
-  Pending: { icon: IconClock, className: "bg-gray-100 text-gray-800" },
+  Skipped: { icon: IconArrowRight, className: "bg-slate-100 text-slate-800" },
+  Pending: { icon: IconClock, className: "bg-slate-100 text-slate-800" },
 };
 
 export default function UserPage() {
@@ -221,7 +222,7 @@ export default function UserPage() {
         id: bill.id,
         employeeId: bill.employee_id,
         employeeName: bill.employee_name,
-        submittedAt: bill.created_at ? new Date(bill.created_at).toLocaleString() : "N/A",
+        submittedAt: when(bill.created_at),
       },
       purchaseDetails: {
         poDetails: bill.po_details,
@@ -289,9 +290,6 @@ export default function UserPage() {
     },
   ];
 
-  const toneFor: Record<string, string> = {
-    approved: "border-l-green-500", rejected: "border-l-red-500", hold: "border-l-amber-500", pending: "border-l-blue-500", unknown: "border-l-slate-400",
-  };
   const badgeFor: Record<string, string> = {
     approved: "Accepted", rejected: "Rejected", hold: "Hold", pending: "Pending", unknown: "",
   };
@@ -334,10 +332,13 @@ export default function UserPage() {
                   const { statusLabel, statusType } = getBillStatus(bill);
                   const remarks = getBillRemarks(bill);
                   return (
-                    <article key={bill.id} className={`flex flex-col rounded-xl border border-l-4 border-slate-200 bg-white p-5 shadow-sm ${toneFor[statusType] ?? toneFor.unknown}`}>
+                    <article key={bill.id} className="flex flex-col rounded-xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-slate-300 hover:shadow-md">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <p className="font-mono text-xs text-slate-500">{bill.bill_number ?? "—"}</p>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <p className="font-mono text-xs text-slate-500">{bill.bill_number ?? "—"}</p>
+                            {badgeFor[statusType] && <StatusBadge value={badgeFor[statusType]} />}
+                          </div>
                           <h3 className="mt-0.5 line-clamp-2 font-semibold text-slate-900">{bill.item_description || "No description available"}</h3>
                           <p className="mt-0.5 truncate text-sm text-slate-600">{bill.supplier_name || "Supplier not recorded"}</p>
                         </div>
@@ -347,12 +348,12 @@ export default function UserPage() {
                       <dl className="mt-4 grid grid-cols-3 gap-3 text-sm">
                         <div><dt className="text-xs text-slate-500">Category</dt><dd>{bill.item_category || "—"}</dd></div>
                         <div><dt className="text-xs text-slate-500">Quantity</dt><dd>{bill.qty || 0}</dd></div>
-                        <div><dt className="text-xs text-slate-500">Filed</dt><dd>{bill.created_at ? new Date(bill.created_at).toLocaleDateString("en-IN") : "—"}</dd></div>
+                        <div><dt className="text-xs text-slate-500">Filed</dt><dd>{dateOnly(bill.created_at)}</dd></div>
                       </dl>
 
-                      <div className="mt-4 flex flex-wrap items-center gap-2 text-sm">
-                        {badgeFor[statusType] && <StatusBadge value={badgeFor[statusType]} />}
-                        <span className="text-slate-700">{statusLabel}</span>
+                      <div className="mt-4 rounded-lg bg-slate-50 px-3 pb-2 pt-3">
+                        <RouteTracker bill={bill} />
+                        <p className="mt-2 text-center text-xs text-slate-600">{statusLabel}</p>
                       </div>
 
                       {remarks.length > 0 && (
@@ -382,139 +383,71 @@ export default function UserPage() {
         </>
       )}
 
-      {/* Detailed Bill Modal */}
-      <AnimatePresence>
-        {selectedBill && (
-          <motion.div
-            className="fixed inset-0 bg-black/50 flex justify-center items-center z-50 p-4"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+      {selectedBill && (() => {
+        const details = formatBillDetails(selectedBill);
+        return (
+          <Modal
+            title={`Bill ${selectedBill.bill_number ?? ""}`.trim()}
+            description={selectedBill.item_description || undefined}
+            onClose={() => setSelectedBill(null)}
+            size="lg"
+            footer={<>
+              <button onClick={() => setSelectedBill(null)} className={btn.secondary}>Close</button>
+              <a href={`/bill/${selectedBill.id}`} className={btn.primary}>Open full bill page</a>
+            </>}
           >
-            <motion.div
-              className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden"
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-            >
-              {/* Modal Header */}
-              <div className="flex justify-between items-center p-6 border-b border-gray-200 bg-gray-50">
-                <h2 className="text-xl font-bold text-gray-900">Bill Details</h2>
-                <button
-                  onClick={() => setSelectedBill(null)}
-                  className="p-2 hover:bg-gray-200 rounded-full transition-colors"
-                  aria-label="Close"
-                >
-                  <IconX size={20} />
-                </button>
-              </div>
-
-              {/* Modal Content */}
-              <div className="p-6 overflow-y-auto max-h-[calc(90vh-100px)]">
-                <div className="space-y-6">
-                  {(() => {
-                    const details = formatBillDetails(selectedBill);
-                    return (
-                      <>
-                        {/* Basic Information */}
-                        <div className="bg-gray-50 rounded-lg p-4">
-                          <h3 className="text-lg font-semibold mb-3 text-gray-800">Basic Information</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                            <div><span className="font-medium">Bill ID:</span> {details.basicInfo.id}</div>
-                            <div><span className="font-medium">Employee:</span> {details.basicInfo.employeeName}</div>
-                            <div><span className="font-medium">Employee ID:</span> {details.basicInfo.employeeId}</div>
-                            <div><span className="font-medium">Submitted:</span> {details.basicInfo.submittedAt}</div>
-                          </div>
-                        </div>
-
-                        {/* Purchase Details */}
-                        <div className="bg-blue-50 rounded-lg p-4">
-                          <h3 className="text-lg font-semibold mb-3 text-gray-800">Purchase Details</h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                            <div><span className="font-medium">PO Details:</span> {details.purchaseDetails.poDetails || "N/A"}</div>
-                            <div><span className="font-medium">Supplier:</span> {details.purchaseDetails.supplierName || "N/A"}</div>
-                            <div><span className="font-medium">Category:</span> {details.purchaseDetails.itemCategory || "N/A"}</div>
-                            <div><span className="font-medium">Quantity:</span> {details.purchaseDetails.quantity || 0}</div>
-                            <div><span className="font-medium">Total Value:</span> ₹{details.purchaseDetails.totalValue?.toLocaleString() || "0"}</div>
-                            <div className="md:col-span-2">
-                              <span className="font-medium">Description:</span> {details.purchaseDetails.itemDescription || "N/A"}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Workflow Progress */}
-                        <div className="bg-green-50 rounded-lg p-4">
-                          <h3 className="text-lg font-semibold mb-3 text-gray-800">Workflow Progress</h3>
-                          <div className="space-y-2 text-sm">
-                            {Object.entries(details.workflowProgress).map(([step, status]) => {
-                              const tone = STEP_TONE[status] ?? STEP_TONE.Pending;
-                              const StepIcon = tone.icon;
-                              return (
-                                <div key={step} className="flex justify-between items-center py-1">
-                                  <span className="font-medium">{step.replace(/_/g, ' ').replace(/step\d+/i, '').replace('StoreAndPurchase', 'Store and Purchase Department').trim()}:</span>
-                                  <span className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${tone.className}`}>
-                                    <StepIcon className="h-3.5 w-3.5 shrink-0" />
-                                    {status}
-                                  </span>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-
-                        {/* Department Remarks */}
-                        {details.departmentRemarks.length > 0 && (
-                          <div className="bg-yellow-50 rounded-lg p-4">
-                            <h3 className="text-lg font-semibold mb-3 text-gray-800">Department Remarks</h3>
-                            <div className="space-y-3">
-                              {details.departmentRemarks.map((remark, idx) => (
-                                <div key={idx} className="bg-white rounded-lg p-3 border-l-4 border-yellow-400">
-                                  <div className="font-semibold text-gray-800 mb-1">
-                                    Remark by {remark.department}:
-                                  </div>
-                                  <div className="text-gray-700 text-sm">
-                                    {remark.remark}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Current Status */}
-                        <div className={`rounded-lg p-4 ${
-                          details.currentStatus.statusType === "approved" ? "bg-green-50" :
-                          details.currentStatus.statusType === "rejected" ? "bg-red-50" :
-                          details.currentStatus.statusType === "hold" ? "bg-orange-50" :
-                          "bg-blue-50"
-                        }`}>
-                          <h3 className="text-lg font-semibold mb-3 text-gray-800">Current Status</h3>
-                          <div className="space-y-2 text-sm">
-                            <div><span className="font-medium">Overall Status:</span> {details.currentStatus.overall}</div>
-                            <div><span className="font-medium">Store and Purchase Department Status:</span> {details.currentStatus.snpStatus}</div>
-                            <div><span className="font-medium">Audit Status:</span> {details.currentStatus.auditStatus}</div>
-                            <div><span className="font-medium">Finance Admin Status:</span> {details.currentStatus.financeAdminStatus}</div>
-                            <div className="pt-2">
-                              <span className={`inline-block px-3 py-2 rounded-lg font-bold text-sm ${
-                                details.currentStatus.statusType === "approved" ? "bg-green-200 text-green-800" :
-                                details.currentStatus.statusType === "rejected" ? "bg-red-200 text-red-800" :
-                                details.currentStatus.statusType === "hold" ? "bg-orange-200 text-orange-800" :
-                                "bg-blue-200 text-blue-800"
-                              }`}>
-                                {details.currentStatus.displayStatus}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    );
-                  })()}
+            <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              {([
+                ["Applicant", `${details.basicInfo.employeeName ?? ""} (${details.basicInfo.employeeId})`],
+                ["Filed", details.basicInfo.submittedAt],
+                ["Supplier", details.purchaseDetails.supplierName || "—"],
+                ["PO", details.purchaseDetails.poDetails || "—"],
+                ["Category", details.purchaseDetails.itemCategory || "—"],
+                ["Quantity", String(details.purchaseDetails.quantity ?? 0)],
+                ["Amount", money(details.purchaseDetails.totalValue)],
+                ["Status", details.currentStatus.displayStatus],
+              ] as const).map(([label, value]) => (
+                <div key={label}>
+                  <dt className="text-xs text-slate-500">{label}</dt>
+                  <dd className="text-slate-900">{value}</dd>
                 </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              ))}
+            </dl>
+
+            <section aria-label="Approval progress">
+              <h3 className="mb-2 text-sm font-semibold text-slate-900">Approval progress</h3>
+              <ol className="space-y-1.5 text-sm">
+                {Object.entries(details.workflowProgress).map(([step, status]) => {
+                  const tone = STEP_TONE[status] ?? STEP_TONE.Pending;
+                  const StepIcon = tone.icon;
+                  return (
+                    <li key={step} className="flex items-center justify-between gap-3">
+                      <span className="text-slate-700">{step.replace(/_/g, " ").replace(/step\d+/i, "").replace("StoreAndPurchase", "Store and Purchase Department").replace("FinalApproval", "Final approval").replace("FinanceAdmin", "Finance Admin").trim()}</span>
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${tone.className}`}>
+                        <StepIcon className="size-3.5 shrink-0" aria-hidden="true" />
+                        {status}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ol>
+            </section>
+
+            {details.departmentRemarks.length > 0 && (
+              <section aria-label="Remarks">
+                <h3 className="mb-2 text-sm font-semibold text-slate-900">Remarks</h3>
+                <div className="space-y-2">
+                  {details.departmentRemarks.map((remark, idx) => (
+                    <p key={idx} className="rounded-lg border-l-4 border-slate-300 bg-slate-50 px-3 py-2 text-sm text-slate-700">
+                      <span className="font-medium text-slate-900">{remark.department}:</span> {remark.remark}
+                    </p>
+                  ))}
+                </div>
+              </section>
+            )}
+          </Modal>
+        );
+      })()}
     </AppShell>
   );
 }

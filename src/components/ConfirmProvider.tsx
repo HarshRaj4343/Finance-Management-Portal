@@ -48,10 +48,10 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
           <AlertDialogTitle>{asking?.title}</AlertDialogTitle>
           <AlertDialogDescription>{asking?.description ?? "Please confirm before you continue."}</AlertDialogDescription>
           {asking?.details && asking.details.length > 0 && (
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg bg-gray-50 p-3 text-sm">
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-lg bg-slate-50 p-3 text-sm">
               {asking.details.map(([label, value]) => (
                 <div key={label} className="contents">
-                  <dt className="text-gray-600">{label}</dt>
+                  <dt className="text-slate-600">{label}</dt>
                   <dd className="break-words whitespace-pre-wrap font-medium">{value}</dd>
                 </div>
               ))}

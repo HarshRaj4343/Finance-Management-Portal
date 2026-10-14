@@ -11,8 +11,8 @@ import DeskReviewPanel from "@/components/DeskReviewPanel";
 import { canReviewDesk } from "@/lib/bill-review";
 import { billCorrections, type Revision } from "@/lib/bill-changes";
 import AppShell, { sharedLinks } from "@/components/AppShell";
-import { LoadingState } from "@/components/ui/page";
-import { api, money, when } from "@/lib/api";
+import { LoadingState, StatusBadge } from "@/components/ui/page";
+import { api, dateOnly, money, when } from "@/lib/api";
 import type { Bill, BillApproval, RegisterEntry, Employee } from "@/types/database";
 
 /**
@@ -51,7 +51,7 @@ const statusColor = (status: string) => {
     case "Student Purchase":
       return "text-purple-600 bg-purple-100";
     default:
-      return "text-gray-600 bg-gray-100";
+      return "text-slate-600 bg-slate-100";
   }
 };
 
@@ -68,7 +68,7 @@ const dotColor = (action: string) => {
     case "Registered":
       return "bg-blue-600";
     default:
-      return "bg-gray-300";
+      return "bg-slate-300";
   }
 };
 
@@ -170,7 +170,7 @@ export default function BillDetailsPage() {
             Register entry <strong>{register.serial_no}</strong>
           </span>
         )}
-        <span className="text-sm text-gray-500">
+        <span className="text-sm text-slate-500">
           Filed {when(bill.created_at)}
           {bill.decided_at && ` · decided ${when(bill.decided_at)}`}
         </span>
@@ -229,12 +229,12 @@ export default function BillDetailsPage() {
       </section>
       {/* Approval route */}
       <div className="mb-6 print:hidden">
-        <p className="text-sm font-medium text-gray-700 mb-2">
+        <p className="text-sm font-medium text-slate-700 mb-2">
           Approval route for a {bill.item_category?.toLowerCase()} purchase of{" "}
           {money(bill.po_value)}
         </p>
         <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span className="px-2.5 py-1 rounded bg-gray-100 text-gray-600">Filed</span>
+          <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-600">Filed</span>
           {route.map((stop) => {
             const passed =
               events.some((e) => e.stage === stop && e.action === "Approved" && e.seq >
@@ -245,7 +245,7 @@ export default function BillDetailsPage() {
             );
             return (
               <React.Fragment key={deskLabel(stop)}>
-                <svg className="h-4 w-4 shrink-0 text-gray-300" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <svg className="h-4 w-4 shrink-0 text-slate-300" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                   <path d="M5 12h14M13 6l6 6-6 6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
                 <span
@@ -256,7 +256,7 @@ export default function BillDetailsPage() {
                       ? "bg-blue-600 text-white"
                       : passed
                       ? "bg-green-100 text-green-800"
-                      : "bg-gray-100 text-gray-400"
+                      : "bg-slate-100 text-slate-500"
                   }`}
                 >
                   {deskLabel(stop)}
@@ -267,52 +267,68 @@ export default function BillDetailsPage() {
         </div>
       </div>
 
-      {/* Details, in the original two-column layout */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3 text-sm">
-        <p><strong>Bill Number:</strong> {formatValue(bill.bill_number)}</p>
-        <p><strong>Employee ID:</strong> {formatValue(bill.employee_id)}</p>
-        <p><strong>Employee Name:</strong> {formatValue(applicant?.employee_name ?? bill.employee_name)}</p>
-        <p><strong>Department:</strong> {formatValue(bill.employee_department)}</p>
-        <p><strong>PO Details:</strong> {formatValue(bill.po_details)}</p>
-        <p><strong>PO Value:</strong> {money(bill.po_value)}</p>
-        <p><strong>Supplier Name:</strong> {formatValue(bill.supplier_name)}</p>
-        <p><strong>Supplier Address:</strong> {formatValue(bill.supplier_address)}</p>
-        <p><strong>Item Category:</strong> {formatValue(bill.item_category)}</p>
-        <p><strong>Item Description:</strong> {formatValue(bill.item_description)}</p>
-        <p><strong>Quantity:</strong> {formatValue(bill.qty)}</p>
-        <p><strong>Quantity Issued:</strong> {formatValue(bill.qty_issued)}</p>
-        <p><strong>Indenter Name:</strong> {formatValue(bill.indenter_name)}</p>
-        <p><strong>Bill Details:</strong> {formatValue(bill.bill_details)}</p>
-        <p><strong>Source of Fund:</strong> {formatValue(bill.source_of_fund)}</p>
-        <p><strong>Stock Entry:</strong> {formatValue(bill.stock_entry)}</p>
-        <p><strong>Location:</strong> {formatValue(bill.location)}</p>
-        <p><strong>Status:</strong> {formatValue(deskLabel(bill.status))}</p>
-        <p><strong>Store and Purchase Department:</strong> {formatValue(bill.snp)}</p>
-        <p><strong>Audit:</strong> {formatValue(bill.audit)}</p>
-        <p><strong>Finance Admin:</strong> {formatValue(bill.finance_admin)}</p>
-        <p><strong>Noted:</strong> {formatValue(bill.noted)}</p>
-        <p><strong>Created At:</strong> {when(bill.created_at)}</p>
+      {/* Details, grouped the way the print sheet groups them */}
+      <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+        {([
+          ["Applicant", [
+            ["Name", applicant?.employee_name ?? bill.employee_name],
+            ["Employee ID", bill.employee_id],
+            ["Department", bill.employee_department],
+            ["Email", applicant?.email],
+            ["Filed", when(bill.created_at)],
+          ]],
+          ["Supplier and invoice", [
+            ["Supplier", bill.supplier_name],
+            ["Address", bill.supplier_address],
+            ["Invoice", bill.invoice_no ? `${bill.invoice_no} · ${dateOnly(bill.invoice_date)}` : null],
+            ["PO", bill.po_details],
+            ["Delivered / installed", `${dateOnly(bill.date_of_delivery)} / ${bill.date_of_installation ? dateOnly(bill.date_of_installation) : "Not required"}`],
+          ]],
+          ["Funding and stock", [
+            ["Amount", money(bill.po_value)],
+            ["Source of fund", bill.source_of_fund],
+            ["Charged to", bill.funding_pool && bill.funding_pool !== "PDA" ? `Institute ${bill.funding_pool} budget, ${bill.funding_fy}` : `PDA of ${bill.employee_id}`],
+            ["Category", bill.item_category],
+            ["Quantity / issued", `${bill.qty ?? "—"} / ${bill.qty_issued ?? "—"}`],
+            ["Stock entry", bill.stock_entry],
+            ["Location", bill.location],
+          ]],
+        ] as const).map(([heading, rows]) => (
+          <section key={heading} aria-label={heading} className="rounded-xl border border-slate-200 p-4">
+            <h2 className="mb-2 text-sm font-semibold text-slate-900">{heading}</h2>
+            <dl className="space-y-1.5 text-sm">
+              {rows.map(([label, value]) => (
+                <div key={label} className="grid grid-cols-[9rem_1fr] gap-2">
+                  <dt className="text-slate-500">{label}</dt>
+                  <dd className="break-words text-slate-900">{formatValue(value)}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
+        ))}
+        <section aria-label="Desk decisions" className="rounded-xl border border-slate-200 p-4">
+          <h2 className="mb-2 text-sm font-semibold text-slate-900">Desk decisions</h2>
+          <dl className="space-y-1.5 text-sm">
+            {([["Store and Purchase", bill.snp], ["Audit", bill.audit], ["Finance Admin", bill.finance_admin]] as const).map(([desk, state]) => (
+              <div key={desk} className="grid grid-cols-[9rem_1fr] items-center gap-2">
+                <dt className="text-slate-500">{desk}</dt>
+                <dd>{state ? <StatusBadge value={state} /> : <span className="text-slate-500">Not on this bill&apos;s route</span>}</dd>
+              </div>
+            ))}
+            {bill.has_bank_guarantee && (
+              <div className="grid grid-cols-[9rem_1fr] gap-2">
+                <dt className="text-slate-500">Bank guarantee</dt>
+                <dd className="text-slate-900">{money(bill.bank_guarantee_amount)} · {formatValue(bill.bank_guarantee_details)}</dd>
+              </div>
+            )}
+          </dl>
+        </section>
       </div>
-
-      {/* Bank guarantee, only when there is one */}
-      {bill.has_bank_guarantee && (
-        <>
-          <h3 className="text-lg font-semibold text-gray-800 mt-8 mb-3">
-            Bank Guarantee
-          </h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-10 gap-y-3 text-sm">
-            <p><strong>Reference:</strong> {formatValue(bill.bank_guarantee_details)}</p>
-            <p><strong>Amount:</strong> {bill.bank_guarantee_amount ? money(bill.bank_guarantee_amount) : "—"}</p>
-            <p><strong>Delivery Due:</strong> {when(bill.date_of_delivery)}</p>
-            <p><strong>Installation Due:</strong> {when(bill.date_of_installation)}</p>
-          </div>
-        </>
-      )}
 
       {/* Register entry */}
       {register && (
         <>
-          <h3 className="text-lg font-semibold text-gray-800 mt-8 mb-3">
+          <h3 className="text-lg font-semibold text-slate-800 mt-8 mb-3">
             Register Entry
           </h3>
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
@@ -324,7 +340,7 @@ export default function BillDetailsPage() {
               <p><strong>Department Register:</strong> {register.department}</p>
               <p><strong>Amount:</strong> {money(register.amount)}</p>
             </div>
-            <p className="text-xs text-gray-500 mt-3 pt-3 border-t border-blue-200">
+            <p className="text-xs text-slate-500 mt-3 pt-3 border-t border-blue-200">
               This purchase is recorded permanently in the {register.department} register.
               Register entries cannot be edited or deleted.
             </p>
@@ -333,13 +349,13 @@ export default function BillDetailsPage() {
       )}
 
       {/* History */}
-      <h3 className="text-lg font-semibold text-gray-800 mt-8 mb-1">History</h3>
-      <p className="text-xs text-gray-500 mb-5">
+      <h3 className="text-lg font-semibold text-slate-800 mt-8 mb-1">History</h3>
+      <p className="text-xs text-slate-500 mb-5">
         Every step this bill took, in order. This log is append-only — entries cannot be
         edited or removed once written.
       </p>
 
-      <ol className="relative space-y-6 border-l border-gray-200 pl-6 ml-2">
+      <ol className="relative space-y-6 border-l border-slate-200 pl-6 ml-2">
         {events.map((e) => (
           <li key={e.id} className="relative">
             <span
@@ -348,18 +364,18 @@ export default function BillDetailsPage() {
               )}`}
             />
             <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
-              <span className="font-medium text-gray-900 text-sm">
+              <span className="font-medium text-slate-900 text-sm">
                 {e.action === "Forwarded" ||
                 e.action === "Registered" ||
                 e.action === "Notified"
                   ? deskLabel(e.remark)
                   : `${deskLabel(e.stage)} — ${e.action}`}
               </span>
-              <span className="text-xs text-gray-400">{when(e.created_at)}</span>
+              <span className="text-xs text-slate-500">{when(e.created_at)}</span>
             </div>
 
             {e.actor_name && (
-              <p className="mt-0.5 text-sm text-gray-500">
+              <p className="mt-0.5 text-sm text-slate-500">
                 {e.actor_name}
                 {e.actor_code ? ` (${e.actor_code})` : ""}
                 {e.actor_role ? ` · ${deskLabel(e.actor_role)}` : ""}
@@ -370,7 +386,7 @@ export default function BillDetailsPage() {
               e.action !== "Forwarded" &&
               e.action !== "Registered" &&
               e.action !== "Notified" && (
-                <p className="mt-1.5 bg-gray-50 border-l-2 border-gray-200 px-3 py-2 text-sm text-gray-700 rounded-r">
+                <p className="mt-1.5 bg-slate-50 border-l-2 border-slate-200 px-3 py-2 text-sm text-slate-700 rounded-r">
                   {deskLabel(e.remark)}
                 </p>
               )}
@@ -385,7 +401,7 @@ export default function BillDetailsPage() {
             <QRCode value={qrUrl} size={150} />
           </div>
         )}
-        <p className="text-xs text-gray-500 text-center">
+        <p className="text-xs text-slate-500 text-center">
           Scan to reopen this record. Signing in is required.
         </p>
       </div>

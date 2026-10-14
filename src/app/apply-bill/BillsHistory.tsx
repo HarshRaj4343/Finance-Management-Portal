@@ -1,6 +1,6 @@
 // BillsHistory.tsx
 import React, { useState } from "react";
-import { api, money } from "@/lib/api";
+import { api, money, dateOnly } from "@/lib/api";
 import { Bill } from "./types";
 import EditBillModal from "./EditBillModal";
 import { useConfirm } from "@/components/ConfirmProvider";
@@ -83,12 +83,12 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
-                <th className={th}>Bill</th>
-                <th className={`${th} text-right`}>Amount</th>
-                <th className={th}>Rejected by</th>
-                <th className={th}>Reason</th>
-                <th className={th}>Filed</th>
-                {(enableEdit || allowNote) && <th className={th}><span className="sr-only">Actions</span></th>}
+                <th scope="col" className={th}>Bill</th>
+                <th scope="col" className={`${th} text-right`}>Amount</th>
+                <th scope="col" className={th}>Rejected by</th>
+                <th scope="col" className={th}>Reason</th>
+                <th scope="col" className={th}>Filed</th>
+                {(enableEdit || allowNote) && <th scope="col" className={th}><span className="sr-only">Actions</span></th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -102,7 +102,7 @@ const BillsHistory: React.FC<BillsHistoryProps> = ({
                   <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{money(bill.po_value)}</td>
                   <td className="px-4 py-3"><StatusBadge value={rejectedBy(bill)} /></td>
                   <td className="min-w-[16rem] max-w-md px-4 py-3 text-slate-700">{deskRemark(bill) ?? "—"}</td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{new Date(bill.created_at).toLocaleDateString("en-IN")}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{dateOnly(bill.created_at)}</td>
                   {(enableEdit || allowNote) && (
                     <td className="whitespace-nowrap px-4 py-3 text-right">
                       {enableEdit && (

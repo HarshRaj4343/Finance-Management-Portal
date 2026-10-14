@@ -1,7 +1,6 @@
 "use client";
 import { useSession } from "next-auth/react";
 import React, { useEffect, useState } from "react";
-import { motion, AnimatePresence } from "motion/react";
 import { api } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import { normaliseRole, deskLabel } from "@/lib/roles";
@@ -14,6 +13,7 @@ import {
 import DeskQueue from "@/components/DeskQueue";
 import { PageHeader, Panel } from "@/components/ui/page";
 import EditEmployeeForm from "@/components/EditEmployeeForm";
+import Modal, { btn, Field, fieldClass } from "@/components/ui/modal";
 import { useConfirm } from "@/components/ConfirmProvider";
 
 // Allowed departments
@@ -285,11 +285,11 @@ export default function FinanceAdminDashboard() {
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th className={th}>Employee</th>
-                  <th className={th}>Email</th>
-                  <th className={th}>Role</th>
-                  <th className={th}>Department</th>
-                  <th className={th}><span className="sr-only">Actions</span></th>
+                  <th scope="col" className={th}>Employee</th>
+                  <th scope="col" className={th}>Email</th>
+                  <th scope="col" className={th}>Role</th>
+                  <th scope="col" className={th}>Department</th>
+                  <th scope="col" className={th}><span className="sr-only">Actions</span></th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -318,97 +318,34 @@ export default function FinanceAdminDashboard() {
             </table>
           </Panel>
         </>
-      {/* Add Employee Modal */}
-      <AnimatePresence>
-        {showAddEmployeeForm && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/60 flex justify-center items-center z-50"
-          >
-            <motion.div
-              initial={{ y: -50, opacity: 0 }}
-              animate={{ y: 0, opacity: 1 }}
-              exit={{ y: -50, opacity: 0 }}
-              className="bg-white p-8 rounded-xl shadow-2xl w-full max-w-md"
-            >
-              <h2 className="text-3xl font-bold mb-6 text-gray-800">Add New Employee</h2>
-              <form onSubmit={handleAddEmployee} className="space-y-6">
-                <div>
-                  <label htmlFor="employee_name" className="block text-sm font-medium text-gray-700">Name</label>
-                  <input
-                    type="text"
-                    id="employee_name"
-                    name="employee_name"
-                    value={newEmployee.employee_name}
-                    onChange={handleNewEmployeeChange}
-                    className="mt-1 block w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="email" className="block text-sm font-medium text-gray-700">Email</label>
-                  <input
-                    type="email"
-                    id="email"
-                    name="email"
-                    value={newEmployee.email}
-                    onChange={handleNewEmployeeChange}
-                    className="mt-1 block w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                    required
-                  />
-                </div>
-                <div>
-                  <label htmlFor="employee_type" className="block text-sm font-medium text-gray-700">Employee Type</label>
-                  <input id="employee_type" value="User" readOnly className="mt-1 block w-full p-3 bg-gray-50 border rounded-md" />
-                  <p className="text-xs text-gray-500 mt-1">Only the Dean can assign workflow roles.</p>
-                </div>
-                <div>
-                  <label htmlFor="department" className="block text-sm font-medium text-gray-700">Department</label>
-                  <select
-                    id="department"
-                    name="department"
-                    value={newEmployee.department}
-                    onChange={handleNewEmployeeChange}
-                    className="mt-1 block w-full px-4 py-3 bg-gray-50 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  >
-                    {DEPARTMENTS.map((dept) => (
-                      <option key={dept} value={dept}>{dept}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label htmlFor="employee_code" className="block text-sm font-medium text-gray-700">Employee Code</label>
-                  <input
-                    type="text"
-                    id="employee_code"
-                    name="employee_code"
-                    value={newEmployee.employee_code}
-                    onChange={handleNewEmployeeChange}
-                    className="mt-1 block w-full px-4 py-3 bg-gray-50 aorder border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                  />
-                </div>
-                <div className="flex justify-end pt-4">
-                  <button
-                    type="button"
-                    onClick={() => setShowAddEmployeeForm(false)}
-                    className="mr-2 px-4 py-2 bg-gray-200 text-gray-800 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-                  >
-                    Add Employee
-                  </button>
-                </div>
-              </form>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {showAddEmployeeForm && (
+        <Modal
+          title="Add a new employee"
+          description="New people start as plain users. Only the Dean assigns workflow roles."
+          onClose={() => setShowAddEmployeeForm(false)}
+          footer={<>
+            <button type="button" onClick={() => setShowAddEmployeeForm(false)} className={btn.secondary}>Cancel</button>
+            <button type="submit" form="add-employee" className={btn.primary}>Add employee</button>
+          </>}
+        >
+          <form id="add-employee" onSubmit={handleAddEmployee} className="space-y-4">
+            <Field label="Full name">
+              <input name="employee_name" value={newEmployee.employee_name} onChange={handleNewEmployeeChange} className={fieldClass} autoComplete="name" required />
+            </Field>
+            <Field label="Email address">
+              <input type="email" name="email" value={newEmployee.email} onChange={handleNewEmployeeChange} className={fieldClass} autoComplete="email" required />
+            </Field>
+            <Field label="Employee code" hint="Their LDAP ID, e.g. ADM012 or B24101.">
+              <input name="employee_code" value={newEmployee.employee_code} onChange={handleNewEmployeeChange} className={fieldClass} required />
+            </Field>
+            <Field label="Department">
+              <select name="department" value={newEmployee.department} onChange={handleNewEmployeeChange} className={fieldClass}>
+                {DEPARTMENTS.map((dept) => <option key={dept} value={dept}>{dept}</option>)}
+              </select>
+            </Field>
+          </form>
+        </Modal>
+      )}
 
       {editingEmployee && (
         <EditEmployeeForm

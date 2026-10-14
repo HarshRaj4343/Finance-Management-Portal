@@ -11,6 +11,8 @@ import type { DefaultSession } from "next-auth";
  */
 declare module "next-auth" {
   interface Session {
+    /** When this sign-in began (ms); it ends SESSION_MAX_MS later. */
+    signedInAt?: number;
     user: {
       id: string;
       username: string;

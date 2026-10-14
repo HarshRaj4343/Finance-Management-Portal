@@ -6,7 +6,7 @@ import { api, money, when } from "@/lib/api";
 import { billScopeQuery } from "@/lib/roles";
 import { Bill } from "./types";
 import EditBillModal from "./EditBillModal";
-import { StatusBadge } from "@/components/ui/page";
+import { PageHeader, StatusBadge } from "@/components/ui/page";
 import { canCorrectBill, deskRemark, editWindowLeft, heldAtCurrentDesk } from "@/lib/bill-review";
 
 const countdown = (ms: number) => {
@@ -63,21 +63,18 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
 
   return (
     <div className="mx-auto w-full max-w-6xl">
-      <h1 className="mb-1 text-2xl font-semibold text-slate-900">Pending Bills</h1>
-      <p className="mb-5 text-sm text-slate-500">
-        Bills you have filed that are still waiting on a desk.
-      </p>
-      {error && <p className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 text-sm text-red-900">{error}</p>}
+      <div className="mb-5"><PageHeader title="Pending Bills" description="Bills you have filed that are still waiting on a desk." /></div>
+      {error && <p role="alert" className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>}
       <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
         <table className="w-full min-w-[720px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="px-4 py-3 font-medium">Bill</th>
-              <th className="px-4 py-3 font-medium">Supplier / Item</th>
-              <th className="px-4 py-3 text-right font-medium">Amount</th>
-              <th className="px-4 py-3 font-medium">With</th>
-              <th className="px-4 py-3 font-medium">Filed</th>
-              <th className="px-4 py-3 font-medium">Correct</th>
+              <th scope="col" className="px-4 py-3 font-medium">Bill</th>
+              <th scope="col" className="px-4 py-3 font-medium">Supplier / Item</th>
+              <th scope="col" className="px-4 py-3 text-right font-medium">Amount</th>
+              <th scope="col" className="px-4 py-3 font-medium">With</th>
+              <th scope="col" className="px-4 py-3 font-medium">Filed</th>
+              <th scope="col" className="px-4 py-3 font-medium">Correct</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">

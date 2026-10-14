@@ -6,6 +6,7 @@ import { canSeeAllBills, isApprover } from "@/lib/roles";
 import { findEmployee } from "@/server/employee";
 import { assertBillWriter, billPayload } from "@/server/bill-validation";
 import { pagination } from "@/lib/security";
+import { CSV_ROW_LIMIT, csvResponse, istStamp, toCsv } from "@/server/csv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -74,6 +75,13 @@ export async function GET(req: NextRequest) {
 
     if (p.get("stage")) where.push(`status = ${params.add(p.get("stage"))}`);
     if (p.get("status")) where.push(`status = ${params.add(p.get("status"))}`);
+    if (p.get("finance_admin")) where.push(`finance_admin = ${params.add(p.get("finance_admin"))}`);
+    for (const [key, op] of [["min", ">="], ["max", "<="]] as const) {
+      const v = p.get(key);
+      if (!v) continue;
+      if (!Number.isFinite(Number(v))) return badRequest("Amounts must be numbers.");
+      where.push(`po_value ${op} ${params.add(Number(v))}`);
+    }
     if (p.get("category")) where.push(`item_category = ${params.add(p.get("category"))}`);
     if (p.get("department")) {
       where.push(`employee_department::text = ${params.add(p.get("department"))}`);
@@ -85,7 +93,7 @@ export async function GET(req: NextRequest) {
       where.push(
         `(item_description ilike ${like} or supplier_name ilike ${like}
           or bill_number ilike ${like} or po_details ilike ${like}
-          or employee_name ilike ${like} or employee_id ilike ${like})`
+          or employee_name ilike ${like} or employee_id ilike ${like} or invoice_no ilike ${like})`
       );
     }
 
@@ -97,6 +105,22 @@ export async function GET(req: NextRequest) {
 
     const filter = whereClause(where);
     const filterValues = [...params.values];
+
+    // ?format=csv: every bill this person may see under these filters.
+    if (p.get("format") === "csv") {
+      type Row = Record<string, unknown>;
+      const rows = await query<Row>(`select * from public.bills ${filter} order by created_at desc, id desc limit ${CSV_ROW_LIMIT}`, filterValues);
+      const desk = (s: unknown) => (s === "Student Purchase" ? "Store and Purchase Department" : s);
+      return csvResponse("bills.csv", toCsv<Row>([
+        ["Bill number", (r) => r.bill_number], ["Filed (IST)", (r) => istStamp(r.created_at)], ["Status", (r) => desk(r.status)],
+        ["Applicant ID", (r) => r.employee_id], ["Applicant", (r) => r.employee_name], ["Department", (r) => r.employee_department],
+        ["Category", (r) => r.item_category], ["Items", (r) => r.item_description], ["Quantity", (r) => r.qty],
+        ["Amount (INR)", (r) => Number(r.po_value).toFixed(2)], ["Source of fund", (r) => r.source_of_fund],
+        ["Supplier", (r) => r.supplier_name], ["Invoice number", (r) => r.invoice_no], ["Invoice date", (r) => r.invoice_date],
+        ["PO details", (r) => r.po_details], ["Store and Purchase", (r) => r.snp], ["Audit", (r) => r.audit],
+        ["Finance Admin", (r) => r.finance_admin], ["Decided (IST)", (r) => istStamp(r.decided_at)], ["Stock entry", (r) => r.stock_entry],
+      ], rows));
+    }
     const page = `limit ${params.add(limit)} offset ${params.add(offset)}`;
 
     const [data, counted] = await Promise.all([

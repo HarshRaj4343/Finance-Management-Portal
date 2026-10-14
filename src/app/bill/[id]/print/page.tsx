@@ -156,7 +156,7 @@ export default function PrintBillPage() {
             <thead>
               <tr className="bg-slate-100 text-left">
                 {["#", "Item", "Qty", "Unit price", "Amount", "Issued", "Custodian / location"].map((h) => (
-                  <th key={h} className={`border border-slate-300 px-2 py-1 font-semibold ${["Unit price", "Amount"].includes(h) ? "text-right" : ""}`}>{h}</th>
+                  <th scope="col" key={h} className={`border border-slate-300 px-2 py-1 font-semibold ${["Unit price", "Amount"].includes(h) ? "text-right" : ""}`}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -199,7 +199,7 @@ export default function PrintBillPage() {
           <table className="w-full border-collapse text-[11px]">
             <thead>
               <tr className="bg-slate-100 text-left">
-                {["Date and time", "Desk", "Action", "By", "Remarks"].map((h) => <th key={h} className="border border-slate-300 px-2 py-1 font-semibold">{h}</th>)}
+                {["Date and time", "Desk", "Action", "By", "Remarks"].map((h) => <th scope="col" key={h} className="border border-slate-300 px-2 py-1 font-semibold">{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -228,7 +228,7 @@ export default function PrintBillPage() {
 
         <footer className="mt-8 border-t border-slate-300 pt-2 text-[10px] text-slate-500">
           Generated from the IIT Mandi Finance Portal on {printedAt}. Decisions above were recorded electronically by the named officers.
-          Scan the QR code or open {origin ? `${origin}/bill/${bill.id}` : "the portal"} to verify this bill.
+          Scan the QR code to verify this bill.
         </footer>
       </article>
     </div>

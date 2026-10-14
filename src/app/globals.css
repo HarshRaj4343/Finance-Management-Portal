@@ -124,6 +124,15 @@
   }
 }
 
+/* A visible keyboard focus everywhere. Controls that draw their own focus
+   ring set outline-none and keep it; :where() keeps this rule weakest. */
+@layer base {
+  :where(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid rgb(37 99 235);
+    outline-offset: 2px;
+  }
+}
+
 /* Quiet, consistent feedback on every control. Disabled for people who ask for less motion. */
 @layer base {
   button, [role="button"], a {

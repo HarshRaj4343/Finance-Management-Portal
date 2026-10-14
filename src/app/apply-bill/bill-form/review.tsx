@@ -95,10 +95,10 @@ export function StepReview({
           <table className="w-full min-w-[480px] text-left text-sm">
             <thead className="text-xs text-slate-500">
               <tr className="border-b border-slate-200">
-                <th className="py-2 pr-3 font-medium">Item</th>
-                <th className="py-2 pr-3 text-right font-medium">Qty</th>
-                <th className="py-2 pr-3 text-right font-medium">Unit price</th>
-                <th className="py-2 text-right font-medium">Total</th>
+                <th scope="col" className="py-2 pr-3 font-medium">Item</th>
+                <th scope="col" className="py-2 pr-3 text-right font-medium">Qty</th>
+                <th scope="col" className="py-2 pr-3 text-right font-medium">Unit price</th>
+                <th scope="col" className="py-2 text-right font-medium">Total</th>
               </tr>
             </thead>
             <tbody>

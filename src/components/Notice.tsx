@@ -38,8 +38,8 @@ export default function Notice({
 
   return (
     <div
-      role="status"
-      aria-live="polite"
+      role={notice.kind === "bad" ? "alert" : "status"}
+      aria-live={notice.kind === "bad" ? "assertive" : "polite"}
       className="fixed left-1/2 top-4 z-50 w-[min(38rem,calc(100vw-2rem))] -translate-x-1/2"
     >
       <div
@@ -50,7 +50,7 @@ export default function Notice({
           type="button"
           onClick={onDismiss}
           aria-label="Dismiss"
-          className="shrink-0 rounded px-1 text-lg leading-none opacity-50 hover:opacity-100"
+          className="shrink-0 rounded px-1 text-lg leading-none opacity-70 hover:opacity-100"
         >
           ×
         </button>

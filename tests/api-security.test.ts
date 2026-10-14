@@ -117,6 +117,20 @@ describe("API authority and financial boundaries", () => {
     expect((await addFunding(req("/api/fund-heads", { code: "OH-35", financial_year: "2026-27", amount: 100, reference: "MoE/1" }))).status).toBe(201);
     expect(mocks.queryOne).toHaveBeenCalledWith(expect.stringContaining("fn_add_fund_allocation"), ["OH-35", "2026-27", 100, "MoE/1", null, "", "TEST-D"]);
   });
+  it("exports the purchase register as CSV for the Dean only, with the same filters", async () => {
+    mocks.actor.role = "Finance Admin";
+    expect((await register(req("/api/register?format=csv"))).status).toBe(403);
+    mocks.actor.role = "Dean";
+    mocks.query.mockResolvedValue([{ serial_no: "SPS/2026-27/0001", amount: 39000, recorded_at: "2026-10-14T18:30:00Z", supplier_name: "=cmd" }]);
+    const res = await register(req("/api/register?format=csv&fy=2026-27"));
+    expect(res.headers.get("content-type")).toContain("text/csv");
+    expect(res.headers.get("content-disposition")).toContain("purchase-register-2026-27.csv");
+    const text = await res.text();
+    expect(text).toContain("SPS/2026-27/0001");
+    expect(text).toContain("39000.00");
+    expect(text).toContain("'=cmd");
+    expect(mocks.query.mock.calls[0][1]).toContain("2026-27");
+  });
   it("applies identical search, date and year filters to rows and totals", async () => {
     mocks.actor.role = "Dean"; mocks.actor.code = "TEST-D";
     mocks.query.mockResolvedValue([]); mocks.queryOne.mockResolvedValue({ total: 0, totals: {} });

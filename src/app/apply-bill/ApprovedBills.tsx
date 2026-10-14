@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { api } from "@/lib/api";
+import { api, money, dateOnly } from "@/lib/api";
+import { EmptyState, LoadingState, PageHeader, StatusBadge } from "@/components/ui/page";
 import QRCode from "react-qr-code";
 import { billScopeQuery } from "@/lib/roles";
 import { Bill } from "./types";
@@ -51,20 +52,6 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
     fetchApprovedBills();
   }, [department]);
 
-  const getStatusColor = (status: string | null | undefined) => {
-    switch (status) {
-      case "Pending":
-        return "text-yellow-600 bg-yellow-100";
-      case "Approved":
-        return "text-green-600 bg-green-100";
-      case "Reject":
-        return "text-red-600 bg-red-100";
-      case "Hold":
-        return "text-orange-600 bg-orange-100";
-      default:
-        return "text-gray-600 bg-gray-100";
-    }
-  };
 
   const handlePrintQR = (billId: string) => {
     const qrElement = document.getElementById(`qr-${billId}`);
@@ -89,84 +76,52 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
     printWindow?.print();
   };
 
-  if (loading) {
-    return (
-      <div className="w-full">
-        <h2 className="text-2xl font-semibold mb-6">Approved Bills</h2>
-        <div className="flex justify-center items-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-        </div>
-      </div>
-    );
-  }
+  const header = <PageHeader title="Approved Bills" description="Bills that completed every approval. Print a QR sticker to label the purchased item." />;
+  if (loading) return <div className="space-y-6">{header}<LoadingState label="Loading approved bills…" /></div>;
+  if (bills.length === 0) return <div className="space-y-6">{header}<EmptyState title="No approved bills yet" /></div>;
 
-  if (bills.length === 0) {
-    return (
-      <div className="w-full">
-        <h2 className="text-2xl font-semibold mb-6">Approved Bills</h2>
-        <div className="text-center py-12">
-          <p className="text-gray-500 text-lg">No approved bills found.</p>
-        </div>
-      </div>
-    );
-  }
-
+  const th = "whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
   return (
-    <div className="w-full">
-      <h2 className="text-2xl font-semibold mb-6">Approved Bills</h2>
-      {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
-          {error}
-        </div>
-      )}
-      <div className="overflow-x-auto">
-        <table className="min-w-full divide-y divide-gray-200 border rounded bg-white shadow-sm text-sm">
-          <thead className="bg-gray-100">
+    <div className="space-y-6">
+      {header}
+      {error && <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</p>}
+      <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
+        <table className="min-w-full divide-y divide-slate-200 text-sm">
+          <thead className="bg-slate-50">
             <tr>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee ID</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Employee Name</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">PO Details</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">PO Value</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Store and Purchase Department</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Audit</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Finance Admin</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">Created At</th>
-              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase">QR Code</th>
+              <th scope="col" className={th}>Bill</th>
+              <th scope="col" className={`${th} text-right`}>Amount</th>
+              <th scope="col" className={th}>Category</th>
+              <th scope="col" className={th}>Desk decisions</th>
+              <th scope="col" className={th}>Filed</th>
+              <th scope="col" className={th}>QR sticker</th>
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-gray-200">
+          <tbody className="divide-y divide-slate-100">
             {bills.map((bill) => (
-              <tr key={bill.id} className="hover:bg-gray-50">
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">{bill.employee_id}</td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">{bill.employee_name}</td>
-                <td className="px-3 py-4 text-sm text-gray-900 max-w-xs truncate">{bill.po_details ?? "—"}</td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {bill.po_value != null ? `₹ ${bill.po_value.toLocaleString()}` : "—"}
+              <tr key={bill.id} className="align-top hover:bg-slate-50">
+                <td className="px-4 py-3">
+                  <a href={`/bill/${bill.id}`} className="whitespace-nowrap font-mono text-xs font-medium text-blue-700 hover:underline">{bill.bill_number ?? "—"}</a>
+                  <p className="whitespace-nowrap font-medium text-slate-900">{bill.employee_name} <span className="text-xs font-normal text-slate-500">({bill.employee_id})</span></p>
+                  <p className="max-w-xs truncate text-xs text-slate-500" title={bill.po_details ?? ""}>{bill.po_details ?? "—"}</p>
                 </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">{bill.item_category ?? "—"}</td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.snp)}`}>{bill.snp ?? "—"}</span>
+                <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{bill.po_value != null ? money(bill.po_value) : "—"}</td>
+                <td className="whitespace-nowrap px-4 py-3">{bill.item_category ?? "—"}</td>
+                <td className="px-4 py-3">
+                  <dl className="space-y-1 text-xs">
+                    {([["Store and Purchase", bill.snp], ["Audit", bill.audit], ["Finance Admin", bill.finance_admin]] as const).map(([desk, state]) => (
+                      <div key={desk} className="flex items-center gap-2">
+                        <dt className="w-28 text-slate-500">{desk}</dt>
+                        <dd><StatusBadge value={state} /></dd>
+                      </div>
+                    ))}
+                  </dl>
                 </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.audit)}`}>{bill.audit ?? "—"}</span>
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm">
-                  <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${getStatusColor(bill.finance_admin)}`}>{bill.finance_admin ?? "—"}</span>
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-sm text-gray-900">
-                  {bill.created_at ? new Date(bill.created_at).toLocaleDateString() : "—"}
-                </td>
-                <td className="px-3 py-4 whitespace-nowrap text-center text-sm">
+                <td className="whitespace-nowrap px-4 py-3 text-slate-600">{dateOnly(bill.created_at)}</td>
+                <td className="px-4 py-3">
                   <div id={`qr-${bill.id}`} className="flex flex-col items-center gap-2">
-                    <QRCode
-                      size={64}
-                      value={`${window.location.origin}/bill/${bill.id}`}
-                    />
-                    <button
-                      onClick={() => handlePrintQR(bill.id)}
-                      className="text-blue-600 text-xs underline hover:text-blue-800"
-                    >
+                    <QRCode size={64} value={`${window.location.origin}/bill/${bill.id}`} title={`QR code for bill ${bill.bill_number ?? bill.id}`} />
+                    <button onClick={() => handlePrintQR(bill.id)} className="text-xs font-medium text-blue-700 hover:underline">
                       Print QR
                     </button>
                   </div>

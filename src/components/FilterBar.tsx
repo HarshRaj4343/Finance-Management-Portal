@@ -38,7 +38,7 @@ export default function FilterBar({ search, onSearch, placeholder, onClear, acti
       <div className="flex flex-col gap-2 md:flex-row">
         <label className="relative flex-1">
           <span className="sr-only">Search</span>
-          <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden="true" />
+          <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-500" aria-hidden="true" />
           <input
             type="search"
             value={search}

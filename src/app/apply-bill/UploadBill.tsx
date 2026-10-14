@@ -14,7 +14,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { Check, CheckCircle2, Loader2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, when } from "@/lib/api";
 import { isUmbrellaDepartment, routeAfter, deskLabel } from "@/lib/roles";
 import { cn } from "@/lib/utils";
 import type { BillRow } from "@/types/database";
@@ -356,7 +356,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
             </div>
             <div>
               <dt className="text-xs text-slate-500">Submitted</dt>
-              <dd className="mt-0.5">{done.at.toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}</dd>
+              <dd className="mt-0.5">{when(done.at)}</dd>
             </div>
           </dl>
           <div className="no-print mt-6 flex flex-wrap gap-3">
@@ -425,7 +425,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
               <Banner tone="info">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <span>
-                    You have a draft saved on {new Date(pending.savedAt).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" })}.
+                    You have a draft saved on {when(new Date(pending.savedAt))}.
                   </span>
                   <span className="flex gap-2">
                     <Button

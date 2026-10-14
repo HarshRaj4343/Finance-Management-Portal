@@ -2,6 +2,7 @@ import "./globals.css";
 import type { Metadata } from "next";
 import NextAuthProvider from "../providers/SessionProvider"; // wrap session
 import { ConfirmProvider } from "@/components/ConfirmProvider";
+import SessionExpiryWarning from "@/components/SessionExpiryWarning";
 
 export const metadata: Metadata = {
   title: "IIT Mandi Finance Portal",
@@ -15,9 +16,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body className="min-h-screen bg-gray-50 text-gray-900">
+      <body className="min-h-screen bg-slate-50 text-slate-900">
         <NextAuthProvider>
           <ConfirmProvider>{children}</ConfirmProvider>
+          <SessionExpiryWarning />
         </NextAuthProvider>
       </body>
     </html>

@@ -4,12 +4,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import { useSession } from "next-auth/react";
-import { IconPlus, IconX } from "@tabler/icons-react";
+import { IconPlus } from "@tabler/icons-react";
 import AppShell, { canOpenPortalPages, sharedLinks } from "@/components/AppShell";
 import { useConfirm } from "@/components/ConfirmProvider";
+import Modal, { btn, Field } from "@/components/ui/modal";
 import Notice, { type NoticeState } from "@/components/Notice";
-import { EmptyState, LoadingState, PageHeader, Panel, StatCard, StatusBadge } from "@/components/ui/page";
-import { api, money, when } from "@/lib/api";
+import { EmptyState, ExportButton, LoadingState, PageHeader, Panel, StatCard, StatusBadge } from "@/components/ui/page";
+import { api, money, when, dateOnly } from "@/lib/api";
 import { homeFor } from "@/lib/roles";
 
 type Head = { code: string; financial_year: string; allocated: number; balance: number; committed: number; spent: number };
@@ -120,6 +121,7 @@ export default function FundRegisterPage() {
                 {years.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </label>
+            <ExportButton href={`/api/fund-heads?code=${encodeURIComponent(code)}${fy ? `&fy=${fy}` : ""}&format=csv`} />
             <button onClick={openAdd} className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-medium text-white hover:bg-blue-800">
               <IconPlus className="size-4" /> Add funding
             </button>
@@ -142,12 +144,12 @@ export default function FundRegisterPage() {
             ) : (
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50"><tr>
-                  <th className={th}>Date</th><th className={th}>Reference</th><th className={`${th} text-right`}>Amount</th><th className={th}>Remarks</th><th className={th}>Entered by</th>
+                  <th scope="col" className={th}>Date</th><th scope="col" className={th}>Reference</th><th scope="col" className={`${th} text-right`}>Amount</th><th scope="col" className={th}>Remarks</th><th scope="col" className={th}>Entered by</th>
                 </tr></thead>
                 <tbody className="divide-y divide-slate-100">
                   {allocations.map((a) => (
                     <tr key={a.id}>
-                      <td className="whitespace-nowrap px-4 py-3">{new Date(`${a.entry_date}T00:00:00`).toLocaleDateString("en-IN")}</td>
+                      <td className="whitespace-nowrap px-4 py-3">{dateOnly(a.entry_date)}</td>
                       <td className="px-4 py-3 font-medium text-slate-900">{a.reference}</td>
                       <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{money(a.amount)}</td>
                       <td className="max-w-md px-4 py-3 text-slate-700">{a.remarks || "—"}</td>
@@ -165,8 +167,8 @@ export default function FundRegisterPage() {
             ) : (
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-50"><tr>
-                  <th className={th}>When</th><th className={th}>Bill</th><th className={th}>Employee</th><th className={th}>Movement</th>
-                  <th className={`${th} text-right`}>Amount</th><th className={th}>Register serial</th>
+                  <th scope="col" className={th}>When</th><th scope="col" className={th}>Bill</th><th scope="col" className={th}>Employee</th><th scope="col" className={th}>Movement</th>
+                  <th scope="col" className={`${th} text-right`}>Amount</th><th scope="col" className={th}>Register serial</th>
                 </tr></thead>
                 <tbody className="divide-y divide-slate-100">
                   {movements.map((m) => (
@@ -192,44 +194,40 @@ export default function FundRegisterPage() {
               </table>
             )}
           </Panel>
-          <p className="text-center text-xs text-slate-400">Register entries are permanent. They cannot be edited or deleted once written.</p>
+          <p className="text-center text-xs text-slate-500">Register entries are permanent. They cannot be edited or deleted once written.</p>
         </>
       )}
 
       {adding && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label={`Add ${code} funding`}>
-          <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <h2 className="text-lg font-semibold text-slate-900">Add {code} funding</h2>
-              <button onClick={() => setAdding(false)} className="rounded-md p-1 text-slate-500 hover:bg-slate-100" aria-label="Close"><IconX className="size-4" /></button>
-            </div>
-            <div className="grid grid-cols-1 gap-4 px-6 py-5 sm:grid-cols-2">
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Financial year</span>
-                <select value={draft.financial_year} onChange={(e) => setDraft({ ...draft, financial_year: e.target.value })} className={field}>
-                  {years.map((y) => <option key={y} value={y}>{y}</option>)}
-                </select>
-              </label>
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Amount (₹)</span>
-                <input type="number" min={0} step="0.01" autoFocus value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} className={field} />
-              </label>
-              <label className="text-sm sm:col-span-2"><span className="mb-1 block font-medium text-slate-700">Sanction letter / order reference</span>
-                <input value={draft.reference} onChange={(e) => setDraft({ ...draft, reference: e.target.value })} placeholder="e.g. MoE F.No. 20-1/2026-TS.I" className={field} />
-              </label>
-              <label className="text-sm"><span className="mb-1 block font-medium text-slate-700">Sanction date</span>
-                <input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} className={field} />
-              </label>
-              <label className="text-sm sm:col-span-2"><span className="mb-1 block font-medium text-slate-700">Remarks <span className="font-normal text-slate-500">(optional)</span></span>
-                <textarea rows={2} value={draft.remarks} onChange={(e) => setDraft({ ...draft, remarks: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
-              </label>
-            </div>
-            <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">
-              <button onClick={() => setAdding(false)} className="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50">Cancel</button>
-              <button onClick={save} disabled={saving} className="inline-flex h-9 items-center rounded-md bg-blue-700 px-4 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-50">
-                {saving ? "Saving…" : "Add funding"}
-              </button>
-            </div>
+        <Modal
+          title={`Add ${code} funding`}
+          description="Record a sanction letter or order. Allocations are permanent and cannot be edited or removed."
+          onClose={() => setAdding(false)}
+          footer={<>
+            <button onClick={() => setAdding(false)} className={btn.secondary}>Cancel</button>
+            <button onClick={save} disabled={saving} className={btn.primary}>{saving ? "Saving…" : "Add funding"}</button>
+          </>}
+        >
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Financial year">
+              <select value={draft.financial_year} onChange={(e) => setDraft({ ...draft, financial_year: e.target.value })} className={field}>
+                {years.map((y) => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </Field>
+            <Field label="Amount (₹)">
+              <input type="number" min={0} step="0.01" autoFocus value={draft.amount} onChange={(e) => setDraft({ ...draft, amount: e.target.value })} className={field} />
+            </Field>
           </div>
-        </div>
+          <Field label="Sanction letter / order reference">
+            <input value={draft.reference} onChange={(e) => setDraft({ ...draft, reference: e.target.value })} placeholder="e.g. MoE F.No. 20-1/2026-TS.I" className={field} />
+          </Field>
+          <Field label="Sanction date">
+            <input type="date" value={draft.date} onChange={(e) => setDraft({ ...draft, date: e.target.value })} className={field} />
+          </Field>
+          <Field label="Remarks (optional)">
+            <textarea rows={2} value={draft.remarks} onChange={(e) => setDraft({ ...draft, remarks: e.target.value })} className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30" />
+          </Field>
+        </Modal>
       )}
     </AppShell>
   );

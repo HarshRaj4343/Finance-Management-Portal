@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { Params, likePattern, query, queryOne, whereClause } from "@/server/db";
 import { HttpError, requireActor } from "@/server/session";
+import { CSV_ROW_LIMIT, csvResponse, istStamp, toCsv } from "@/server/csv";
 import { fail, ok, badRequest } from "@/server/http";
 import { pagination } from "@/lib/security";
 import { canOpenMovementRegister } from "@/lib/roles";
@@ -48,6 +49,27 @@ export async function GET(req: NextRequest) {
     }
     const filter = whereClause(where);
     const filterValues = [...params.values];
+
+    // ?format=csv: the whole register for these filters, as a spreadsheet.
+    if (p.get("format") === "csv") {
+      type Row = Record<string, unknown>;
+      const rows = await query<Row>(
+        `select m.*, case when m.nature = 'New bill' then null else m.remark end as shown_remark,
+                case when m.register = 'Outward' then round(extract(epoch from m.moved_at - (
+                  select max(i.moved_at) from public.bill_movements i
+                   where i.bill_id = m.bill_id and i.desk = m.desk and i.register = 'Inward' and i.moved_at <= m.moved_at)) / 3600, 2) end as hours_at_desk
+           from public.bill_movements m ${filter} order by m.moved_at desc, m.id desc limit ${CSV_ROW_LIMIT}`, filterValues);
+      const inward = register === "Inward";
+      return csvResponse(`${register.toLowerCase()}-register-${desk ? desk.replace(/\s+/g, "-").toLowerCase() : "all-desks"}-${fy || "all-years"}.csv`, toCsv<Row>([
+        [inward ? "Inward no." : "Outward no.", (r) => r.serial_no], [inward ? "Received (IST)" : "Dispatched (IST)", (r) => istStamp(r.moved_at)],
+        ["Desk", (r) => r.desk === "Student Purchase" ? "Store and Purchase Department" : r.desk], ["Financial year", (r) => r.financial_year],
+        ["Bill number", (r) => r.bill_number], ["Item", (r) => r.item_description], ["Applicant ID", (r) => r.employee_id],
+        ["Applicant", (r) => r.employee_name], ["Department", (r) => r.department], ["Amount (INR)", (r) => r.amount == null ? "" : Number(r.amount).toFixed(2)],
+        [inward ? "From" : "To", (r) => r.counterpart], ["Movement", (r) => r.nature], ["By", (r) => r.actor_name ?? r.actor_code],
+        ...(inward ? [] : [["Hours at desk", (r: Row) => r.hours_at_desk] as [string, (r: Row) => unknown]]),
+        ["Remarks", (r) => r.shown_remark],
+      ], rows));
+    }
     const page = `limit ${params.add(limit)} offset ${params.add(offset)}`;
 
     const [entries, counted, years] = await Promise.all([

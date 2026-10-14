@@ -4,6 +4,7 @@ import CredentialsProvider from "next-auth/providers/credentials";
 import ldap from "ldapjs";
 import { queryOne } from "./db";
 import { normaliseRole, type Role } from "@/lib/roles";
+import { SESSION_MAX_MS } from "@/lib/session-limits";
 
 /**
  * Authentication.
@@ -185,8 +186,8 @@ export const authOptions: AuthOptions = {
     }),
   ],
 
-  session: { strategy: "jwt", maxAge: 60 * 60 * 8 },
-  jwt: { maxAge: 60 * 60 * 8 },
+  session: { strategy: "jwt", maxAge: SESSION_MAX_MS / 1000 },
+  jwt: { maxAge: SESSION_MAX_MS / 1000 },
 
   callbacks: {
     async jwt({ token, user }) {
@@ -205,7 +206,7 @@ export const authOptions: AuthOptions = {
       // If the Dean changes someone's role, they should not have to wait
       // eight hours for it to take effect. Re-read on every session access.
       if (token.employee_code) {
-        if (typeof token.signedInAt !== "number" || Date.now() - token.signedInAt >= 8 * 60 * 60 * 1000) return {};
+        if (typeof token.signedInAt !== "number" || Date.now() - token.signedInAt >= SESSION_MAX_MS) return {};
         let fresh;
         try { fresh = await loadEmployee(token.employee_code as string); } catch { return {}; }
 
@@ -230,6 +231,8 @@ export const authOptions: AuthOptions = {
         department: (token.department as string) ?? null,
         provisioned: (token.provisioned as boolean) ?? false,
       };
+      // Lets the browser warn before the hard sign-in limit ends the session.
+      session.signedInAt = typeof token.signedInAt === "number" ? token.signedInAt : undefined;
       return session;
     },
   },

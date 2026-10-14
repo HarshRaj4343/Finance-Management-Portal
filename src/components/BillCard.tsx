@@ -1,6 +1,6 @@
 import React, { type ReactNode } from 'react';
 import Link from "next/link";
-import { when } from "@/lib/api";
+import { when, dateOnly, money } from "@/lib/api";
 import { Bill } from '@/types/database';
 import BillItems from './BillItems';
 import { StatusBadge } from "./ui/page";
@@ -28,15 +28,8 @@ export const BillCard: React.FC<BillCardProps> = ({
   className = '',
   children,
 }) => {
-  const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleDateString();
-  };
-
-  const formatCurrency = (amount: number | null) => {
-    if (amount === null || amount === undefined) return 'N/A';
-    return `₹${amount.toLocaleString()}`;
-  };
+  const formatDate = (dateString: string | null) => dateOnly(dateString);
+  const formatCurrency = (amount: number | null) => (amount === null || amount === undefined ? "—" : money(amount));
 
 
  // The A4 bill sheet, sent straight to the printer.
@@ -81,7 +74,7 @@ export const BillCard: React.FC<BillCardProps> = ({
           {([["Store and Purchase", bill.snp], ["Audit", bill.audit], ["Finance Admin", bill.finance_admin]] as const).map(([desk, state]) => (
             <span key={desk} className="flex items-center gap-2">
               <span className="text-slate-600">{desk}</span>
-              {state ? <StatusBadge value={state} /> : <span className="text-xs text-slate-400" title="Not on this bill's route, or not reached yet">—</span>}
+              {state ? <StatusBadge value={state} /> : <span className="text-xs text-slate-500" title="Not on this bill's route, or not reached yet">—</span>}
             </span>
           ))}
         </div>

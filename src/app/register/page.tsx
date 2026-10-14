@@ -8,11 +8,11 @@ import {
   IconCalendar,
   IconBuildingBank,
 } from "@tabler/icons-react";
-import { api, money, qs, when } from "@/lib/api";
+import { api, money, qs, when, dateOnly, count } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import AppShell, { canOpenPortalPages, sharedLinks } from "@/components/AppShell";
 import FilterBar, { FilterField, filterInput } from "@/components/FilterBar";
-import { PageHeader, StatCard } from "@/components/ui/page";
+import { ExportButton, PageHeader, StatCard } from "@/components/ui/page";
 import { homeFor, normaliseRole } from "@/lib/roles";
 import type { RegisterEntry, DepartmentRow } from "@/types/database";
 
@@ -155,6 +155,7 @@ export default function RegisterPage() {
     >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
       <PageHeader
+        actions={<ExportButton href={"/api/register" + qs({ q: searchQuery, department, fy, format: "csv" })} />}
         title="Purchase Register"
         description={scoped
           ? "Your purchases, as entered in the departmental register."
@@ -163,7 +164,7 @@ export default function RegisterPage() {
 
         {totals && (
           <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <StatCard label="Entries" value={totals.entries.toLocaleString("en-IN")} hint="Recorded purchases" tone="blue" />
+            <StatCard label="Entries" value={count(totals.entries)} hint="Recorded purchases" tone="blue" />
             <StatCard label="Total Value" value={money(totals.amount)} hint="Across these entries" tone="green" />
             <StatCard label="Departments" value={totals.departments} hint="With recorded purchases" tone="amber" />
           </div>
@@ -198,33 +199,33 @@ export default function RegisterPage() {
         <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
           <div className="px-4 py-3 border-b bg-slate-50 flex items-center gap-2">
             <IconBook className="h-5 w-5 text-blue-600" />
-            <h2 className="font-semibold text-gray-800">Register Entries</h2>
-            <span className="ml-auto text-sm text-gray-500">
-              {total.toLocaleString("en-IN")} total
+            <h2 className="font-semibold text-slate-800">Register Entries</h2>
+            <span className="ml-auto text-sm text-slate-500">
+              {count(total)} total
             </span>
           </div>
 
           {loading ? (
             <div className="flex items-center justify-center py-12">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-3 text-gray-600">Loading the register...</span>
+              <span className="ml-3 text-slate-600">Loading the register...</span>
             </div>
           ) : entries.length === 0 ? (
-            <div className="text-center py-12 text-gray-500">
-              <IconBook className="h-10 w-10 mx-auto mb-3 text-gray-300" />
+            <div className="text-center py-12 text-slate-500">
+              <IconBook className="h-10 w-10 mx-auto mb-3 text-slate-300" />
               <p>
                 {searchQuery || department || fy
                   ? "Nothing in the register matches those filters."
                   : "The register is empty."}
               </p>
-              <p className="text-sm text-gray-400 mt-1">
+              <p className="text-sm text-slate-500 mt-1">
                 Entries appear here once a bill is finally approved.
               </p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200 text-sm">
-                <thead className="bg-gray-50">
+              <table className="min-w-full divide-y divide-slate-200 text-sm">
+                <thead className="bg-slate-50">
                   <tr>
                     {[
                       "Serial No.",
@@ -237,51 +238,47 @@ export default function RegisterPage() {
                       "Indenter",
                       "Bill",
                     ].map((h) => (
-                      <th
+                      <th scope="col"
                         key={h}
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider whitespace-nowrap"
+                        className="px-4 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider whitespace-nowrap"
                       >
                         {h}
                       </th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-200">
+                <tbody className="divide-y divide-slate-200">
                   {entries.map((e) => (
-                    <tr key={e.id} className="hover:bg-gray-50">
+                    <tr key={e.id} className="hover:bg-slate-50">
                       <td className="px-4 py-3 whitespace-nowrap font-medium text-blue-700">
                         {e.serial_no}
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap text-gray-500">
-                        {new Date(e.entry_date).toLocaleDateString("en-IN", {
-                          day: "2-digit",
-                          month: "short",
-                          year: "numeric",
-                        })}
+                      <td className="px-4 py-3 whitespace-nowrap text-slate-500">
+                        {dateOnly(e.entry_date)}
                       </td>
                       <td className="px-4 py-3 max-w-xs">
                         <span className="block truncate" title={e.item_description ?? ""}>
                           {e.item_description ?? "—"}
                         </span>
-                        <span className="text-xs text-gray-400">{e.item_category}</span>
+                        <span className="text-xs text-slate-500">{e.item_category}</span>
                       </td>
-                      <td className="px-4 py-3 text-gray-600">{e.qty ?? "—"}</td>
+                      <td className="px-4 py-3 text-slate-600">{e.qty ?? "—"}</td>
                       <td className="px-4 py-3 max-w-[12rem]">
                         <span className="block truncate" title={e.supplier_name ?? ""}>
                           {e.supplier_name ?? "—"}
                         </span>
                       </td>
-                      <td className="px-4 py-3 whitespace-nowrap font-medium text-gray-800">
+                      <td className="px-4 py-3 whitespace-nowrap font-medium text-slate-800">
                         {money(e.amount)}
                       </td>
-                      <td className="px-4 py-3 max-w-[13rem] text-gray-600">
+                      <td className="px-4 py-3 max-w-[13rem] text-slate-600">
                         <span className="block truncate" title={e.department}>
                           {e.department}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-gray-600">
+                      <td className="px-4 py-3 text-slate-600">
                         {e.employee_name ?? e.employee_code}
-                        <span className="block text-xs text-gray-400">
+                        <span className="block text-xs text-slate-500">
                           {e.employee_code}
                         </span>
                       </td>
@@ -302,23 +299,23 @@ export default function RegisterPage() {
           )}
 
           {pages > 1 && (
-            <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-gray-600">
+            <div className="flex items-center justify-between border-t px-4 py-3 text-sm text-slate-600">
               <span>
                 Showing {page * pageSize + 1}–{Math.min((page + 1) * pageSize, total)} of{" "}
-                {total.toLocaleString("en-IN")}
+                {count(total)}
               </span>
               <div className="flex gap-2">
                 <button
                   onClick={() => setPage((p) => Math.max(p - 1, 0))}
                   disabled={page === 0}
-                  className="px-3 py-1.5 border rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-3 py-1.5 border rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Previous
                 </button>
                 <button
                   onClick={() => setPage((p) => Math.min(p + 1, pages - 1))}
                   disabled={page >= pages - 1}
-                  className="px-3 py-1.5 border rounded-lg hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  className="px-3 py-1.5 border rounded-lg hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   Next
                 </button>
@@ -327,7 +324,7 @@ export default function RegisterPage() {
           )}
         </div>
 
-        <p className="text-xs text-gray-400 text-center pb-4">
+        <p className="text-xs text-slate-500 text-center pb-4">
           Register entries are permanent. They cannot be edited or deleted once written.
         </p>
     </AppShell>

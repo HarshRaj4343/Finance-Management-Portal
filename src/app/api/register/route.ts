@@ -1,6 +1,8 @@
 import { NextRequest } from "next/server";
 import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
 import { HttpError, requireActor } from "@/server/session";
+import { CSV_ROW_LIMIT, csvResponse, istStamp, toCsv } from "@/server/csv";
+import type { PurchaseRegisterRow } from "@/types/database";
 import { fail, ok } from "@/server/http";
 import { canSeeAllBills } from "@/lib/roles";
 import { pagination } from "@/lib/security";
@@ -52,6 +54,21 @@ export async function GET(req: NextRequest) {
 
     const filter = whereClause(where);
     const filterValues = [...params.values];
+
+    // ?format=csv: every entry matching these filters, as a spreadsheet.
+    if (p.get("format") === "csv") {
+      const rows = await query<PurchaseRegisterRow>(
+        `select * from public.purchase_register ${filter} order by recorded_at desc, id desc limit ${CSV_ROW_LIMIT}`, filterValues);
+      return csvResponse(`purchase-register-${p.get("fy") || "all-years"}.csv`, toCsv<PurchaseRegisterRow>([
+        ["Serial no.", (e) => e.serial_no], ["Entry date", (e) => e.entry_date], ["Financial year", (e) => e.financial_year],
+        ["Bill number", (e) => e.bill_number], ["Department", (e) => e.department], ["Employee ID", (e) => e.employee_code],
+        ["Employee name", (e) => e.employee_name], ["Indenter", (e) => e.indenter_name], ["Item", (e) => e.item_description],
+        ["Category", (e) => e.item_category], ["Quantity", (e) => e.qty], ["Supplier", (e) => e.supplier_name],
+        ["Supplier address", (e) => e.supplier_address], ["Amount (INR)", (e) => Number(e.amount).toFixed(2)],
+        ["Source of fund", (e) => e.source_of_fund], ["Stock entry", (e) => e.stock_entry], ["Location", (e) => e.location],
+        ["Recorded by", (e) => e.recorded_by], ["Recorded at (IST)", (e) => istStamp(e.recorded_at)],
+      ], rows));
+    }
     const page = `limit ${params.add(limit)} offset ${params.add(offset)}`;
 
     const [entries, counted, totals, years] = await Promise.all([

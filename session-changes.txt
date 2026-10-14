@@ -69,3 +69,20 @@ Supporting work
 - Added database and API tests for the edit window, fund heads, registers and every new access rule.
 - Added unit tests for edit-window helpers, queue ordering, readable changes and amount in words.
 - Updated the README, migration scripts and Docker setup for migrations 0006, 0007 and 0008.
+
+Export, search, session and polish
+- Added Excel-ready CSV export (UTF-8, formula-safe) to the Purchase Register, Inward/Outward Register, OH-31/OH-35 Registers, All Bills and PDA Accounts, honouring the page filters and permissions.
+- Added a bill search box to every page's top bar (bill number, invoice, supplier, applicant, item), with Ctrl/⌘+K and keyboard navigation.
+- Added a warning five minutes before the eight-hour sign-in ends, and a "session ended" message on the login page.
+- Made all dates and amounts use shared formatters (IST, dd Mon yyyy, ₹ with Indian grouping) and parse Postgres timestamps safely in every browser.
+- Added one shared accessible dialog and moved every pop-up onto it (PDA, Dean edit and top-up, Finance Admin add and edit employee, OH funding, User bill details).
+- Fixed the employee edit form, which showed an uneditable code as editable and had no name field.
+- Corrected the Dean top-up hint, which wrongly said negative amounts reduce an allocation.
+- Regrouped Bill details into applicant, supplier and invoice, funding and stock, and desk decision sections.
+- Restyled the login page, Approved Bills and Pending Bills to the shared look.
+- Unified the colour palette and raised low-contrast secondary text to pass WCAG AA.
+- Accessibility: skip-to-content link, visible keyboard focus everywhere, column scope on all table headers, error notices announced as alerts, autocomplete on sign-in fields.
+- Added tests for the CSV helper and the register export.
+- Replaced the coloured left stripe on User bill cards with an approval tracker (Filed → desks on the route → Approved) and moved the status badge to the top.
+- Centred the bill search box in the top bar.
+- Removed the bill link from the print sheet footer; the QR code remains for verification.

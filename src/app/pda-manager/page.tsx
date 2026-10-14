@@ -5,8 +5,9 @@ import { useEffect, useMemo, useState } from "react";
 import { api, money, when } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import AppShell from "@/components/AppShell";
-import { PageHeader } from "@/components/ui/page";
-import { IconWallet, IconX } from "@tabler/icons-react";
+import Modal from "@/components/ui/modal";
+import { ExportButton, PageHeader } from "@/components/ui/page";
+import { IconWallet } from "@tabler/icons-react";
 import { normaliseRole } from "@/lib/roles";
 import { useConfirm } from "@/components/ConfirmProvider";
 import type { PdaBalanceRow } from "@/types/database";
@@ -23,22 +24,9 @@ type PdaBalance = PdaBalanceRow & {
   employee_type?: string | null;
 };
 
-/** A small labelled modal for this page's forms. */
+/** This page's forms, in the portal's shared dialog. */
 function Dialog({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode }) {
-  return (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="dialog" aria-modal="true" aria-label={title}>
-    <div className="w-full max-w-lg rounded-xl border border-slate-200 bg-white shadow-xl">
-      <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-        <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
-        <button onClick={onClose} className="rounded-md p-1 text-slate-500 hover:bg-slate-100" aria-label="Close">
-          <IconX className="size-4" />
-        </button>
-      </div>
-      <div className="space-y-4 px-6 py-5">{children}</div>
-      <div className="flex justify-end gap-2 border-t border-slate-200 px-6 py-4">{footer}</div>
-    </div>
-  </div>
-);
+  return <Modal title={title} onClose={onClose} footer={footer}>{children}</Modal>;
 }
 
 export default function PdaManagerPage() {
@@ -296,6 +284,7 @@ export default function PdaManagerPage() {
         description="Open accounts and set allocations. Money already committed to bills or spent is never touched."
         actions={
           <>
+            <ExportButton href={`/api/admin/pda?format=csv${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ""}`} />
             <button onClick={() => setIsAdding(true)} className={primaryBtn}>Open account</button>
             <button onClick={() => setBulk("")} className={cancelBtn}>Add amount to all</button>
             <button onClick={handleResetAll} className="inline-flex h-9 items-center rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50">
@@ -324,12 +313,12 @@ export default function PdaManagerPage() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
-                <th className={th}>Employee</th>
-                <th className={`${th} text-right`}>Free balance</th>
-                <th className={`${th} text-right`}>Allocated</th>
-                <th className={th}>Department</th>
-                <th className={th}>Last updated</th>
-                <th className={th}><span className="sr-only">Actions</span></th>
+                <th scope="col" className={th}>Employee</th>
+                <th scope="col" className={`${th} text-right`}>Free balance</th>
+                <th scope="col" className={`${th} text-right`}>Allocated</th>
+                <th scope="col" className={th}>Department</th>
+                <th scope="col" className={th}>Last updated</th>
+                <th scope="col" className={th}><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">

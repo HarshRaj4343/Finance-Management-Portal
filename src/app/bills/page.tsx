@@ -2,12 +2,12 @@
 
 import { homeFor } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
-import { api, money } from "@/lib/api";
+import { api, money, qs, dateOnly } from "@/lib/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import AppShell, { canOpenPortalPages, sharedLinks } from "@/components/AppShell";
-import { PageHeader, StatusBadge } from "@/components/ui/page";
+import { ExportButton, PageHeader, StatusBadge } from "@/components/ui/page";
 import { BillWithEmployee } from "@/types/database";
 import { Input } from "@/components/ui/input";
 
@@ -224,7 +224,15 @@ export default function AllBillsPage() {
 
   return (
     <AppShell desk="All Bills" nav={[]} links={sharedLinks(session?.user?.employee_type, "bills")}>
-      <PageHeader title="All Bills" description="Every bill you are allowed to see, newest first. Select a row to open the bill." />
+      <PageHeader
+        title="All Bills"
+        description="Every bill you are allowed to see, newest first. Select a row to open the bill."
+        actions={<ExportButton href={"/api/bills" + qs({
+          format: "csv", category: filters.category, department: filters.dept, finance_admin: filters.financeAdmin,
+          min: filters.valueMin, max: filters.valueMax, from: filters.dateFrom, to: filters.dateTo,
+          q: filters.billId.trim() || filters.employeeId.trim(),
+        })} />}
+      />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Filters">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -282,15 +290,15 @@ export default function AllBillsPage() {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
-                <th className={th}>Bill</th>
-                <th className={th}>Employee</th>
-                <th className={`${th} text-right`}>Value</th>
-                <th className={th}>Category</th>
-                <th className={th}>Status</th>
-                <th className={th}>Store and Purchase</th>
-                <th className={th}>Audit</th>
-                <th className={th}>Finance Admin</th>
-                <th className={th}>Filed</th>
+                <th scope="col" className={th}>Bill</th>
+                <th scope="col" className={th}>Employee</th>
+                <th scope="col" className={`${th} text-right`}>Value</th>
+                <th scope="col" className={th}>Category</th>
+                <th scope="col" className={th}>Status</th>
+                <th scope="col" className={th}>Store and Purchase</th>
+                <th scope="col" className={th}>Audit</th>
+                <th scope="col" className={th}>Finance Admin</th>
+                <th scope="col" className={th}>Filed</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -318,7 +326,7 @@ export default function AllBillsPage() {
                   <td className="px-4 py-3"><StatusBadge value={bill.snp} /></td>
                   <td className="px-4 py-3"><StatusBadge value={bill.audit} /></td>
                   <td className="px-4 py-3"><StatusBadge value={bill.finance_admin} /></td>
-                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{bill.created_at ? new Date(bill.created_at.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00")).toLocaleDateString("en-IN") : "—"}</td>
+                  <td className="whitespace-nowrap px-4 py-3 text-slate-600">{dateOnly(bill.created_at)}</td>
                 </tr>
               ))}
             </tbody>

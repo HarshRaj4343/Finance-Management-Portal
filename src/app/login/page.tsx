@@ -76,81 +76,83 @@ function LoginForm() {
     setLoading(false);
   };
 
-   return (
-    <div className="min-h-screen flex items-center justify-center bg-[#217093] p-4 sm:p-6">
-      <div className="bg-white rounded-lg shadow-lg p-6 sm:p-8 w-full max-w-md mx-auto">
-        <div className="flex flex-col items-center space-y-4 mb-6 sm:mb-8">
-          <Image width={80} height={80}
-            src="/iit.png" 
-            alt="IIT Mandi" 
-            className="h-16 w-16 sm:h-20 sm:w-20" 
-          />
-          <h2 className="text-2xl sm:text-3xl font-bold text-gray-800">
-            Log In
-          </h2>
+  const expired = searchParams.get("expired") === "1";
+  const field = "w-full rounded-lg border border-slate-300 px-4 py-2.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30 sm:text-base";
+
+  return (
+    <main className="flex min-h-screen items-center justify-center bg-[#217093] p-4 sm:p-6">
+      <div className="mx-auto w-full max-w-md rounded-xl bg-white p-6 shadow-lg sm:p-8">
+        <div className="mb-6 flex flex-col items-center space-y-3 sm:mb-8">
+          <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-16 w-16 sm:h-20 sm:w-20" priority />
+          <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Sign in</h1>
+          <p className="text-center text-sm text-slate-600">Integrated Finance Management Portal</p>
         </div>
-        
-        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5">
+
+        {expired && (
+          <p role="status" className="mb-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+            Your session ended after eight hours. Please sign in again.
+          </p>
+        )}
+
+        <form onSubmit={handleSubmit} className="space-y-4 sm:space-y-5" aria-describedby={error ? "login-error" : undefined}>
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-1">
-              LDAP Username
-            </label>
+            <label htmlFor="username" className="mb-1 block text-sm font-medium text-slate-700">LDAP username</label>
             <input
               id="username"
               type="text"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
               placeholder="Enter your username"
-              className="w-full px-4 py-2 sm:py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
+              className={field}
               value={username}
-              onChange={e => setUsername(e.target.value)}
+              onChange={(e) => setUsername(e.target.value)}
               required
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-1">
-              LDAP Password
-            </label>
+            <label htmlFor="password" className="mb-1 block text-sm font-medium text-slate-700">LDAP password</label>
             <input
               id="password"
               type="password"
+              autoComplete="current-password"
               placeholder="Enter your password"
-              className="w-full px-4 py-2 sm:py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-sm sm:text-base"
+              className={field}
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               required
             />
           </div>
 
           {error && (
-            <div className="p-3 text-sm text-red-700 bg-red-50 rounded-lg">
+            <p id="login-error" role="alert" className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
               {error}
-            </div>
+            </p>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm sm:text-base transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-70"
+            aria-busy={loading}
+            className="w-full rounded-lg bg-blue-700 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 disabled:opacity-70 sm:text-base"
           >
             {loading ? (
               <span className="flex items-center justify-center">
-                <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Logging in...
+                <span className="mr-2 size-4 animate-spin rounded-full border-2 border-white/40 border-t-white" aria-hidden="true" />
+                Signing in…
               </span>
             ) : (
-              "Log In"
+              "Sign in"
             )}
           </button>
 
-          <p className="text-center text-xs sm:text-sm text-gray-500 mt-6">
-            Integrated Finance Management Portal - IIT Mandi
+          <p className="mt-6 text-center text-xs text-slate-600 sm:text-sm">
+            Use your institute LDAP credentials. No access? Contact the Dean&apos;s office.
           </p>
         </form>
       </div>
-    </div>
+    </main>
   );
 } //
 

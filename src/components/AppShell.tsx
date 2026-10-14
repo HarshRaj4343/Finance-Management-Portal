@@ -7,6 +7,7 @@ import { signOut, useSession } from "next-auth/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { IconArrowsExchange, IconBook, IconBuildingBank, IconFileText, IconHome, IconLogout, IconMenu2, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
+import BillSearch from "./BillSearch";
 import { canOpenMovementRegister, deskLabel, homeFor, normaliseRole } from "@/lib/roles";
 
 export type NavItem = {
@@ -127,7 +128,7 @@ export default function AppShell({
         )}
         {shared.length > 0 && (
           <div className="space-y-1">
-            <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-400">Portal</p>
+            <p className="px-3 pb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Portal</p>
             {shared.map((item) => <NavRow key={item.label} item={item} group="portal" onNavigate={() => setDrawer(false)} />)}
           </div>
         )}
@@ -151,6 +152,9 @@ export default function AppShell({
   return (
     <MotionConfig reducedMotion="user">
     <div className="flex h-screen w-full overflow-hidden bg-slate-50 text-slate-900 print:block print:h-auto print:overflow-visible print:bg-white">
+      <a href="#main" className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-blue-700 focus:px-4 focus:py-2 focus:text-sm focus:font-medium focus:text-white">
+        Skip to main content
+      </a>
       <aside className="hidden w-64 shrink-0 border-r border-slate-200 bg-white md:block print:hidden">{panel}</aside>
 
       <AnimatePresence>
@@ -171,13 +175,13 @@ export default function AppShell({
       </AnimatePresence>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-14 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-4 md:hidden print:hidden">
-          <button type="button" aria-label="Open menu" onClick={() => setDrawer(true)} className="rounded-md p-2 text-slate-700 hover:bg-slate-100">
-            <IconMenu2 className="size-5" />
+        <header className="relative flex h-14 shrink-0 items-center justify-center border-b border-slate-200 bg-white pl-14 pr-4 md:px-8 print:hidden">
+          <button type="button" aria-label="Open menu" onClick={() => setDrawer(true)} className="absolute left-3 rounded-md p-2 text-slate-700 hover:bg-slate-100 md:hidden">
+            <IconMenu2 className="size-5" aria-hidden="true" />
           </button>
-          <span className="truncate text-sm font-semibold">{deskLabel(desk)}</span>
+          <BillSearch />
         </header>
-        <main className={cn("min-h-0 flex-1 print:overflow-visible", fill ? "flex flex-col overflow-hidden p-4 md:p-6" : "overflow-y-auto")}>
+        <main id="main" tabIndex={-1} className={cn("min-h-0 flex-1 focus:outline-none print:overflow-visible", fill ? "flex flex-col overflow-hidden p-4 md:p-6" : "overflow-y-auto")}>
           <motion.div
             key={section}
             initial={{ opacity: 0, y: 6 }}

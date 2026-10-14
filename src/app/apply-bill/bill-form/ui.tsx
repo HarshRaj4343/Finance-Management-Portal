@@ -259,14 +259,14 @@ export function ReadOnlyField({
         title={`Auto-filled from ${source}`}
         className={cn(
           "flex min-h-10 w-full items-center justify-between gap-2 rounded-md border border-slate-200 bg-slate-100 px-3 py-2 text-sm",
-          empty ? "text-slate-400" : "text-slate-800",
+          empty ? "text-slate-500" : "text-slate-800",
           money && "tabular-nums"
         )}
       >
         <span className={cn("min-w-0 flex-1", money && "text-right", multiline ? "whitespace-pre-line" : "truncate")}>
           {empty ? "—" : value}
         </span>
-        <Lock className="size-3.5 shrink-0 text-slate-400" aria-hidden="true" />
+        <Lock className="size-3.5 shrink-0 text-slate-500" aria-hidden="true" />
       </div>
     </Shell>
   );
@@ -428,7 +428,7 @@ export function ComboField({
           className={cn(control, "pr-9", border(error))}
         />
         <ChevronDown
-          className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-400"
+          className="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-slate-500"
           aria-hidden="true"
         />
         {open && !disabled && (
