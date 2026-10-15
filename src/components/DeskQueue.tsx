@@ -14,6 +14,9 @@ import { api } from "@/lib/api";
 import { deskLabel, normaliseRole, type Stage } from "@/lib/roles";
 import { canReviewDesk, canReviewSnp, istDay, latestArrivalFirst } from "@/lib/bill-review";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { cn } from "@/lib/utils";
+import { Kbd, ShortcutHelp, useDeskShortcuts } from "./DeskShortcuts";
+import { useBulkApproval } from "./BulkApproval";
 import type { Bill } from "@/types/database";
 
 export type DeskFilter = "Pending" | "Approved" | "Hold" | "Reject" | "All";
@@ -123,6 +126,22 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
     ? canReviewSnp(bill, session?.user?.employee_code, session?.user?.employee_type)
     : canReviewDesk(bill, desk, session?.user?.employee_code, session?.user?.employee_type);
 
+  // Tick bills and approve them together (BulkApproval.tsx).
+  const bulk = useBulkApproval({ desk, shown, canDecide, replace, notify: setNotice });
+
+  // Keyboard: J/K to move, A/H/R to decide, ? for the full list (DeskShortcuts.tsx).
+  const shortcuts = useDeskShortcuts({
+    enabled: ready && Boolean(queueFilter),
+    ids: useMemo(() => shown.map((b) => b.id), [shown]),
+    sections: SECTIONS.map((s) => s.filter),
+    section,
+    onSection: setSection,
+    onRefuse: (text) => setNotice({ kind: "info", text }),
+    bulk: bulk.keys,
+  });
+  const armedBill = shortcuts.armed ? shown.find((b) => b.id === shortcuts.armed!.id) : null;
+
+
   if (!ready) return null;
 
   const nav: NavItem[] = [
@@ -180,6 +199,18 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
                 </FilterField>
               </FilterBar>
 
+              <p className="hidden flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500 md:flex">
+                <span className="font-medium text-slate-600">Keyboard:</span>
+                <span><Kbd>J</Kbd> <Kbd>K</Kbd> move</span>
+                <span><Kbd>A</Kbd> approve</span>
+                <span><Kbd>H</Kbd> hold</span>
+                <span><Kbd>R</Kbd> reject</span>
+                <span><Kbd>X</Kbd> tick</span>
+                <span><Kbd>⇧ A</Kbd> tick all</span>
+                <span><Kbd>Ctrl/⌘ Enter</Kbd> send / confirm</span>
+                <span><Kbd>?</Kbd> all shortcuts</span>
+              </p>
+
               {shown.length === 0 ? (
                 <EmptyState
                   icon={<IconAlertCircle />}
@@ -187,13 +218,23 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
                   description={filtersActive ? "Try adjusting your search or filters." : undefined}
                 />
               ) : (
-                <div className="space-y-4">
+                <div className={cn("space-y-4", bulk.active && "pb-24")}>
                   {shown.map((bill) => (
-                    <BillCard key={bill.id} bill={bill} showBankGuarantee={desk === "Audit" || (desk === "Student Purchase" && bill.snp === "Approved")}>
+                    <div key={bill.id} data-bill-card={bill.id} tabIndex={-1} onFocusCapture={() => shortcuts.select(bill.id)}
+                      onMouseDown={() => shortcuts.select(bill.id)}
+                      className={cn("scroll-mt-4 rounded-xl outline-none transition-shadow",
+                        shortcuts.current === bill.id && "ring-2 ring-blue-500 ring-offset-2")}>
+                    {bulk.tickBox(bill)}
+                    <BillCard bill={bill} showBankGuarantee={desk === "Audit" || (desk === "Student Purchase" && bill.snp === "Approved")}>
                       {canDecide(bill) ? (
                         desk === "Student Purchase" ? (
                           <SnpReviewPanel bill={bill} actorCode={session?.user?.employee_code} actorRole={session?.user?.employee_type}
-                            onDecided={(updated) => replace(updated)} />
+                            onDecided={(updated) => {
+                              replace(updated);
+                              // The card leaves the queue, so say what happened above it.
+                              setNotice({ kind: "ok", text: `${updated.bill_number ?? "Bill"}: ${updated.snp === "Approved" ? `approved and sent to ${deskLabel(updated.status)}`
+                                : updated.snp === "Hold" ? "put on hold, funds remain reserved" : "rejected, reserved funds returned to the applicant's PDA"}.` });
+                            }} />
                         ) : (
                           <DeskReviewPanel bill={bill} desk={desk} actorCode={session?.user?.employee_code} actorRole={session?.user?.employee_type}
                             onDecided={(updated, text) => { replace(updated); setNotice({ kind: "ok", text }); }} />
@@ -208,12 +249,22 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
                         </p>
                       )}
                     </BillCard>
+                    </div>
                   ))}
                 </div>
               )}
             </>
           )}
         </>
+      )}
+      <ShortcutHelp open={shortcuts.help} onClose={shortcuts.closeHelp} />
+      {queueFilter && bulk.bar}
+      {armedBill && (
+        <div role="status" className={cn("fixed inset-x-0 z-40 mx-auto w-fit max-w-[calc(100%-2rem)] rounded-lg bg-slate-900 px-4 py-2 text-sm text-white shadow-lg",
+          bulk.active ? "bottom-24" : "bottom-4")}>
+          {shortcuts.armed!.action === "Hold" ? "Holding" : "Rejecting"} {armedBill.bill_number ?? "this bill"}: type the reason, then{" "}
+          <strong>Ctrl/⌘ + Enter</strong>. <strong>Esc</strong> to cancel.
+        </div>
       )}
     </AppShell>
   );

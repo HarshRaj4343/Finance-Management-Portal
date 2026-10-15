@@ -66,6 +66,18 @@ export function fail(err: unknown, fallback = "Something went wrong."): NextResp
   return NextResponse.json({ error: fallback }, { status: 500 });
 }
 
+/**
+ * The sentence fail() would show for an error, for reports that carry one
+ * outcome per item (bulk approval) rather than one response.
+ */
+export function failText(err: unknown, fallback = "Something went wrong."): string {
+  const e = err as { code?: string; message?: string; status?: number };
+  if (typeof e?.status === "number" && e.status >= 400 && e.status < 500 && e.message) return deskLabel(e.message);
+  if ((e?.code === "P0001" || e?.code === "40001") && e.message) return deskLabel(e.message);
+  console.error("[api]", e?.code ?? "", e?.message ?? err);
+  return fallback;
+}
+
 export function ok(data: unknown, status = 200): NextResponse {
   return NextResponse.json(data, { status });
 }

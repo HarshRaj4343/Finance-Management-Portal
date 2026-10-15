@@ -11,6 +11,7 @@ import { EmptyState, ExportButton, LoadingState, PageHeader } from "@/components
 import { api, money, qs, when, count } from "@/lib/api";
 import { canOpenMovementRegister, deskLabel, homeFor, normaliseRole } from "@/lib/roles";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
+import { Kbd, ShortcutHelp, type ShortcutList } from "@/components/DeskShortcuts";
 
 type Register = "Inward" | "Outward";
 type Entry = {
@@ -23,6 +24,20 @@ type Entry = {
 };
 
 const DESKS = ["Student Purchase", "Audit", "Finance Admin"] as const;
+
+const REGISTER_SHORTCUTS: ShortcutList = [
+  [["J", "↓"], "Next entry"],
+  [["K", "↑"], "Previous entry"],
+  [["R"], "Mark the selected entry Received"],
+  [["N"], "Mark the selected entry Not received"],
+  [["X", "Space"], "Switch the selected entry between Received and Not received"],
+  [["⇧ J", "⇧ K"], "Mark Received while moving down / up"],
+  [["O", "Enter"], "Open the bill in a new tab"],
+  [["←", "→"], "Previous / next page"],
+  [["[", "]"], "Inward / Outward register"],
+  [["/"], "Search"],
+  [["?"], "Show this list"],
+];
 const PAGE = 50;
 const th = "whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
 
@@ -108,6 +123,79 @@ export default function MovementRegisterPage() {
     load(true);
   };
 
+  // Keyboard: move with J / K, mark with X or Space, ? for the list.
+  const [selected, setSelected] = useState<number | null>(null);
+  const [help, setHelp] = useState(false);
+  useEffect(() => {
+    if (!entries.length) { setSelected(null); return; }
+    if (!entries.some((e) => e.id === selected)) setSelected(entries[0].id);
+  }, [entries, selected]);
+  useEffect(() => {
+    if (!allowed) return;
+    const onKey = (ev: KeyboardEvent) => {
+      if (ev.defaultPrevented || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (document.querySelector('[role="dialog"], [role="alertdialog"]')) return;
+      const target = ev.target as HTMLElement;
+      if (target.closest("input:not([type='checkbox']), textarea, select, [contenteditable='true']")) {
+        if (ev.key === "Escape" && target.matches("input[type='search']")) { ev.preventDefault(); target.blur(); }
+        return;
+      }
+      const at = entries.findIndex((e) => e.id === selected);
+      const here = at >= 0 ? entries[at] : null;
+      const go = (step: number) => {
+        if (!entries.length) return;
+        ev.preventDefault();
+        const next = entries[Math.max(0, Math.min(entries.length - 1, at + step))];
+        // Shift marks as it moves: the entry left and the entry reached.
+        if (ev.shiftKey) for (const e of [here, next]) if (e && !e.received && canMark(e) && !marking.has(e.id)) markReceived(e, true);
+        setSelected(next.id);
+        document.querySelector(`[data-entry="${next.id}"]`)?.scrollIntoView({ block: "nearest" });
+      };
+      switch (ev.key) {
+        case "j": case "J": case "ArrowDown": return go(1);
+        case "k": case "K": case "ArrowUp": return go(-1);
+        case "x": case "X": case " ": case "r": case "R": case "n": case "N": {
+          if (!here) return;
+          // A focused checkbox toggles itself on Space; only take over elsewhere.
+          if (ev.key === " " && target.closest("button, a, input")) return;
+          ev.preventDefault();
+          if (!canMark(here)) { setNotice({ kind: "info", text: `Only ${deskLabel(here.desk)} or the Dean can mark this entry.` }); return; }
+          // R and N set the mark outright, so pressing either twice is harmless; X and Space switch it.
+          const key = ev.key.toLowerCase();
+          const received = key === "r" ? true : key === "n" ? false : !here.received;
+          if (received !== here.received && !marking.has(here.id)) markReceived(here, received);
+          return;
+        }
+        case "o": case "O": case "Enter":
+          if (!here || (ev.key === "Enter" && target.closest("button, a, input"))) return;
+          ev.preventDefault();
+          window.open(`/bill/${here.bill_id}`, "_blank", "noopener");
+          return;
+        case "ArrowLeft": case "ArrowRight": {
+          ev.preventDefault();
+          const last = Math.max(Math.ceil(total / PAGE), 1) - 1;
+          setPage((n) => Math.max(0, Math.min(last, n + (ev.key === "ArrowRight" ? 1 : -1))));
+          return;
+        }
+        case "[": case "]":
+          ev.preventDefault();
+          setRegister(ev.key === "[" ? "Inward" : "Outward"); setPage(0);
+          return;
+        case "/": {
+          const box = document.querySelector<HTMLInputElement>("input[type='search']");
+          if (!box) return;
+          ev.preventDefault(); box.focus(); box.select();
+          return;
+        }
+        case "?":
+          ev.preventDefault(); setHelp(true);
+          return;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
   if (!allowed) return null;
 
   const inward = register === "Inward";
@@ -187,7 +275,8 @@ export default function MovementRegisterPage() {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {entries.map((e) => (
-                  <tr key={e.id} className="align-top hover:bg-slate-50">
+                  <tr key={e.id} data-entry={e.id} onMouseDown={() => setSelected(e.id)}
+                    className={`align-top hover:bg-slate-50 ${selected === e.id ? "bg-blue-50/60 outline outline-2 -outline-offset-2 outline-blue-500" : ""}`}>
                     <td className="whitespace-nowrap px-4 py-3">
                       <label
                         className={`inline-flex items-center gap-2 text-xs font-medium ${canMark(e) ? "cursor-pointer" : "cursor-not-allowed opacity-70"} ${e.received ? "text-green-800" : "text-slate-600"}`}
@@ -238,6 +327,17 @@ export default function MovementRegisterPage() {
           </div>
         </section>
       )}
+      <p className="hidden flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500 md:flex">
+        <span className="font-medium text-slate-600">Keyboard:</span>
+        <span><Kbd>J</Kbd> <Kbd>K</Kbd> move</span>
+        <span><Kbd>R</Kbd> received</span>
+        <span><Kbd>N</Kbd> not received</span>
+        <span><Kbd>X</Kbd> or <Kbd>Space</Kbd> switch</span>
+        <span><Kbd>⇧ J</Kbd> mark while moving</span>
+        <span><Kbd>?</Kbd> all shortcuts</span>
+      </p>
+      <ShortcutHelp open={help} onClose={() => setHelp(false)} list={REGISTER_SHORTCUTS}
+        intro="Go through the register without the mouse. You can mark only your own desk's entries (the Dean, any)." />
       <p className="text-center text-xs text-slate-500">Register entries are permanent. They are written automatically as bills move and cannot be edited or deleted.</p>
     </AppShell>
   );

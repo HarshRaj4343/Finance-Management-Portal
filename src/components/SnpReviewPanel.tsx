@@ -87,12 +87,13 @@ export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }
         </div>}
       </div>
       <label className="block text-sm font-medium">Store and Purchase Department remark (required for Hold/Reject)
-        <textarea className="mt-1 w-full rounded-lg border p-3" rows={2} value={remark} onChange={(e) => setRemark(e.target.value)} />
+        <textarea data-remark className="mt-1 w-full rounded-lg border p-3" rows={2} value={remark} onChange={(e) => setRemark(e.target.value)} />
       </label>
       <DecisionButtons onDecide={(action, button) => request(action, button)} disabled={busy || pending !== null} busy={busy} />
     </fieldset>}
     <AlertDialog open={pending !== null} onOpenChange={(open) => { if (!open && !busy) setPending(null); }}>
       <AlertDialogContent onEscapeKeyDown={(e) => { if (busy) e.preventDefault(); }}
+        onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); confirm(); } }}
         onOpenAutoFocus={(e) => { e.preventDefault(); cancelButton.current?.focus(); }}
         onCloseAutoFocus={(e) => { e.preventDefault(); if (actionButton.current?.isConnected) actionButton.current.focus(); }}>
         <AlertDialogTitle>Confirm {pending ? actionLabels[pending.action].toLowerCase() : "decision"}</AlertDialogTitle>
@@ -105,7 +106,8 @@ export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }
           {pending?.action === "Approved" && <><dt>Bank guarantee</dt><dd>{pending.extra.has_bank_guarantee ? `${money(Number(pending.extra.bank_guarantee_amount))} — ${pending.extra.bank_guarantee_details}` : "Not required"}</dd></>}
         </dl>
         <p className="text-sm">{pending?.action === "Approved" ? "This advances the bill to its next required desk." : pending?.action === "Hold" ? "This keeps the bill at this desk and its funds reserved." : "This rejection releases the bill's reserved funds. The filer may correct and resubmit it."}</p>
-        <AlertDialogFooter>
+        <AlertDialogFooter className="items-center">
+          <span className="mr-auto hidden text-xs text-slate-500 sm:inline">Ctrl/⌘ + Enter to confirm · Esc to cancel</span>
           <AlertDialogCancel asChild><button ref={cancelButton} type="button" disabled={busy} className="rounded-lg border px-4 py-2">Cancel</button></AlertDialogCancel>
           <button type="button" disabled={busy} onClick={confirm} className="rounded-lg bg-blue-700 px-4 py-2 text-white disabled:opacity-50">{busy ? "Recording…" : `Confirm ${pending ? actionLabels[pending.action] : "decision"}`}</button>
         </AlertDialogFooter>

@@ -44,7 +44,9 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
     <ConfirmContext.Provider value={ask}>
       {children}
       <AlertDialog open={asking !== null} onOpenChange={(open) => { if (!open) settle(false); }}>
-        <AlertDialogContent onOpenAutoFocus={(e) => { e.preventDefault(); cancelButton.current?.focus(); }}>
+        {/* Plain Enter stays on Cancel; Ctrl/⌘ + Enter is the deliberate keyboard confirm. */}
+        <AlertDialogContent onOpenAutoFocus={(e) => { e.preventDefault(); cancelButton.current?.focus(); }}
+          onKeyDown={(e) => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) { e.preventDefault(); settle(true); } }}>
           <AlertDialogTitle>{asking?.title}</AlertDialogTitle>
           <AlertDialogDescription>{asking?.description ?? "Please confirm before you continue."}</AlertDialogDescription>
           {asking?.details && asking.details.length > 0 && (
@@ -57,7 +59,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               ))}
             </dl>
           )}
-          <AlertDialogFooter>
+          <AlertDialogFooter className="items-center">
+            <span className="mr-auto hidden text-xs text-slate-500 sm:inline">Ctrl/⌘ + Enter to confirm · Esc to cancel</span>
             <AlertDialogCancel asChild>
               <button ref={cancelButton} type="button" className="rounded-lg border px-4 py-2">Cancel</button>
             </AlertDialogCancel>

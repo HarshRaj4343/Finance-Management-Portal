@@ -81,6 +81,7 @@ export default function DeskReviewPanel({ bill, desk, actorCode, actorRole, onDe
         </label>
         <textarea
           id={id}
+          data-remark
           rows={2}
           value={remark}
           onChange={(e) => setRemark(e.target.value)}
