@@ -2,9 +2,13 @@ import type { Bill } from "@/types/database";
 import { normaliseRole } from "./roles";
 
 /** Mirrors fn_edit_window in 0006_edit_window.sql. The database enforces it. */
-export const EDIT_WINDOW_MINUTES = 5;
+export const EDIT_WINDOW_MINUTES = 10;
 
-type WindowBill = Pick<Bill, "status" | "editable_until">;
+/** Mirrors fn_edit_pause_limit in 0009: the most a bill's window may be paused in all. */
+export const EDIT_PAUSE_LIMIT_MINUTES = 30;
+
+type WindowBill = Pick<Bill, "status" | "editable_until">
+  & Partial<Pick<Bill, "edit_paused_until" | "edit_paused_seconds" | "edit_paused_since" | "edit_pause_used_seconds">>;
 type DeskBill = Pick<Bill, "status" | "snp" | "audit" | "finance_admin">;
 
 /** Freshly filed or corrected: only the filer sees and may change it. */
@@ -13,9 +17,22 @@ export function inEditWindow(bill: WindowBill, now = Date.now()): boolean {
   return Date.parse(bill.editable_until) > now;
 }
 
-/** Milliseconds left in the edit window, or 0. */
+/** The clock is stopped because the correction form is open (0009). */
+export function editWindowPaused(bill: WindowBill, now = Date.now()): boolean {
+  return inEditWindow(bill, now) && bill.edit_paused_seconds != null
+    && Boolean(bill.edit_paused_until) && Date.parse(bill.edit_paused_until!) > now;
+}
+
+/** Milliseconds of pausing this bill still has, of its 30 minutes in all. */
+export function editPauseAllowanceLeft(bill: WindowBill, now = Date.now()): number {
+  const since = editWindowPaused(bill, now) && bill.edit_paused_since ? Date.parse(bill.edit_paused_since) : now;
+  return Math.max(0, EDIT_PAUSE_LIMIT_MINUTES * 60_000 - (bill.edit_pause_used_seconds ?? 0) * 1000 - (now - since));
+}
+
+/** Milliseconds left in the edit window, or 0. A paused window does not count down. */
 export function editWindowLeft(bill: WindowBill, now = Date.now()): number {
-  return inEditWindow(bill, now) ? Date.parse(bill.editable_until!) - now : 0;
+  if (!inEditWindow(bill, now)) return 0;
+  return editWindowPaused(bill, now) ? bill.edit_paused_seconds! * 1000 : Date.parse(bill.editable_until!) - now;
 }
 
 /** The desk the bill is sitting at has put it on hold. */

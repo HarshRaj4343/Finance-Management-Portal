@@ -6,7 +6,7 @@ import { canSeeAllBills, isApprover } from "@/lib/roles";
 import { findEmployee } from "@/server/employee";
 import { assertBillWriter, billPayload } from "@/server/bill-validation";
 import { pagination } from "@/lib/security";
-import { CSV_ROW_LIMIT, csvResponse, istStamp, toCsv } from "@/server/csv";
+import { CSV_ROW_LIMIT, columnsResponse, csvResponse, istStamp, pickColumns, toCsv, type CsvColumn } from "@/server/csv";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -20,7 +20,7 @@ const BILL_COLUMNS = `
   date_of_installation, date_of_delivery,
   status, snp, audit, finance_admin, noted,
   remarks, remarks1, remarks2, remarks3, remarks4,
-  decided_at, created_at::text, updated_at::text, editable_until, funding_pool, funding_fy,
+  decided_at, created_at::text, updated_at::text, editable_until, edit_paused_until, edit_paused_seconds, edit_paused_since, edit_pause_used_seconds, funding_pool, funding_fy,
   greatest(
     (select max(a.created_at) from public.bill_approvals a
       where a.bill_id = bills.id and a.to_status = bills.status
@@ -28,6 +28,18 @@ const BILL_COLUMNS = `
     editable_until
   ) as stage_entered_at
 `;
+
+type CsvRow = Record<string, unknown>;
+const desk = (s: unknown) => (s === "Student Purchase" ? "Store and Purchase Department" : s);
+const CSV_COLUMNS: CsvColumn<CsvRow>[] = [
+  ["Bill number", (r) => r.bill_number], ["Filed (IST)", (r) => istStamp(r.created_at)], ["Status", (r) => desk(r.status)],
+  ["Applicant ID", (r) => r.employee_id], ["Applicant", (r) => r.employee_name], ["Department", (r) => r.employee_department],
+  ["Category", (r) => r.item_category], ["Items", (r) => r.item_description], ["Quantity", (r) => r.qty],
+  ["Amount (INR)", (r) => Number(r.po_value).toFixed(2)], ["Source of fund", (r) => r.source_of_fund],
+  ["Supplier", (r) => r.supplier_name], ["Invoice number", (r) => r.invoice_no], ["Invoice date", (r) => r.invoice_date],
+  ["PO details", (r) => r.po_details], ["Store and Purchase", (r) => r.snp], ["Audit", (r) => r.audit],
+  ["Finance Admin", (r) => r.finance_admin], ["Decided (IST)", (r) => istStamp(r.decided_at)], ["Stock entry", (r) => r.stock_entry],
+];
 
 /**
  * GET /api/bills
@@ -40,6 +52,8 @@ const BILL_COLUMNS = `
  *   ?status=Accepted      by final state
  *   ?employee=E001        one person's bills (approvers only)
  *   ?q=pump               free text over item, supplier, bill number, PO
+ *   ?source=PDA           by source of fund (PDA, OH-31, OH-35)
+ *   ?format=csv[&col=..]  spreadsheet of the chosen columns; ?format=columns lists them
  *   ?from=2026-04-01 &to=  filed between these IST dates, inclusive
  *   ?limit= &offset=      paging, default 100
  */
@@ -48,6 +62,7 @@ export async function GET(req: NextRequest) {
     const actor = await requireActor();
     const p = req.nextUrl.searchParams;
 
+    if (p.get("format") === "columns") return columnsResponse(CSV_COLUMNS);
     const { limit, offset } = pagination(p);
 
     const params = new Params();
@@ -83,6 +98,7 @@ export async function GET(req: NextRequest) {
       where.push(`po_value ${op} ${params.add(Number(v))}`);
     }
     if (p.get("category")) where.push(`item_category = ${params.add(p.get("category"))}`);
+    if (p.get("source")) where.push(`source_of_fund = ${params.add(p.get("source"))}`);
     if (p.get("department")) {
       where.push(`employee_department::text = ${params.add(p.get("department"))}`);
     }
@@ -106,20 +122,11 @@ export async function GET(req: NextRequest) {
     const filter = whereClause(where);
     const filterValues = [...params.values];
 
-    // ?format=csv: every bill this person may see under these filters.
+    // ?format=csv: every bill this person may see under these filters,
+    // with the columns ticked in the download dialog.
     if (p.get("format") === "csv") {
-      type Row = Record<string, unknown>;
-      const rows = await query<Row>(`select * from public.bills ${filter} order by created_at desc, id desc limit ${CSV_ROW_LIMIT}`, filterValues);
-      const desk = (s: unknown) => (s === "Student Purchase" ? "Store and Purchase Department" : s);
-      return csvResponse("bills.csv", toCsv<Row>([
-        ["Bill number", (r) => r.bill_number], ["Filed (IST)", (r) => istStamp(r.created_at)], ["Status", (r) => desk(r.status)],
-        ["Applicant ID", (r) => r.employee_id], ["Applicant", (r) => r.employee_name], ["Department", (r) => r.employee_department],
-        ["Category", (r) => r.item_category], ["Items", (r) => r.item_description], ["Quantity", (r) => r.qty],
-        ["Amount (INR)", (r) => Number(r.po_value).toFixed(2)], ["Source of fund", (r) => r.source_of_fund],
-        ["Supplier", (r) => r.supplier_name], ["Invoice number", (r) => r.invoice_no], ["Invoice date", (r) => r.invoice_date],
-        ["PO details", (r) => r.po_details], ["Store and Purchase", (r) => r.snp], ["Audit", (r) => r.audit],
-        ["Finance Admin", (r) => r.finance_admin], ["Decided (IST)", (r) => istStamp(r.decided_at)], ["Stock entry", (r) => r.stock_entry],
-      ], rows));
+      const rows = await query<CsvRow>(`select * from public.bills ${filter} order by created_at desc, id desc limit ${CSV_ROW_LIMIT}`, filterValues);
+      return csvResponse("bills.csv", toCsv<CsvRow>(pickColumns(CSV_COLUMNS, p), rows));
     }
     const page = `limit ${params.add(limit)} offset ${params.add(offset)}`;
 

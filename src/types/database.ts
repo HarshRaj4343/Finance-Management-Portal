@@ -69,6 +69,12 @@ export interface BillRow {
   id: string;
   revision: number;
   created_by: string | null;
+  /** While the correction form is open the window is paused: lease end, and seconds left (0009). */
+  edit_paused_until?: string | null;
+  edit_paused_seconds?: number | null;
+  /** Start of the current pause, and pause seconds used before it (at most 30 minutes in all). */
+  edit_paused_since?: string | null;
+  edit_pause_used_seconds?: number;
   invoice_no: string | null;
   invoice_date: string | null;
   form_data: import("@/app/apply-bill/bill-form/model").FormState | null;

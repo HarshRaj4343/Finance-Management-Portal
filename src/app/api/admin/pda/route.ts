@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { query, queryOne, actorQueryOne, Params, whereClause, likePattern } from "@/server/db";
 import { requireRole } from "@/server/session";
-import { csvResponse, istStamp, toCsv } from "@/server/csv";
+import { columnsResponse, csvResponse, istStamp, pickColumns, toCsv, type CsvColumn } from "@/server/csv";
 import { fail, ok, badRequest } from "@/server/http";
 import { isMoney } from "@/lib/security";
 
@@ -20,11 +20,23 @@ export const dynamic = "force-dynamic";
  * safe.
  */
 
-/** GET /api/admin/pda — every account, with what is free and what is not. */
+type CsvRow = Record<string, unknown>;
+const CSV_COLUMNS: CsvColumn<CsvRow>[] = [
+  ["Employee ID", (a) => a.employee_id], ["Name", (a) => a.employee_name], ["Department", (a) => a.department],
+  ["Email", (a) => a.email], ["Allocated (INR)", (a) => Number(a.allocated).toFixed(2)],
+  ["Free balance (INR)", (a) => Number(a.balance).toFixed(2)], ["Committed (INR)", (a) => Number(a.committed).toFixed(2)],
+  ["Spent (INR)", (a) => Number(a.spent).toFixed(2)], ["Last updated (IST)", (a) => istStamp(a.updated_at)],
+];
+
+/**
+ * GET /api/admin/pda — every account, with what is free and what is not.
+ *   ?department= &q=   ?format=csv[&col=..] for the chosen columns; ?format=columns lists them
+ */
 export async function GET(req: NextRequest) {
   try {
     await requireRole("PDA Manager", "Dean", "Finance Admin");
     const p = req.nextUrl.searchParams;
+    if (p.get("format") === "columns") return columnsResponse(CSV_COLUMNS);
 
     const params = new Params();
     const where: string[] = ["pda.is_active"];
@@ -48,13 +60,7 @@ export async function GET(req: NextRequest) {
     );
 
     if (p.get("format") === "csv") {
-      type Row = Record<string, unknown>;
-      return csvResponse("pda-accounts.csv", toCsv<Row>([
-        ["Employee ID", (a) => a.employee_id], ["Name", (a) => a.employee_name], ["Department", (a) => a.department],
-        ["Email", (a) => a.email], ["Allocated (INR)", (a) => Number(a.allocated).toFixed(2)],
-        ["Free balance (INR)", (a) => Number(a.balance).toFixed(2)], ["Committed (INR)", (a) => Number(a.committed).toFixed(2)],
-        ["Spent (INR)", (a) => Number(a.spent).toFixed(2)], ["Last updated (IST)", (a) => istStamp(a.updated_at)],
-      ], accounts as Row[]));
+      return csvResponse("pda-accounts.csv", toCsv<CsvRow>(pickColumns(CSV_COLUMNS, p), accounts as CsvRow[]));
     }
     return ok({ accounts, total: accounts.length });
   } catch (err) {

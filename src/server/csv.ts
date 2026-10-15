@@ -46,3 +46,29 @@ export function istStamp(value: unknown): string {
   const get = (t: string) => parts.find((p) => p.type === t)?.value ?? "";
   return `${get("year")}-${get("month")}-${get("day")} ${get("hour")}:${get("minute")}`;
 }
+
+/**
+ * The columns the person ticked in the download dialog (?col=Header,
+ * repeatable), kept in the file's own order. No ?col means every column.
+ */
+export function pickColumns<T>(columns: CsvColumn<T>[], params: URLSearchParams): CsvColumn<T>[] {
+  const wanted = params.getAll("col");
+  if (!wanted.length) return columns;
+  const picked = columns.filter(([header]) => wanted.includes(header));
+  if (!picked.length) throw Object.assign(new Error("Choose at least one column to download."), { status: 400 });
+  return picked;
+}
+
+/** ?format=columns: the headers an export offers, for the download dialog. */
+export function columnsResponse<T>(columns: CsvColumn<T>[]): Response {
+  return Response.json({ columns: columns.map(([header]) => header) }, { headers: { "Cache-Control": "no-store" } });
+}
+
+/** A YYYY-MM-DD filter value, or a 400 for anything else. */
+export function isoDay(value: string | null): string | null {
+  if (!value) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || Number.isNaN(Date.parse(value))) {
+    throw Object.assign(new Error("Dates must be YYYY-MM-DD."), { status: 400 });
+  }
+  return value;
+}

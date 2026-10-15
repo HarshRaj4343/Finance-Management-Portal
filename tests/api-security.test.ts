@@ -131,6 +131,34 @@ describe("API authority and financial boundaries", () => {
     expect(text).toContain("'=cmd");
     expect(mocks.query.mock.calls[0][1]).toContain("2026-27");
   });
+  it("downloads only the columns and rows chosen in the download dialog", async () => {
+    mocks.actor.role = "Dean";
+    const listed = await (await register(req("/api/register?format=columns"))).json();
+    expect(listed.columns).toContain("Serial no.");
+    expect(listed.columns).toContain("Supplier");
+    expect(mocks.query).not.toHaveBeenCalled();
+    mocks.query.mockResolvedValue([{ serial_no: "SPS/2026-27/0002", amount: 500, supplier_name: "Hidden Traders", department: "School A" }]);
+    const res = await register(req("/api/register?format=csv&col=Serial%20no.&col=Amount%20(INR)&department=School%20A&category=Minor&source=PDA"));
+    const [header, row] = (await res.text()).replace(/^\uFEFF/, "").trim().split("\r\n");
+    expect(header).toBe("Serial no.,Amount (INR)");
+    expect(row).toBe("SPS/2026-27/0002,500.00");
+    expect(mocks.query.mock.calls[0][1]).toEqual(["School A", "Minor", "PDA"]);
+    expect((await register(req("/api/register?format=csv&col=Nonsense"))).status).toBe(400);
+    expect((await register(req("/api/register?format=csv&from=yesterday"))).status).toBe(400);
+  });
+  it("filters the inward / outward export by school, dates and receipt", async () => {
+    mocks.actor.role = "Audit";
+    const inward = await (await movements(req("/api/movements?register=Inward&format=columns"))).json();
+    const outward = await (await movements(req("/api/movements?register=Outward&format=columns"))).json();
+    expect(inward.columns).not.toContain("Hours at desk");
+    expect(outward.columns).toContain("Hours at desk");
+    mocks.query.mockResolvedValue([]);
+    const res = await movements(req("/api/movements?register=Inward&format=csv&department=School%20A&from=2026-04-01&to=2026-10-15&received=no&col=Inward%20no."));
+    expect(res.status).toBe(200);
+    expect(mocks.query.mock.calls[0][0]).toContain("not m.received");
+    expect(mocks.query.mock.calls[0][1]).toEqual(["Inward", "School A", "2026-04-01", "2026-10-15"]);
+    expect((await movements(req("/api/movements?register=Inward&received=maybe"))).status).toBe(400);
+  });
   it("applies identical search, date and year filters to rows and totals", async () => {
     mocks.actor.role = "Dean"; mocks.actor.code = "TEST-D";
     mocks.query.mockResolvedValue([]); mocks.queryOne.mockResolvedValue({ total: 0, totals: {} });

@@ -118,20 +118,7 @@ export function LoadingState({ label = "Loading…" }: { label?: string }) {
 }
 
 /**
- * Download the current view as a spreadsheet. The API applies the same
- * filters and permissions as the page; Excel opens the CSV directly.
+ * Download as a spreadsheet, after a dialog asks which rows and columns to
+ * include. The API applies the same permissions as the page.
  */
-export function ExportButton({ href, label = "Download Excel (CSV)" }: { href: string; label?: string }) {
-  return (
-    <a
-      href={href}
-      download
-      className="inline-flex h-9 items-center gap-2 rounded-md border border-slate-300 bg-white px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
-    >
-      <svg aria-hidden="true" viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
-      </svg>
-      {label}
-    </a>
-  );
-}
+export { default as ExportButton, type ExportFilter, CATEGORY_OPTIONS, FUND_OPTIONS } from "../ExportDialog";

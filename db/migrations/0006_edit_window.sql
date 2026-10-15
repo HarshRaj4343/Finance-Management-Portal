@@ -1,10 +1,11 @@
 -- =====================================================================
--- 0006_edit_window.sql  --  five-minute correction window
+-- 0006_edit_window.sql  --  ten-minute correction window
 --
--- A freshly filed (or corrected) bill stays with its filer for five
--- minutes. During that window the filer may correct it and no desk may
--- decide it; the API also hides it from the approval queues. After the
--- window the bill is with its desk, and the filer may correct it again
+-- A freshly filed (or corrected) bill stays with its filer for ten
+-- minutes (paused while the correction form is open, 0009).
+-- During that window the filer may correct it and no desk may decide
+-- it; the API also hides it from the approval queues. After the window
+-- the bill is with its desk, and the filer may correct it again
 -- only once a desk holds or rejects it.
 --
 -- Correcting a rejected bill reopens it: the full amount is reserved
@@ -21,7 +22,7 @@ alter table public.bills add column if not exists editable_until timestamptz;
 
 -- >>> Change the window length here only.
 create or replace function public.fn_edit_window() returns interval
-language sql immutable as $$ select interval '5 minutes' $$;
+language sql immutable as $$ select interval '10 minutes' $$;
 
 create or replace function public.fn_edit_window_label() returns text
 language sql immutable as $$ select (extract(epoch from public.fn_edit_window()) / 60)::integer || ' minutes' $$;

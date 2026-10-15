@@ -19,6 +19,7 @@ type Entry = {
   department: string | null; item_description: string | null; amount: number | null;
   counterpart: string; nature: string; actor_name: string | null; actor_code: string | null; remark: string | null;
   moved_at: string; seconds_at_desk: number | null;
+  received: boolean; received_by: string | null; received_marked_at: string | null;
 };
 
 const DESKS = ["Student Purchase", "Audit", "Finance Admin"] as const;
@@ -94,6 +95,19 @@ export default function MovementRegisterPage() {
   }, [load]);
   useLiveRefresh(() => load(true));
 
+  // Received / Not received. Shown at once, put back if the server refuses.
+  const [marking, setMarking] = useState<Set<number>>(new Set());
+  const canMark = (e: Entry) => role === "Dean" || role === e.desk;
+  const markReceived = async (e: Entry, received: boolean) => {
+    const flip = (value: boolean) => setEntries((list) => list.map((x) => (x.id === e.id ? { ...x, received: value } : x)));
+    flip(received);
+    setMarking((s) => new Set(s).add(e.id));
+    const { error } = await api.post(`/api/movements/${e.id}/receipt`, { received });
+    setMarking((s) => { const n = new Set(s); n.delete(e.id); return n; });
+    if (error) { flip(!received); setNotice({ kind: "bad", text: error }); return; }
+    load(true);
+  };
+
   if (!allowed) return null;
 
   const inward = register === "Inward";
@@ -111,7 +125,20 @@ export default function MovementRegisterPage() {
     >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
       <PageHeader
-        actions={<ExportButton href={"/api/movements" + qs({ register, desk, fy, q: search.trim(), format: "csv" })} />}
+        actions={<ExportButton endpoint="/api/movements" title="Inward / Outward Register"
+          values={{ register, desk, fy, q: search.trim() }}
+          filters={[
+            { key: "register", label: "Register", type: "select", changesColumns: true, options: [
+              { value: "Inward", label: "Inward register" }, { value: "Outward", label: "Outward register" }] },
+            { key: "desk", label: "Desk", type: "select", any: "All desks", options: DESKS.map((d) => ({ value: d, label: deskLabel(d) })) },
+            { key: "department", label: "School / department", type: "department" },
+            { key: "received", label: "Receipt", type: "select", options: [
+              { value: "yes", label: "Received" }, { value: "no", label: "Not received" }] },
+            { key: "fy", label: "Financial year", type: "select", options: years, any: "All years" },
+            { key: "q", label: "Search", type: "text", placeholder: "Serial, bill no., employee, item" },
+            { key: "from", label: "Moved from", type: "date" },
+            { key: "to", label: "Moved to", type: "date" },
+          ]} />}
         title={inward ? "Inward Register" : "Outward Register"}
         description={inward
           ? "Every bill received at a desk, and where it came from."
@@ -148,6 +175,7 @@ export default function MovementRegisterPage() {
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr>
+                  <th scope="col" className={th}>Receipt</th>
                   <th scope="col" className={th}>{inward ? "Inward no. / received" : "Outward no. / dispatched"}</th>
                   <th scope="col" className={th}>Bill</th>
                   <th scope="col" className={`${th} text-right`}>Amount</th>
@@ -160,6 +188,24 @@ export default function MovementRegisterPage() {
               <tbody className="divide-y divide-slate-100">
                 {entries.map((e) => (
                   <tr key={e.id} className="align-top hover:bg-slate-50">
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <label
+                        className={`inline-flex items-center gap-2 text-xs font-medium ${canMark(e) ? "cursor-pointer" : "cursor-not-allowed opacity-70"} ${e.received ? "text-green-800" : "text-slate-600"}`}
+                        title={canMark(e)
+                          ? (e.received_by ? `Marked by ${e.received_by}, ${when(e.received_marked_at)}` : "Press Space or click to mark received")
+                          : `Only ${deskLabel(e.desk)} or the Dean can mark this entry`}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={e.received}
+                          disabled={!canMark(e) || marking.has(e.id)}
+                          onChange={(ev) => markReceived(e, ev.target.checked)}
+                          aria-label={`${e.serial_no}: ${e.received ? "Received" : "Not received"}`}
+                          className="size-4 rounded border-slate-300 accent-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
+                        />
+                        {e.received ? "Received" : "Not received"}
+                      </label>
+                    </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <p className="font-mono text-xs text-slate-800">{e.serial_no}</p>
                       <p className="text-xs text-slate-500">{when(e.moved_at)}</p>

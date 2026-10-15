@@ -2,12 +2,12 @@
 
 import { homeFor } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
-import { api, money, qs, dateOnly } from "@/lib/api";
+import { api, money, dateOnly } from "@/lib/api";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import AppShell, { canOpenPortalPages, sharedLinks } from "@/components/AppShell";
-import { ExportButton, PageHeader, StatusBadge } from "@/components/ui/page";
+import { CATEGORY_OPTIONS, ExportButton, FUND_OPTIONS, PageHeader, StatusBadge } from "@/components/ui/page";
 import { BillWithEmployee } from "@/types/database";
 import { Input } from "@/components/ui/input";
 
@@ -227,11 +227,27 @@ export default function AllBillsPage() {
       <PageHeader
         title="All Bills"
         description="Every bill you are allowed to see, newest first. Select a row to open the bill."
-        actions={<ExportButton href={"/api/bills" + qs({
-          format: "csv", category: filters.category, department: filters.dept, finance_admin: filters.financeAdmin,
-          min: filters.valueMin, max: filters.valueMax, from: filters.dateFrom, to: filters.dateTo,
-          q: filters.billId.trim() || filters.employeeId.trim(),
-        })} />}
+        actions={<ExportButton endpoint="/api/bills" title="All Bills"
+          values={{
+            category: filters.category, department: filters.dept, finance_admin: filters.financeAdmin,
+            min: filters.valueMin, max: filters.valueMax, from: filters.dateFrom, to: filters.dateTo,
+            q: filters.billId.trim() || filters.employeeId.trim(),
+          }}
+          filters={[
+            { key: "department", label: "School / department", type: "department" },
+            { key: "status", label: "Where the bill is", type: "select", options: [
+              { value: "Student Purchase", label: "At Store and Purchase Department" }, { value: "Audit", label: "At Audit" },
+              { value: "Finance Admin", label: "At Finance Admin" }, { value: "Accepted", label: "Accepted" }, { value: "Rejected", label: "Rejected" },
+            ] },
+            { key: "category", label: "Category", type: "select", options: CATEGORY_OPTIONS },
+            { key: "source", label: "Source of fund", type: "select", options: FUND_OPTIONS },
+            { key: "finance_admin", label: "Finance Admin decision", type: "select", options: FINANCE_STATES },
+            { key: "q", label: "Search", type: "text", placeholder: "Bill no., applicant, supplier, item" },
+            { key: "from", label: "Filed from", type: "date" },
+            { key: "to", label: "Filed to", type: "date" },
+            { key: "min", label: "Amount at least (₹)", type: "number" },
+            { key: "max", label: "Amount at most (₹)", type: "number" },
+          ]} />}
       />
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-label="Filters">

@@ -12,7 +12,7 @@ import { api, money, qs, when, dateOnly, count } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
 import AppShell, { canOpenPortalPages, sharedLinks } from "@/components/AppShell";
 import FilterBar, { FilterField, filterInput } from "@/components/FilterBar";
-import { ExportButton, PageHeader, StatCard } from "@/components/ui/page";
+import { CATEGORY_OPTIONS, ExportButton, FUND_OPTIONS, PageHeader, StatCard } from "@/components/ui/page";
 import { homeFor, normaliseRole } from "@/lib/roles";
 import type { RegisterEntry, DepartmentRow } from "@/types/database";
 
@@ -155,7 +155,17 @@ export default function RegisterPage() {
     >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
       <PageHeader
-        actions={<ExportButton href={"/api/register" + qs({ q: searchQuery, department, fy, format: "csv" })} />}
+        actions={<ExportButton endpoint="/api/register" title="Purchase Register"
+          values={{ q: searchQuery, department, fy }}
+          filters={[
+            { key: "department", label: "School / department", type: "department" },
+            { key: "fy", label: "Financial year", type: "select", options: years, any: "All years" },
+            { key: "category", label: "Category", type: "select", options: CATEGORY_OPTIONS },
+            { key: "source", label: "Source of fund", type: "select", options: FUND_OPTIONS },
+            { key: "from", label: "Entered from", type: "date" },
+            { key: "to", label: "Entered to", type: "date" },
+            { key: "q", label: "Search", type: "text", placeholder: "Serial, bill no., item, supplier, employee" },
+          ]} />}
         title="Purchase Register"
         description={scoped
           ? "Your purchases, as entered in the departmental register."

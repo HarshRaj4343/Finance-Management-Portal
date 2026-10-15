@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canCorrectBill, canReviewSnp, deskRemark, inEditWindow, latestArrivalFirst, recordedBillDates } from "@/lib/bill-review";
+import { canCorrectBill, canReviewSnp, deskRemark, editPauseAllowanceLeft, editWindowLeft, editWindowPaused, inEditWindow, latestArrivalFirst, recordedBillDates } from "@/lib/bill-review";
 import type { Bill } from "@/types/database";
 import { billForm } from "./fixtures";
 
@@ -51,6 +51,25 @@ describe("edit window and desk queues", () => {
     expect(canCorrectBill(bill({ status: "Finance Admin", snp: "Hold", finance_admin: "Pending" }), now)).toBe(false);
     expect(canCorrectBill(bill({ status: "Rejected", snp: "Reject", editable_until: past }), now)).toBe(true);
     expect(canCorrectBill(bill({ status: "Accepted", editable_until: soon }), now)).toBe(false);
+  });
+
+  it("stops counting down while the correction form holds the window open", () => {
+    const paused = bill({ editable_until: "2026-10-14T10:08:00Z", edit_paused_until: "2026-10-14T10:03:00Z", edit_paused_seconds: 300 });
+    expect(editWindowPaused(paused, now)).toBe(true);
+    expect(editWindowLeft(paused, now)).toBe(300_000);
+    expect(editWindowLeft(paused, now + 60_000)).toBe(300_000);
+    // The lease lapsed: the clock runs again towards editable_until.
+    expect(editWindowPaused(paused, now + 4 * 60_000)).toBe(false);
+    expect(editWindowLeft(paused, now + 4 * 60_000)).toBe(4 * 60_000);
+    expect(editWindowLeft(bill({ editable_until: soon }), now)).toBe(3 * 60_000);
+  });
+
+  it("tracks the 30 minutes of pausing a bill may use", () => {
+    const paused = bill({ editable_until: "2026-10-14T10:08:00Z", edit_paused_until: "2026-10-14T10:03:00Z",
+      edit_paused_seconds: 300, edit_paused_since: "2026-10-14T09:58:00Z", edit_pause_used_seconds: 600 });
+    expect(editPauseAllowanceLeft(paused, now)).toBe(18 * 60_000);
+    expect(editPauseAllowanceLeft(bill({ editable_until: soon, edit_pause_used_seconds: 1800 }), now)).toBe(0);
+    expect(editPauseAllowanceLeft(bill({ editable_until: soon }), now)).toBe(30 * 60_000);
   });
 
   it("hides review actions from the desk while the filer can still change the bill", () => {

@@ -121,7 +121,17 @@ export default function FundRegisterPage() {
                 {years.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </label>
-            <ExportButton href={`/api/fund-heads?code=${encodeURIComponent(code)}${fy ? `&fy=${fy}` : ""}&format=csv`} />
+            <ExportButton endpoint="/api/fund-heads" title={`${code} Register`} fixed={{ code }} values={{ fy }}
+              filters={[
+                { key: "fy", label: "Financial year", type: "select", options: years, any: "All years" },
+                { key: "kind", label: "Entry", type: "select", options: [
+                  { value: "Allocation", label: "Sanctions" }, { value: "Reserved", label: "Reserved" },
+                  { value: "Released", label: "Released" }, { value: "Spent", label: "Spent" },
+                ] },
+                { key: "department", label: "School / department (bill entries)", type: "department" },
+                { key: "from", label: "Recorded from", type: "date" },
+                { key: "to", label: "Recorded to", type: "date" },
+              ]} />
             <button onClick={openAdd} className="inline-flex h-9 items-center gap-2 rounded-md bg-blue-700 px-4 text-sm font-medium text-white hover:bg-blue-800">
               <IconPlus className="size-4" /> Add funding
             </button>

@@ -14,7 +14,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
   const payload = (f: FormState) => ({ ...toPayload(f), form_data: f, invoice_no: f.billNo, invoice_date: f.billDate,
     date_of_delivery: f.deliveryDate, date_of_installation: f.installRequired === "yes" ? f.installDate : null, submission_key: randomUUID() });
   const fileBill = async (p: Record<string, unknown> = payload(billForm()), actor = filer) => (await db.query("select public.fn_submit_bill($1,$2) as bill", [p, actor])).rows[0].bill;
-  // Most tests decide straight away, so close the five-minute edit window first.
+  // Most tests decide straight away, so close the ten-minute edit window first.
   const closeWindow = async (b: { id: string }) => (await db.query("update public.bills set editable_until=now() where id=$1 returning to_jsonb(bills.*) as bill", [b.id])).rows[0].bill;
   const submit = async (p: Record<string, unknown> = payload(billForm()), actor = filer) => closeWindow(await fileBill(p, actor));
   const decide = async (b: { id: string; revision: number }, role = "Finance Admin", action = "Approved", extra = {}) => {
@@ -167,6 +167,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     await db.query(readFileSync("db/migrations/0006_edit_window.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0007_fund_heads.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0008_movement_registers.sql", "utf8"));
+    await db.query(readFileSync("db/migrations/0009_edit_pause_and_receipts.sql", "utf8"));
     expect((await db.query("select sum(po_value) as total,count(*) as n from public.bills")).rows[0]).toEqual(before);
     await expect(db.query("update public.change_log set actor_code='forged'")).rejects.toThrow(/append-only/);
     expect((await db.query("select count(*)::integer as n from public.pda_balances where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
@@ -382,6 +383,119 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
         ["Outward", "Rejected"],
         ["Inward", "Resubmitted after rejection"],
       ]);
+    });
+
+    it("marks entries received only from their own desk or the Dean, keeping every change", async () => {
+      const b = await submit(payload(billForm("TEST-U", 700)));
+      const [entry] = (await db.query("select id from public.bill_movements where bill_id=$1 and register='Inward'", [b.id])).rows;
+      const mark = (received: boolean, actor: string) => db.query("select public.fn_mark_movement_received($1,$2,$3) as r", [entry.id, received, actor]);
+      const shown = async () => (await db.query("select received, received_by from public.bill_movement_entries where id=$1", [entry.id])).rows[0];
+      expect(await shown()).toEqual({ received: false, received_by: null });
+      await expect(mark(true, "TEST-S")).rejects.toThrow(/Only Finance Admin or the Dean/);
+      await mark(true, "TEST-F");
+      expect(await shown()).toEqual({ received: true, received_by: "TEST-F" });
+      const dean = (await db.query("select employee_code, employee_name from public.employees where employee_type='Dean' and is_active limit 1")).rows[0];
+      await mark(false, dean.employee_code);
+      expect(await shown()).toEqual({ received: false, received_by: dean.employee_name });
+      // Kept on the register row itself; the rest of the row stays untouchable.
+      expect((await db.query("select received, received_by from public.bill_movements where id=$1", [entry.id])).rows[0])
+        .toEqual({ received: false, received_by: dean.employee_code });
+      await expect(db.query("update public.bill_movements set received=true where id=$1", [entry.id])).rejects.toThrow(/append-only/);
+      await expect(db.query("delete from public.bill_movements where id=$1", [entry.id])).rejects.toThrow(/append-only/);
+      expect((await db.query("select count(*)::integer as n from public.change_log where entity='bill_movements' and entity_id=$1", [String(entry.id)])).rows[0].n).toBe(2);
+    });
+  });
+
+  describe("edit window pause while the correction form is open", () => {
+    const pause = async (b: { id: string }, on: boolean, actor = "TEST-C") =>
+      (await db.query("select public.fn_edit_window_pause($1,$2,$3) as bill", [b.id, actor, on])).rows[0].bill;
+    const secondsLeft = (b: { editable_until: string }) => (new Date(b.editable_until).getTime() - Date.now()) / 1000;
+
+    it("is ten minutes long", async () => {
+      const b = await fileBill(payload(billForm("TEST-U", 300)));
+      expect(secondsLeft(b)).toBeGreaterThan(9 * 60);
+      expect(secondsLeft(b)).toBeLessThanOrEqual(10 * 60);
+    });
+
+    it("freezes the time left, holds the desk off, and restarts from the same point", async () => {
+      let b = await fileBill(payload(billForm("TEST-U", 310)));
+      const revision = b.revision;
+      b = await pause(b, true);
+      expect(b.edit_paused_seconds).toBeGreaterThan(9 * 60);
+      expect(new Date(b.edit_paused_until).getTime()).toBeGreaterThan(Date.now() + 2 * 60_000);
+      // Held at lease end + time left, so every existing window check still applies.
+      expect(secondsLeft(b)).toBeGreaterThan(12 * 60);
+      expect(b.revision).toBe(revision);
+      await expect(decide(b)).rejects.toThrow(/correction window/);
+      const arrival = (await db.query("select moved_at from public.bill_movement_entries where bill_id=$1 and register='Inward'", [b.id])).rows[0];
+      expect(new Date(arrival.moved_at).getTime()).toBe(new Date(b.editable_until).getTime());
+
+      // Pretend 9 minutes 30 seconds passed on the clock before the pause.
+      await db.query("update public.bills set edit_paused_seconds=30 where id=$1", [b.id]);
+      b = await pause(b, false);
+      expect(b).toMatchObject({ edit_paused_until: null, edit_paused_seconds: null, revision });
+      expect(secondsLeft(b)).toBeGreaterThan(25);
+      expect(secondsLeft(b)).toBeLessThanOrEqual(30);
+      b = await pause(b, false); // closing twice changes nothing
+      expect(secondsLeft(b)).toBeLessThanOrEqual(30);
+    });
+
+    it("lets the clock run again once an abandoned pause's lease lapses", async () => {
+      let b = await fileBill(payload(billForm("TEST-U", 320)));
+      await pause(b, true);
+      await db.query("update public.bills set edit_paused_until=now() - interval '1 second', editable_until=now() + interval '20 seconds' where id=$1", [b.id]);
+      b = await pause(b, true);
+      expect(b.edit_paused_seconds).toBeLessThanOrEqual(20);
+    });
+
+    it("allows 30 minutes of pausing per bill in all, then lets the clock run", async () => {
+      const p = payload(billForm("TEST-U", 340));
+      let b = await pause(await fileBill(p), true);
+      expect(b.edit_pause_used_seconds).toBe(0);
+      // 29 min 50 s already used by earlier pauses: this lease stops at the limit.
+      await db.query("update public.bills set edit_pause_used_seconds=1790 where id=$1", [b.id]);
+      b = await pause(b, true);
+      const lease = (new Date(b.edit_paused_until).getTime() - Date.now()) / 1000;
+      expect(lease).toBeGreaterThan(5);
+      expect(lease).toBeLessThanOrEqual(10);
+      // Limit reached: a renewal resumes the clock instead.
+      await db.query("update public.bills set edit_pause_used_seconds=1800 where id=$1", [b.id]);
+      const left = b.edit_paused_seconds;
+      b = await pause(b, true);
+      expect(b).toMatchObject({ edit_paused_until: null, edit_paused_since: null, edit_pause_used_seconds: 1800 });
+      expect(secondsLeft(b)).toBeLessThanOrEqual(left);
+      expect(secondsLeft(b)).toBeGreaterThan(left - 5);
+      // A correction opens a fresh window but not a fresh pause allowance.
+      b = (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...p, expected_revision: b.revision }, filer])).rows[0].bill;
+      expect((await pause(b, true)).edit_paused_until).toBeNull();
+    });
+
+    it("counts a pause that ended with a saved correction or a lapsed lease", async () => {
+      const p = payload(billForm("TEST-U", 350));
+      let b = await pause(await fileBill(p), true);
+      await db.query("update public.bills set edit_paused_since=now() - interval '100 seconds' where id=$1", [b.id]);
+      b = (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...p, expected_revision: b.revision }, filer])).rows[0].bill;
+      expect(b.edit_pause_used_seconds).toBeGreaterThanOrEqual(100);
+      expect(b.edit_pause_used_seconds).toBeLessThan(105);
+      b = await pause(b, true);
+      await db.query("update public.bills set edit_paused_since=now() - interval '60 seconds', edit_paused_until=now() - interval '20 seconds' where id=$1", [b.id]);
+      const used = b.edit_pause_used_seconds;
+      b = await pause(b, false);
+      expect(b.edit_pause_used_seconds - used).toBe(40);
+    });
+
+    it("ends with a saved correction and never pauses for strangers or held bills", async () => {
+      const p = payload(billForm("TEST-U", 330));
+      let b = await pause(await fileBill(p), true);
+      await expect(pause(b, true, "TEST-F")).rejects.toThrow(/cannot file or edit/);
+      b = (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...p, expected_revision: b.revision }, filer])).rows[0].bill;
+      expect(b).toMatchObject({ edit_paused_until: null, edit_paused_seconds: null });
+      expect(secondsLeft(b)).toBeGreaterThan(9 * 60);
+      expect(secondsLeft(await pause(b, false))).toBeGreaterThan(9 * 60);
+
+      b = await decide(await closeWindow(b), "Finance Admin", "Hold");
+      const held = await pause(b, true);
+      expect(held).toMatchObject({ edit_paused_until: null, revision: b.revision });
     });
   });
 });

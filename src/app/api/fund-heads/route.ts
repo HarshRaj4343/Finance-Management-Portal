@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
-import { query, queryOne } from "@/server/db";
+import { Params, query, queryOne, whereClause } from "@/server/db";
 import { HttpError, requireActor } from "@/server/session";
-import { CSV_ROW_LIMIT, csvResponse, istStamp, toCsv } from "@/server/csv";
+import { CSV_ROW_LIMIT, columnsResponse, csvResponse, isoDay, istStamp, pickColumns, toCsv, type CsvColumn } from "@/server/csv";
 import { fail, ok, badRequest } from "@/server/http";
 import { isMoney } from "@/lib/security";
 
@@ -9,6 +9,18 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const CODES = ["OH-31", "OH-35"];
+const KINDS = ["Allocation", "Reserved", "Released", "Spent"];
+
+type CsvRow = Record<string, unknown>;
+const CSV_COLUMNS: CsvColumn<CsvRow>[] = [
+  ["Recorded (IST)", (r) => istStamp(r.recorded_at)], ["Entry date", (r) => r.entry_date], ["Financial year", (r) => r.financial_year],
+  ["Entry", (r) => r.kind === "Allocation" ? "Sanction" : r.kind],
+  ["Amount (INR)", (r) => Number(r.amount).toFixed(2)],
+  ["Effect on available (INR)", (r) => (r.kind === "Allocation" || r.kind === "Released" ? 1 : r.kind === "Reserved" ? -1 : 0) * Number(r.amount)],
+  ["Sanction reference", (r) => r.reference], ["Bill number", (r) => r.bill_number], ["Register serial", (r) => r.serial_no],
+  ["Applicant", (r) => r.employee_name], ["Applicant ID", (r) => r.employee_id], ["Department", (r) => r.employee_department],
+  ["Item", (r) => r.item_description], ["Remarks", (r) => r.remarks], ["Entered by", (r) => r.actor_code],
+];
 
 /** RBAC: the OH-31 and OH-35 registers are open to the Dean only. */
 async function requireDean() {
@@ -32,26 +44,33 @@ export async function GET(req: NextRequest) {
     const fy = req.nextUrl.searchParams.get("fy") || null;
     if (fy && !/^\d{4}-\d{2}$/.test(fy)) return badRequest("Choose a financial year such as 2026-27.");
 
-    // ?format=csv: the head's full ledger (sanctions and every bill movement).
-    if (req.nextUrl.searchParams.get("format") === "csv") {
-      type Row = Record<string, unknown>;
-      const rows = await query<Row>(
+    const p = req.nextUrl.searchParams;
+    if (p.get("format") === "columns") return columnsResponse(CSV_COLUMNS);
+
+    // ?format=csv: the head's ledger (sanctions and every bill movement),
+    // narrowed by the download dialog's filters and columns.
+    if (p.get("format") === "csv") {
+      const params = new Params();
+      const where = [`e.code = ${params.add(code)}`];
+      if (fy) where.push(`e.financial_year = ${params.add(fy)}`);
+      const kind = p.get("kind");
+      if (kind) {
+        if (!KINDS.includes(kind)) return badRequest("Choose an entry type.");
+        where.push(`e.kind = ${params.add(kind)}`);
+      }
+      if (p.get("department")) where.push(`b.employee_department::text = ${params.add(p.get("department"))}`);
+      const from = isoDay(p.get("from")), to = isoDay(p.get("to"));
+      if (from) where.push(`(e.recorded_at at time zone 'Asia/Kolkata')::date >= ${params.add(from)}::date`);
+      if (to) where.push(`(e.recorded_at at time zone 'Asia/Kolkata')::date <= ${params.add(to)}::date`);
+      const rows = await query<CsvRow>(
         `select e.recorded_at, e.entry_date, e.financial_year, e.kind, e.amount, e.reference, e.remarks, e.actor_code,
                 b.bill_number, b.employee_id, b.employee_name, b.employee_department, b.item_description, r.serial_no
            from public.fund_head_entries e
            left join public.bills b on b.id = e.bill_id
            left join public.purchase_register r on r.bill_id = b.id
-          where e.code = $1 and ($2::text is null or e.financial_year = $2)
-          order by e.id limit ${CSV_ROW_LIMIT}`, [code, fy]);
-      return csvResponse(`${code}-register-${fy || "all-years"}.csv`, toCsv<Row>([
-        ["Recorded (IST)", (r) => istStamp(r.recorded_at)], ["Entry date", (r) => r.entry_date], ["Financial year", (r) => r.financial_year],
-        ["Entry", (r) => r.kind === "Allocation" ? "Sanction" : r.kind],
-        ["Amount (INR)", (r) => Number(r.amount).toFixed(2)],
-        ["Effect on available (INR)", (r) => (r.kind === "Allocation" || r.kind === "Released" ? 1 : r.kind === "Reserved" ? -1 : 0) * Number(r.amount)],
-        ["Sanction reference", (r) => r.reference], ["Bill number", (r) => r.bill_number], ["Register serial", (r) => r.serial_no],
-        ["Applicant", (r) => r.employee_name], ["Applicant ID", (r) => r.employee_id], ["Department", (r) => r.employee_department],
-        ["Item", (r) => r.item_description], ["Remarks", (r) => r.remarks], ["Entered by", (r) => r.actor_code],
-      ], rows));
+          ${whereClause(where)}
+          order by e.id limit ${CSV_ROW_LIMIT}`, params.values);
+      return csvResponse(`${code}-register-${fy || "all-years"}.csv`, toCsv<CsvRow>(pickColumns(CSV_COLUMNS, p), rows));
     }
 
     const [heads, allocations, movements, current] = await Promise.all([

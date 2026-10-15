@@ -7,7 +7,7 @@ import { billScopeQuery } from "@/lib/roles";
 import { Bill } from "./types";
 import EditBillModal from "./EditBillModal";
 import { PageHeader, StatusBadge } from "@/components/ui/page";
-import { canCorrectBill, deskRemark, editWindowLeft, heldAtCurrentDesk } from "@/lib/bill-review";
+import { canCorrectBill, deskRemark, editWindowLeft, editWindowPaused, heldAtCurrentDesk } from "@/lib/bill-review";
 
 const countdown = (ms: number) => {
   const s = Math.ceil(ms / 1000);
@@ -57,6 +57,7 @@ const PendingBills: React.FC<{ department: string | null; refreshKey?: number }>
 
   const heldAt = (b: Bill) => {
     const left = editWindowLeft(b, now);
+    if (left > 0 && editWindowPaused(b, now)) return `Being corrected: timer paused with ${countdown(left)} left`;
     if (left > 0) return `Editable for ${countdown(left)}, then sent to the desk`;
     return heldAtCurrentDesk(b) ? "On hold" : "In progress";
   };

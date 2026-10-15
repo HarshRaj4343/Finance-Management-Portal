@@ -37,9 +37,12 @@ import { StepFunding, StepItems } from "./bill-form/steps-items";
 import { StepReview, SummaryPanel } from "./bill-form/review";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { EDIT_WINDOW_MINUTES } from "@/lib/bill-review";
+import EditPauseNotice from "@/components/EditPauseNotice";
+import { useEditWindowPause } from "@/lib/useEditWindowPause";
 
 interface UploadBillProps {
-  onBillSubmitted: () => void;
+  /** Receives the saved bill. */
+  onBillSubmitted: (bill?: BillRow) => void;
   department?: string | null;
   initialBill?: BillRow;
 }
@@ -83,6 +86,16 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
     const t = setInterval(() => setClock(Date.now()), 1000);
     return () => clearInterval(t);
   }, [done, correcting]);
+  // Correcting the bill just filed stops its edit window until the form closes.
+  const refreshDone = useCallback((bill: BillRow) => {
+    const until = Date.parse(String(bill.editable_until ?? ""));
+    setDone((d) => d && d.id === bill.id ? {
+      ...d, bill, editUntil: Number.isFinite(until) ? until : d.editUntil, number: bill.bill_number ?? d.number,
+      total: Number(bill.po_value), status: bill.status, supplier: bill.supplier_name ?? d.supplier,
+    } : d);
+    setClock(Date.now());
+  }, []);
+  const pause = useEditWindowPause(done?.id ?? null, correcting, refreshDone);
   const [savedAt, setSavedAt] = useState<number | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [pending, setPending] = useState<Draft | null>(null);
@@ -287,7 +300,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
       supplier: f.supplierName,
       at: new Date(),
     });
-    onBillSubmitted();
+    onBillSubmitted(data.bill);
   };
 
   const reset = () => {
@@ -312,11 +325,13 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
     return (
       <div className="flex h-full min-h-0 w-full flex-col">
         <div className="mx-auto mb-3 flex w-full max-w-6xl flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900">
-          <span>Editing {done.number || "your bill"} · {countdown(editLeft)} left to save corrections</span>
+          <span>
+            Editing {done.number || "your bill"} · <EditPauseNotice bill={pause.bill} now={pause.now} closeHint="go back" />
+          </span>
           <Button variant="text" onClick={() => setCorrecting(false)}>Back to confirmation</Button>
         </div>
         <UploadBill key={`${done.bill.id}:${done.bill.revision}`} initialBill={done.bill} department={department}
-          onBillSubmitted={onBillSubmitted} />
+          onBillSubmitted={(bill) => { if (bill) refreshDone(bill); setCorrecting(false); onBillSubmitted(bill); }} />
       </div>
     );
   }

@@ -284,7 +284,11 @@ export default function PdaManagerPage() {
         description="Open accounts and set allocations. Money already committed to bills or spent is never touched."
         actions={
           <>
-            <ExportButton href={`/api/admin/pda?format=csv${search.trim() ? `&q=${encodeURIComponent(search.trim())}` : ""}`} />
+            <ExportButton endpoint="/api/admin/pda" title="PDA Accounts" values={{ q: search.trim() }}
+              filters={[
+                { key: "department", label: "School / department", type: "department" },
+                { key: "q", label: "Search", type: "text", placeholder: "Employee ID or email" },
+              ]} />
             <button onClick={() => setIsAdding(true)} className={primaryBtn}>Open account</button>
             <button onClick={() => setBulk("")} className={cancelBtn}>Add amount to all</button>
             <button onClick={handleResetAll} className="inline-flex h-9 items-center rounded-md border border-red-300 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50">
