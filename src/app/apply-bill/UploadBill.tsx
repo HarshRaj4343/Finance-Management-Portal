@@ -45,6 +45,12 @@ interface UploadBillProps {
   onBillSubmitted: (bill?: BillRow) => void;
   department?: string | null;
   initialBill?: BillRow;
+  /**
+   * The approval desk the bill was sent back to is correcting it
+   * (/api/bills/:id/desk-correction). It stays at that desk, so there is no
+   * edit window or confirmation screen afterwards.
+   */
+  deskCorrection?: boolean;
 }
 
 type Done = { id: string; number: string; total: number; status: string; supplier: string; at: Date; bill: BillRow; editUntil: number };
@@ -58,7 +64,7 @@ const LAST = STEPS.length - 1;
 /** Errors on these only make sense once the person has tried to submit. */
 const DECLARATIONS = ["f-declaration", "f-total-confirmed"];
 
-const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, initialBill }) => {
+const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, initialBill, deskCorrection = false }) => {
   const { data: session } = useSession();
   const confirm = useConfirm();
   const draftKey = `iitm-bill-draft:${session?.user?.id ?? "anon"}:${initialBill ? `${initialBill.id}:${initialBill.revision}` : "new"}`;
@@ -256,7 +262,16 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
     }
 
     const T = totals(f);
-    if (!(await confirm({
+    if (deskCorrection && initialBill) {
+      if (!(await confirm({
+        title: "Save this correction?",
+        description: "The bill stays at your desk with its funds reserved; earlier desks' approvals stand. Approve it afterwards to send it on.",
+        details: [["Applicant", `${initialBill.employee_name ?? ""} (${initialBill.employee_id})`],
+          ["Supplier", f.supplierName], ["Invoice", f.billNo], ["Total", inr(T.total)],
+          ...(T.total !== Number(initialBill.po_value) ? [["Was", inr(Number(initialBill.po_value))] as [string, string]] : [])],
+        confirmLabel: "Save correction",
+      }))) return;
+    } else if (!(await confirm({
       title: initialBill ? "Resubmit this corrected bill?" : "Submit this bill?",
       description: initialBill
         ? "Earlier approvals are cleared and the bill starts its approval route again."
@@ -273,12 +288,12 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
     const fingerprint = JSON.stringify(form);
     if (submission.current?.fingerprint !== fingerprint) submission.current = { fingerprint, key: crypto.randomUUID() };
     const { data, error } = initialBill
-      ? await api.patch<{ bill: BillRow }>(`/api/bills/${initialBill.id}`, { form_data: form, expected_revision: initialBill.revision })
+      ? await api.patch<{ bill: BillRow }>(`/api/bills/${initialBill.id}${deskCorrection ? "/desk-correction" : ""}`, { form_data: form, expected_revision: initialBill.revision })
       : await api.post<{ bill: BillRow }>("/api/bills", { form_data: form, submission_key: submission.current!.key });
     setSubmitting(false);
 
     if (error || !data) {
-      setSubmitError(error && /PDA/i.test(error)
+      setSubmitError(error && !deskCorrection && /PDA/i.test(error)
         ? "This bill cannot be filed against the selected employee account. Please contact Finance and Accounts."
         : error ?? "The bill could not be filed.");
       requestAnimationFrame(() => top.current?.scrollTo({ top: 0, behavior: "smooth" }));
@@ -286,6 +301,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
     }
     clearDraft(draftKey);
     lastSaved.current = "";
+    if (deskCorrection) { onBillSubmitted(data.bill); return; }
     // The server's window is authoritative; fall back to the local clock if it cannot be read.
     const until = Date.parse(String(data.bill.editable_until ?? ""));
     setClock(Date.now());

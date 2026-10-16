@@ -60,12 +60,13 @@ export function StatGrid({ children }: { children: ReactNode }) {
 const STATUS_TONE: Record<string, string> = {
   Pending: "bg-amber-50 text-amber-800 ring-amber-200",
   Hold: "bg-orange-50 text-orange-800 ring-orange-200",
+  Returned: "bg-orange-50 text-orange-800 ring-orange-200",
   Approved: "bg-green-50 text-green-800 ring-green-200",
   Accepted: "bg-green-50 text-green-800 ring-green-200",
   Reject: "bg-red-50 text-red-800 ring-red-200",
   Rejected: "bg-red-50 text-red-800 ring-red-200",
 };
-const STATUS_TEXT: Record<string, string> = { Reject: "Rejected", Hold: "On hold", "Student Purchase": "Store & Purchase", "Store and Purchase Department": "Store & Purchase" };
+const STATUS_TEXT: Record<string, string> = { Reject: "Rejected", Hold: "On hold", Returned: "Sent back", "Student Purchase": "Store & Purchase", "Store and Purchase Department": "Store & Purchase" };
 
 /**
  * One look for every desk decision and bill status. Desk names such as

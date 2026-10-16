@@ -4,7 +4,7 @@ import { notifyApplicant } from "./notify";
 import type { Actor } from "./session";
 import type { Stage } from "@/lib/roles";
 
-export type DecisionAction = "Approved" | "Rejected" | "Hold";
+export type DecisionAction = "Approved" | "Rejected" | "Hold" | "Returned";
 
 /**
  * One desk decision on one bill: fn_bill_action checks the desk, the
@@ -28,14 +28,14 @@ export async function decideBill(
   const bill = row?.bill;
 
   // Notify on every rejection and hold, and on the final approval.
-  // Intermediate approvals are not worth an email; they are on the
-  // timeline for anyone who wants to look.
-  if (action !== "Approved" || bill?.status === "Accepted") {
+  // Intermediate approvals and send-backs between desks are not worth an
+  // email; they are on the timeline for anyone who wants to look.
+  if (action === "Rejected" || action === "Hold" || (action === "Approved" && bill?.status === "Accepted")) {
     await notifyApplicant({
       billId: id,
       billNumber: bill?.bill_number ?? null,
       stage: before?.status ?? actor.role,
-      outcome: action,
+      outcome: action as "Approved" | "Rejected" | "Hold",
       remark: remark?.trim() || null,
       actorName: actor.name,
     });

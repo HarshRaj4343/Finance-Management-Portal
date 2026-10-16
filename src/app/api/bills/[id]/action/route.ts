@@ -7,11 +7,15 @@ import { isUuid } from "@/lib/utils";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const ACTIONS = ["Approved", "Rejected", "Hold"] as const;
+const ACTIONS = ["Approved", "Rejected", "Hold", "Returned"] as const;
+const DESKS = ["Student Purchase", "Audit", "Finance Admin"];
 type Action = (typeof ACTIONS)[number];
 
 /**
  * POST /api/bills/:id/action   { action, remark?, extra? }
+ *
+ * "Returned" sends the bill back to an earlier desk that approved it,
+ * named in extra.return_to; its remark is optional (0010_send_back.sql).
  *
  * The only way a bill ever moves (with bulk-action, which uses the same
  * decideBill). fn_bill_action checks that the caller
@@ -40,7 +44,10 @@ export async function POST(
     if (!ACTIONS.includes(action)) {
       return badRequest(`Unknown action. Expected one of: ${ACTIONS.join(", ")}.`);
     }
-    if (action !== "Approved" && !body.remark?.trim()) {
+    if (action === "Returned" && !DESKS.includes(String(body.extra?.return_to ?? ""))) {
+      return badRequest("Choose the desk to send this bill back to.");
+    }
+    if ((action === "Rejected" || action === "Hold") && !body.remark?.trim()) {
       return badRequest(
         `Please write a remark explaining why you are ${
           action === "Rejected" ? "rejecting" : "holding"
@@ -49,7 +56,8 @@ export async function POST(
     }
 
     if (!isUuid(id)) return badRequest("No such bill.");
-    const bill = await decideBill(actor, id, action, body.remark ?? null, body.extra ?? {}, body.expected_revision);
+    const extra = action === "Returned" ? { return_to: body.extra!.return_to } : body.extra ?? {};
+    const bill = await decideBill(actor, id, action, body.remark ?? null, extra, body.expected_revision);
     return ok({ bill });
   } catch (err) {
     return fail(err, "Could not record that decision.");

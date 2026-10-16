@@ -47,6 +47,24 @@ export function canCorrectBill(bill: WindowBill & DeskBill, now = Date.now()): b
   return bill.status !== "Accepted" && (inEditWindow(bill, now) || bill.status === "Rejected" || heldAtCurrentDesk(bill));
 }
 
+const DESK_ORDER = ["Student Purchase", "Audit", "Finance Admin"] as const;
+type ReturnDesk = "Student Purchase" | "Audit";
+
+/**
+ * Earlier desks this bill may be sent back to from where it is now: those
+ * that have approved it. Mirrors fn_bill_return_engine in 0010_send_back.sql.
+ */
+export function returnTargets(bill: DeskBill): ReturnDesk[] {
+  const at = DESK_ORDER.indexOf(bill.status as (typeof DESK_ORDER)[number]);
+  const passed: Record<ReturnDesk, boolean> = { "Student Purchase": bill.snp === "Approved", "Audit": bill.audit === "Approved" };
+  return (DESK_ORDER.slice(0, Math.max(0, at)) as ReturnDesk[]).filter((desk) => passed[desk]);
+}
+
+/** Sent back to the desk it is at now, and not yet decided there: that desk may correct it. */
+export function sentBackHere(bill: Pick<Bill, "status" | "returned_from">): boolean {
+  return Boolean(bill.returned_from) && DESK_ORDER.includes(bill.status as (typeof DESK_ORDER)[number]);
+}
+
 /** The remark explaining the current hold or the rejection, if any. */
 export function deskRemark(bill: Bill): string | null {
   if (bill.finance_admin === "Hold" || bill.finance_admin === "Reject") return bill.remarks;

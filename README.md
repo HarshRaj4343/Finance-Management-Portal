@@ -48,6 +48,17 @@ Only applicants filing for themselves, or authorised departmental Bill Employees
 
 A new or corrected bill stays with its filer for a **10-minute edit window** (`fn_edit_window` in migration 0006): the filer may correct it, approval desks do not see it, and the database refuses any desk decision. The window **pauses while the correction form is open** and resumes from the same point when it closes (migration 0009). The open form renews a 3-minute pause lease every minute; if the page is closed or the connection lost, the clock restarts when the lease lapses, so an abandoned form cannot keep a bill from its desk indefinitely. A bill may be paused for **30 minutes in all** (`fn_edit_pause_limit`), counted across every pause and every correction; after that the clock runs even with the form open, and the form says so. Pausing changes only timing, not the bill's revision. After the window, the filer may correct it only once a desk holds or rejects it; correcting a rejected bill reserves its funds again and restarts the route. Corrections require the reviewed revision number. They restart the required route and invalidate previous approvals, including bank-guarantee details. The complete before/after record remains in the append-only change log; the bill detail page exposes its revision history. Every decision checks its revision, so an unseen amendment cannot be approved.
 
+**Reject asks where the bill goes** (migration 0010). Pressing Reject at a desk opens a popup with these choices:
+- **Send back to an earlier desk**: offered only for desks on the bill's route that have already approved it. Finance Admin can send a bill to Audit or to Store and Purchase, and Audit to Store and Purchase.
+- **Send back to the filer**: the same as Hold.
+- **Reject permanently**: as before, the bill is closed and its funds are released.
+
+Rejecting permanently stays the default, so the R shortcut followed by Ctrl/⌘ + Enter twice works as before. A remark is optional when sending back to a desk and required for the other two choices.
+
+A bill sent back to a desk keeps its money reserved in the same pool. It is Pending at the receiving desk, approvals from that desk onwards are cleared, and the sending desk shows **Sent back** until the bill reaches it again. The bill then follows the normal route forward, and every later desk reviews it afresh.
+
+The receiving desk sees who sent the bill back and why. It can open the full bill form with **Correct bill** (`fn_desk_amend_bill`) and change anything, money and source of fund included; the reservation follows the corrected amount and fund. The bill stays at that desk, and the person who corrected it may approve it. A correction that would need an earlier desk the bill has not passed is refused; hold the bill for the filer instead. Send-backs and corrections appear on the bill timeline, in its revision history and in the inward/outward registers ("Sent back", "Sent back for correction"). No email is sent for a send-back between desks.
+
 The server validates the complete form and derives money from quantities, unit prices and other charges. Structured items, invoice details, delivery/installation facts and declarations are retained. Supplier + invoice number + invoice financial year is unique across non-rejected bills, with case/whitespace normalisation. Submission keys make repeated network submissions reserve money once. Rejected invoices may be refiled; accepted or in-progress invoices may not.
 
 The PO / purchase value remains a separate entered value representing the order amount. The computed bill total is the sum of **quantity × unit price for each line**. There is no separate Other Charges field: unit prices include freight, packing and similar charges. Older bills that recorded other charges still display them. These values must match to the paise on submission and correction, checked in the form, API and database. This branch requires a full-order bill, not partial/multiple invoicing against one PO. The invoice date must be on or before delivery and installation; installation cannot precede delivery. Same-day dates are allowed.
@@ -93,6 +104,7 @@ docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migration
 docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0007_fund_heads.sql
 docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0008_movement_registers.sql
 docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0009_edit_pause_and_receipts.sql
+docker compose exec -T db psql -U ifmp -d ifmp -v ON_ERROR_STOP=1 < db/migrations/0010_send_back.sql
 docker compose up -d --build
 ```
 
@@ -100,9 +112,9 @@ Migration 0004 is additive, transactional and repeatable. It retains existing bi
 
 Migration 0005 replaces bill validation to enforce purchase-total reconciliation, date order, consumable groups and the PDA fund choice. It does not update any existing records. Run it after 0004.
 
-Migration 0006 adds the edit window and the reopen-after-rejection correction rule. Existing bills get no window, so nothing already at a desk disappears. Migration 0007 adds the OH-31/OH-35 budget heads, their ledger and per-bill funding pools, and rewrites the submission, decision and correction functions to move money only in the bill's own pool. Migration 0009 adds the edit-window pause and the register receipt marks; it does not change existing bills or register entries. Repeat upgrades must run 0004 through 0009 in order and finish with the latest, because rerunning an earlier migration restores older functions.
+Migration 0006 adds the edit window and the reopen-after-rejection correction rule. Existing bills get no window, so nothing already at a desk disappears. Migration 0007 adds the OH-31/OH-35 budget heads, their ledger and per-bill funding pools, and rewrites the submission, decision and correction functions to move money only in the bill's own pool. Migration 0009 adds the edit-window pause and the register receipt marks; it does not change existing bills or register entries. Migration 0010 adds sending a bill back to an earlier desk and desk corrections. It adds three nullable columns and widens two check constraints, and changes no existing bill. Repeat upgrades must run 0004 through 0010 in order and finish with the latest, because rerunning an earlier migration restores older functions.
 
-On first Docker database creation, migrations 0001–0009 run in order. Existing volumes do not rerun init scripts. `scripts/deploy-server.sh` takes a custom-format database backup before applying additive migrations; it does not reset volumes. Configure TLS, LDAP and mail in `.env`; see `docker-compose.yml` and `deploy/nginx/`.
+On first Docker database creation, migrations 0001–0010 run in order. Existing volumes do not rerun init scripts. `scripts/deploy-server.sh` takes a custom-format database backup before applying additive migrations; it does not reset volumes. Configure TLS, LDAP and mail in `.env`; see `docker-compose.yml` and `deploy/nginx/`.
 
 `DECISIONS.md` and `Bill-form.md` are retained design/history references, not deployment instructions. Earlier Supabase, destructive demo-dataset and Vercel instructions in the historical decision log are superseded.
 

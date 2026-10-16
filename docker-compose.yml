@@ -25,6 +25,7 @@ services:
       - ./db/migrations/0007_fund_heads.sql:/docker-entrypoint-initdb.d/0007_fund_heads.sql:ro
       - ./db/migrations/0008_movement_registers.sql:/docker-entrypoint-initdb.d/0008_movement_registers.sql:ro
       - ./db/migrations/0009_edit_pause_and_receipts.sql:/docker-entrypoint-initdb.d/0009_edit_pause_and_receipts.sql:ro
+      - ./db/migrations/0010_send_back.sql:/docker-entrypoint-initdb.d/0010_send_back.sql:ro
     # No `ports:` -- the database is reachable only on the compose network,
     # as the institute asked. To inspect it:
     #   docker compose exec db psql -U ifmp -d ifmp

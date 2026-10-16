@@ -62,7 +62,9 @@ const dotColor = (action: string) => {
     case "Rejected":
       return "bg-red-600";
     case "Hold":
+    case "Returned":
       return "bg-yellow-500";
+    case "Corrected":
     case "Submitted":
       return "bg-blue-600";
     case "Registered":
@@ -236,9 +238,13 @@ export default function BillDetailsPage() {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span className="px-2.5 py-1 rounded bg-slate-100 text-slate-600">Filed</span>
           {route.map((stop) => {
+            // An approval counts until a correction restarts the route, or the
+            // bill is sent back to this desk or one before it.
+            const order = (desk: string | null) => ["Student Purchase", "Audit", "Finance Admin"].indexOf(desk ?? "");
             const passed =
               events.some((e) => e.stage === stop && e.action === "Approved" && e.seq >
-                Math.max(0, ...events.filter((event) => event.stage === "Applicant" && event.action === "Forwarded").map((event) => event.seq)));
+                Math.max(0, ...events.filter((event) => (event.stage === "Applicant" && event.action === "Forwarded")
+                  || (event.action === "Returned" && order(event.to_status) <= order(stop))).map((event) => event.seq)));
             const here = bill.status === stop;
             const rejectedHere = events.some(
               (e) => e.stage === stop && e.action === "Rejected"
@@ -369,6 +375,8 @@ export default function BillDetailsPage() {
                 e.action === "Registered" ||
                 e.action === "Notified"
                   ? deskLabel(e.remark)
+                  : e.action === "Returned"
+                  ? `${deskLabel(e.stage)} — Sent back to ${deskLabel(e.to_status)}`
                   : `${deskLabel(e.stage)} — ${e.action}`}
               </span>
               <span className="text-xs text-slate-500">{when(e.created_at)}</span>

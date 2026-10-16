@@ -52,7 +52,7 @@ function duration(seconds: number | null) {
 /** Colour for a movement, matching the shared status palette. */
 const natureTone = (nature: string) =>
   nature === "Rejected" ? "bg-red-50 text-red-800 ring-red-200"
-  : nature === "On hold" ? "bg-orange-50 text-orange-800 ring-orange-200"
+  : nature === "On hold" || nature.startsWith("Sent back") ? "bg-orange-50 text-orange-800 ring-orange-200"
   : nature === "Final approval" ? "bg-green-50 text-green-800 ring-green-200"
   : nature.startsWith("Recalled") ? "bg-amber-50 text-amber-800 ring-amber-200"
   : "bg-slate-50 text-slate-700 ring-slate-200";

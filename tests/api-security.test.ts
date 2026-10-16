@@ -54,7 +54,7 @@ describe("API authority and financial boundaries", () => {
     expect((await submit(req("/api/bills", { form_data: f }))).status).toBe(201);
     expect(JSON.parse(mocks.queryOne.mock.calls[0][1][0]).source_of_fund).toBe("PDA");
   });
-  it("restricts funding snapshots to the applicant or their authorised departmental filer", async () => {
+  it("restricts funding snapshots to the applicant, their authorised departmental filer, or a desk correcting a sent-back bill", async () => {
     mocks.queryOne.mockResolvedValue({ employee_id: "TEST-U", balance: "1000" });
     expect((await funding(req("/api/bills/funding?employee=TEST-U"))).status).toBe(200);
     mocks.actor.department = "B";
@@ -64,9 +64,12 @@ describe("API authority and financial boundaries", () => {
     mocks.actor.code = "TEST-X";
     expect((await funding(req("/api/bills/funding?employee=TEST-U"))).status).toBe(403);
     mocks.actor.role = "Audit";
+    mocks.queryOne.mockResolvedValueOnce(null);
     expect((await funding(req("/api/bills/funding?employee=TEST-U"))).status).toBe(403);
+    expect(mocks.queryOne).toHaveBeenLastCalledWith(expect.stringContaining("returned_from is not null"), ["TEST-U", "Audit"]);
+    expect((await funding(req("/api/bills/funding?employee=TEST-U"))).status).toBe(200);
     expect((await funding(req("/api/bills/funding"))).status).toBe(400);
-    expect(mocks.queryOne).toHaveBeenCalledTimes(2);
+    expect(mocks.queryOne).toHaveBeenCalledTimes(5);
   });
   it("blocks allocations via employee creation and rejects NaN before any write", async () => {
     mocks.actor.role = "Finance Admin";

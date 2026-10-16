@@ -34,7 +34,8 @@ export type BillStatus =
   | "Accepted"
   | "Rejected";
 
-export type DeskState = "Pending" | "Hold" | "Reject" | "Approved";
+/** "Returned": this desk sent the bill back to an earlier desk and awaits it (0010). */
+export type DeskState = "Pending" | "Hold" | "Reject" | "Approved" | "Returned";
 export type ItemCategory = "Major" | "Minor" | "Consumables";
 
 export interface EmployeeRow {
@@ -127,6 +128,10 @@ export interface BillRow {
   /** Which pool holds the bill's money: PDA, OH-31 or OH-35 (null on older bills = PDA). */
   funding_pool?: string | null;
   funding_fy?: string | null;
+  /** The desk that sent this bill back to the desk it is at now, its optional reason, and when (0010). */
+  returned_from?: string | null;
+  returned_remark?: string | null;
+  returned_at?: string | null;
   /** When the bill reached the desk it is at now (list endpoint only). */
   stage_entered_at?: string | null;
 }
@@ -144,7 +149,9 @@ export interface BillApprovalRow {
     | "Hold"
     | "Forwarded"
     | "Registered"
-    | "Notified";
+    | "Notified"
+    | "Returned"
+    | "Corrected";
   actor_code: string | null;
   actor_name: string | null;
   actor_role: string | null;
@@ -247,7 +254,7 @@ export interface Database {
           p_actor_code: string;
           p_actor_name: string | null;
           p_actor_role: string;
-          p_action: "Approved" | "Rejected" | "Hold";
+          p_action: "Approved" | "Rejected" | "Hold" | "Returned";
           p_remark?: string | null;
           p_extra?: Json;
         };

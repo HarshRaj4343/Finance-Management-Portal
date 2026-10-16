@@ -233,7 +233,9 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
                               replace(updated);
                               // The card leaves the queue, so say what happened above it.
                               setNotice({ kind: "ok", text: `${updated.bill_number ?? "Bill"}: ${updated.snp === "Approved" ? `approved and sent to ${deskLabel(updated.status)}`
-                                : updated.snp === "Hold" ? "put on hold, funds remain reserved" : "rejected, reserved funds returned to the applicant's PDA"}.` });
+                                : updated.snp === "Hold" ? "put on hold, funds remain reserved"
+                                : updated.status === "Rejected" ? "rejected, reserved funds returned to the applicant's PDA"
+                                : "corrected. It is still at your desk; approve it to send it on"}.` });
                             }} />
                         ) : (
                           <DeskReviewPanel bill={bill} desk={desk} actorCode={session?.user?.employee_code} actorRole={session?.user?.employee_type}
@@ -245,6 +247,7 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
                           {bill[key] === "Approved"
                             ? bill.status === "Accepted" ? `Approved by ${deskLabel(desk)}. Final approval complete.` : `Approved by ${deskLabel(desk)}. Now with ${deskLabel(bill.status)}.`
                             : bill[key] === "Reject" ? `Rejected by ${deskLabel(desk)}.`
+                            : bill[key] === "Returned" ? `Sent back by ${deskLabel(desk)} to ${deskLabel(bill.status)}. It returns here once approved there.`
                             : bill.status === desk ? "Waiting at this desk." : `With ${deskLabel(bill.status)}.`}
                         </p>
                       )}

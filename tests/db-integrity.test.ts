@@ -168,6 +168,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     await db.query(readFileSync("db/migrations/0007_fund_heads.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0008_movement_registers.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0009_edit_pause_and_receipts.sql", "utf8"));
+    await db.query(readFileSync("db/migrations/0010_send_back.sql", "utf8"));
     expect((await db.query("select sum(po_value) as total,count(*) as n from public.bills")).rows[0]).toEqual(before);
     await expect(db.query("update public.change_log set actor_code='forged'")).rejects.toThrow(/append-only/);
     expect((await db.query("select count(*)::integer as n from public.pda_balances where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
@@ -496,6 +497,109 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
       b = await decide(await closeWindow(b), "Finance Admin", "Hold");
       const held = await pause(b, true);
       expect(held).toMatchObject({ edit_paused_until: null, revision: b.revision });
+    });
+  });
+
+  describe("sending a bill back to an earlier desk (0010)", () => {
+    const codes: Record<string, string> = { "Student Purchase": "TEST-S", "Audit": "TEST-A", "Finance Admin": "TEST-F" };
+    const desk = (role: string) => ({ code: codes[role], name: codes[role], role });
+    const sendBack = async (b: { id: string; revision: number }, role: string, to: string, remark: string | null = null) =>
+      (await db.query("select public.fn_bill_action($1,$2,$2,$3,'Returned',$4,$5) as bill", [b.id, codes[role], role, remark, { return_to: to, expected_revision: b.revision }])).rows[0].bill;
+    const deskAmend = async (b: { id: string; revision: number }, body: Record<string, unknown>, role: string) =>
+      (await db.query("select public.fn_desk_amend_bill($1,$2,$3) as bill", [b.id, { ...body, expected_revision: b.revision }, desk(role)])).rows[0].bill;
+    const pda = async () => (await db.query("select balance,committed from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    const priced = (p: ReturnType<typeof payload>, amount: number, extra: Partial<FormState> = {}) =>
+      payload({ ...p.form_data, ...extra, poValue: String(amount), lines: [{ ...p.form_data.lines[0], unitPrice: String(amount) }] });
+
+    it("returns a bill to an earlier desk with its money reserved, lets that desk correct and approve it, then walks the route again", async () => {
+      const p = payload(billForm("TEST-U", 90000, "Major"));
+      let b = await submit(p);
+      b = await decide(b, "Student Purchase"); b = await decide(b, "Audit");
+      expect(b.status).toBe("Finance Admin");
+      const before = await pda();
+
+      b = await sendBack(b, "Finance Admin", "Audit", "Recheck the quoted rate");
+      expect(b).toMatchObject({ status: "Audit", snp: "Approved", audit: "Pending", finance_admin: "Returned",
+        returned_from: "Finance Admin", returned_remark: "Recheck the quoted rate", pda_committed: true });
+      expect(await pda()).toEqual(before);
+
+      // The receiving desk corrects the whole bill, money included; it stays at that desk.
+      b = await deskAmend(b, priced(p, 80000), "Audit");
+      expect(b).toMatchObject({ status: "Audit", audit: "Pending", returned_from: "Finance Admin", po_value: 80000 });
+      expect(Number((await pda()).committed)).toBe(Number(before.committed) - 10000);
+
+      // The corrector may approve it; the bill then goes on to Finance Admin as normal.
+      b = await decide(b, "Audit");
+      expect(b).toMatchObject({ status: "Finance Admin", finance_admin: "Pending", returned_from: null, returned_remark: null });
+      b = await decide(b);
+      expect(b.status).toBe("Accepted");
+      expect(Number((await db.query("select amount from public.purchase_register where bill_id=$1", [b.id])).rows[0].amount)).toBe(80000);
+
+      const events = (await db.query("select stage,action,from_status,to_status,remark from public.bill_approvals where bill_id=$1 order by seq", [b.id])).rows;
+      expect(events).toContainEqual(expect.objectContaining({ stage: "Finance Admin", action: "Returned", from_status: "Finance Admin", to_status: "Audit", remark: "Recheck the quoted rate" }));
+      expect(events.some((e) => e.stage === "Audit" && e.action === "Corrected" && /Rs 90000.00 to Rs 80000.00/.test(e.remark))).toBe(true);
+      const moves = (await db.query("select register,desk,counterpart,nature from public.bill_movements where bill_id=$1 order by id", [b.id])).rows;
+      expect(moves).toContainEqual({ register: "Outward", desk: "Finance Admin", counterpart: "Audit", nature: "Sent back" });
+      expect(moves).toContainEqual({ register: "Inward", desk: "Audit", counterpart: "Finance Admin", nature: "Sent back for correction" });
+    });
+
+    it("clears approvals from the receiving desk onwards and takes an optional remark", async () => {
+      let b = await submit(payload(billForm("TEST-U", 70000, "Major")));
+      b = await decide(b, "Student Purchase"); b = await decide(b, "Audit");
+      b = await sendBack(b, "Finance Admin", "Student Purchase");
+      expect(b).toMatchObject({ status: "Student Purchase", snp: "Pending", audit: null, finance_admin: "Returned", returned_remark: null });
+      b = await decide(b, "Student Purchase");
+      expect(b).toMatchObject({ status: "Audit", audit: "Pending", finance_admin: "Returned", returned_from: null });
+      await expect(decide(b)).rejects.toThrow(/not Finance Admin/);
+      b = await decide(b, "Audit"); b = await decide(b);
+      expect(b.status).toBe("Accepted");
+    });
+
+    it("refuses desks the bill has not passed, later desks, strangers and the filer", async () => {
+      let b = await submit(payload(billForm("TEST-U", 1200)));
+      expect(b.status).toBe("Finance Admin");
+      await expect(sendBack(b, "Finance Admin", "Audit")).rejects.toThrow(/has not approved/);
+      await expect(sendBack(b, "Finance Admin", "Student Purchase")).rejects.toThrow(/has not approved/);
+      await expect(sendBack(b, "Finance Admin", "Finance Admin")).rejects.toThrow(/earlier desk/);
+      await expect(sendBack(b, "Audit", "Student Purchase")).rejects.toThrow(/not Audit/);
+
+      b = await submit(payload(billForm("TEST-U", 1300, "Minor")));
+      await expect(sendBack(b, "Student Purchase", "Student Purchase")).rejects.toThrow(/earlier desk/);
+      await expect(db.query("select public.fn_bill_action($1,'TEST-C','C','Bill Employee','Returned',null,$2) as bill",
+        [b.id, { return_to: "Student Purchase", expected_revision: b.revision }])).rejects.toThrow(/cannot decide a bill you filed/);
+    });
+
+    it("lets only the receiving desk correct a sent-back bill, and never into a route it has not passed", async () => {
+      const p = payload(billForm("TEST-U", 60000));
+      let b = await submit(p);
+      expect(b.status).toBe("Audit");
+      await expect(deskAmend(b, p, "Audit")).rejects.toThrow(/after it has been sent back/);
+      b = await decide(b, "Audit");
+      await expect(sendBack(b, "Finance Admin", "Student Purchase")).rejects.toThrow(/has not approved/);
+      b = await sendBack(b, "Finance Admin", "Audit", "Wrong supplier address");
+      await expect(deskAmend(b, p, "Finance Admin")).rejects.toThrow(/Only the desk this bill is with/);
+      // A consumable turned into equipment would need Store and Purchase first.
+      await expect(deskAmend(b, priced(p, 60000, { category: "Major" }), "Audit")).rejects.toThrow(/must first pass Store and Purchase/);
+      await expect(deskAmend(b, { ...p, employee_id: "TEST-X" }, "Audit")).rejects.toThrow(/applicant cannot change/);
+      await expect(deskAmend({ ...b, revision: b.revision - 1 }, p, "Audit")).rejects.toMatchObject({ code: "40001" });
+      // Dropping below the Audit limit is fine: Audit has looked at it anyway.
+      b = await deskAmend(b, priced(p, 40000), "Audit");
+      b = await decide(b, "Audit");
+      expect(b.status).toBe("Finance Admin");
+      expect((await decide(b)).status).toBe("Accepted");
+    });
+
+    it("ends the send-back once the receiving desk holds it, and the filer's correction restarts the route", async () => {
+      const p = payload(billForm("TEST-U", 65000, "Major"));
+      let b = await submit(p);
+      b = await decide(b, "Student Purchase"); b = await decide(b, "Audit");
+      b = await sendBack(b, "Finance Admin", "Audit");
+      b = await decide(b, "Audit", "Hold");
+      expect(b).toMatchObject({ status: "Audit", audit: "Hold", returned_from: null });
+      await expect(deskAmend(b, p, "Audit")).rejects.toThrow(/after it has been sent back/);
+      b = (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...p, expected_revision: b.revision }, filer])).rows[0].bill;
+      expect(b).toMatchObject({ status: "Student Purchase", snp: "Pending", audit: null, finance_admin: null });
+      expect((await db.query("select count(*)::integer as n from public.pda_balances where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
     });
   });
 });
