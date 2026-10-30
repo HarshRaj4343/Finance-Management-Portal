@@ -24,7 +24,7 @@ type Payload = {
 
 const DESKS = ["Student Purchase", "Audit", "Finance Admin"];
 const day = (v: string | null | undefined) => { const d = istDay(v); return d ? shortDate(d) : "—"; };
-const STATUS_TEXT: Record<string, string> = { Accepted: "Approved — entered in the purchase register", Rejected: "Rejected" };
+const STATUS_TEXT: Record<string, string> = { Accepted: "Released — entered in the purchase register", Rejected: "Rejected" };
 
 function Row({ label, children }: { label: string; children: React.ReactNode }) {
   return (

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 import { billForm } from "./fixtures";
-import { returnTargets, sentBackHere } from "@/lib/bill-review";
+import { deskProgress, returnTargets, sentBackHere } from "@/lib/bill-review";
 
 const mocks = vi.hoisted(() => ({
   actor: { code: "TEST-F", name: "Finance", email: null, department: "A", role: "Finance Admin", provisioned: true },
@@ -108,5 +108,24 @@ describe("where a bill may be sent back to (mirrors fn_bill_return_engine)", () 
     expect(sentBackHere({ status: "Audit", returned_from: "Finance Admin" })).toBe(true);
     expect(sentBackHere({ status: "Audit", returned_from: null })).toBe(false);
     expect(sentBackHere({ status: "Rejected", returned_from: "Finance Admin" })).toBe(false);
+  });
+});
+
+describe("how /user words a desk the bill has not reached", () => {
+  const b = (over: Record<string, unknown>) => ({ status: "Student Purchase", snp: "Pending", audit: null, finance_admin: null,
+    item_category: "Major", po_value: 90000, ...over }) as Parameters<typeof deskProgress>[0];
+  it("says Upcoming for desks still ahead, Not required off the route, Not reached after a rejection", () => {
+    expect(deskProgress(b({}), "Student Purchase")).toBe("In Progress");
+    expect(deskProgress(b({}), "Audit")).toBe("Upcoming");
+    expect(deskProgress(b({}), "Finance Admin")).toBe("Upcoming");
+    expect(deskProgress(b({ po_value: 1000 }), "Audit")).toBe("Not required");
+    expect(deskProgress(b({ item_category: "Consumables", status: "Finance Admin", snp: null, finance_admin: "Pending", po_value: 1000 }), "Student Purchase")).toBe("Not required");
+    expect(deskProgress(b({ status: "Rejected", snp: "Reject" }), "Audit")).toBe("Not reached");
+    expect(deskProgress(b({ status: "Rejected", snp: "Reject" }), "Student Purchase")).toBe("Rejected");
+  });
+  it("calls Finance Admin's approval the release and shows send-backs", () => {
+    expect(deskProgress(b({ status: "Accepted", snp: "Approved", audit: "Approved", finance_admin: "Approved" }), "Finance Admin")).toBe("Released");
+    expect(deskProgress(b({ status: "Accepted", snp: "Approved", audit: "Approved", finance_admin: "Approved" }), "Audit")).toBe("Approved");
+    expect(deskProgress(b({ status: "Audit", snp: "Approved", audit: "Pending", finance_admin: "Returned" }), "Finance Admin")).toBe("Sent back");
   });
 });

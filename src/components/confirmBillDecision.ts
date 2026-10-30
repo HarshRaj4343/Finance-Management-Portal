@@ -8,9 +8,11 @@ export type Decision = "Approved" | "Hold" | "Rejected";
 const VERB: Record<Decision, string> = { Approved: "Approve", Hold: "Hold", Rejected: "Reject" };
 
 /** The confirmation every approval desk shows before a decision is sent. */
-export function billDecisionPrompt(bill: Bill, action: Decision, remark: string, outcome: string): ConfirmOptions {
+export function billDecisionPrompt(bill: Bill, action: Decision, remark: string, outcome: string, final = false): ConfirmOptions {
+  // Finance Admin's approval is the last one: it releases the bill.
+  const verb = final && action === "Approved" ? "Release" : VERB[action];
   return {
-    title: `${VERB[action]} this bill?`,
+    title: `${verb} this bill?`,
     description: outcome,
     details: [
       ["Bill", bill.bill_number ?? bill.id],
@@ -20,7 +22,7 @@ export function billDecisionPrompt(bill: Bill, action: Decision, remark: string,
       ["At desk", deskLabel(bill.status)],
       ["Remark", remark || "None"],
     ],
-    confirmLabel: `Yes, ${VERB[action].toLowerCase()}`,
+    confirmLabel: `Yes, ${verb.toLowerCase()}`,
     tone: action === "Approved" ? "default" : "danger",
   };
 }

@@ -4,8 +4,9 @@ import { useRef, useState } from "react";
 import DecisionButtons from "./DecisionButtons";
 import RejectRouteDialog, { type RejectRoute } from "./RejectRouteDialog";
 import SentBackNotice from "./SentBackNotice";
+import InwardReceipt from "./InwardReceipt";
 import { AlertDialog, AlertDialogCancel, AlertDialogContent, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from "./ui/alert-dialog";
-import { canReviewSnp, recordedBillDates } from "@/lib/bill-review";
+import { awaitingReceipt, canReviewSnp, recordedBillDates } from "@/lib/bill-review";
 import { api, money } from "@/lib/api";
 import { deskLabel } from "@/lib/roles";
 import { isMoney } from "@/lib/security";
@@ -17,9 +18,15 @@ const actionLabels: Record<Action, string> = { Approved: "Approve", Hold: "Hold"
 type Pending = { action: Action; revision: number; remark: string; extra: Record<string, unknown> };
 
 /** Same review, confirmation, dates and server safeguards on dashboard and bill details. */
-export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }: {
+export default function SnpReviewPanel({ bill: given, actorCode, actorRole, onDecided, onReceipt }: {
   bill: Bill; actorCode?: string | null; actorRole?: string | null; onDecided: (bill: Bill) => void | Promise<void>;
+  /** The inward entry was ticked or unticked here. */
+  onReceipt?: (bill: Bill) => void;
 }) {
+  // The tick shows at once, even before the page holding this panel refreshes.
+  const [ticked, setTicked] = useState<Bill["inward"]>(null);
+  const bill: Bill = ticked && ticked.id === given.inward?.id ? { ...given, inward: ticked } : given;
+  const waiting = awaitingReceipt(bill);
   const [remark, setRemark] = useState("");
   const [hasGuarantee, setHasGuarantee] = useState(Boolean(bill.has_bank_guarantee));
   const [guaranteeDetails, setGuaranteeDetails] = useState(bill.bank_guarantee_details ?? "");
@@ -38,6 +45,7 @@ export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }
   function request(action: Action, button: HTMLButtonElement) {
     setMessage(null);
     if (!allowed || sending.current) return;
+    if (waiting) { setMessage({ error: true, text: `Tick Received for inward no. ${bill.inward!.serial_no} before deciding this bill.` }); return; }
     if (action !== "Approved" && !remark.trim()) {
       setMessage({ error: true, text: "Write a remark explaining the hold or rejection first." }); return;
     }
@@ -101,6 +109,8 @@ export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }
       </dl>
       <p className="mt-2 text-xs text-slate-600">Read-only applicant facts. {dates.legacy ? "Legacy dates are extracted from the original saved bill text; no records were rewritten." : bill.form_data ? "Copied from the submitted bill form." : "This older bill has no verifiable recorded dates."}</p>
     </div>
+    {allowed && <InwardReceipt bill={bill} actorRole={actorRole}
+      onChange={(inward) => { setTicked(inward); onReceipt?.({ ...given, inward }); }} />}
     {allowed && <SentBackNotice bill={bill} canCorrect={!busy} onCorrected={onDecided} />}
     {message && <p role={message.error ? "alert" : "status"} className={`rounded-lg p-3 text-sm ${message.error ? "bg-red-50 text-red-700" : "bg-green-50 text-green-800"}`}>{message.text}</p>}
     {allowed && <fieldset disabled={busy || pending !== null} className="space-y-4 disabled:opacity-70">
@@ -114,7 +124,7 @@ export default function SnpReviewPanel({ bill, actorCode, actorRole, onDecided }
       <label className="block text-sm font-medium">Store and Purchase Department remark (required for Hold/Reject)
         <textarea data-remark className="mt-1 w-full rounded-lg border p-3" rows={2} value={remark} onChange={(e) => setRemark(e.target.value)} />
       </label>
-      <DecisionButtons onDecide={(action, button) => request(action, button)} disabled={busy || pending !== null || routing} busy={busy} />
+      <DecisionButtons onDecide={(action, button) => request(action, button)} disabled={busy || pending !== null || routing || waiting} busy={busy} />
     </fieldset>}
     {routing && <RejectRouteDialog bill={bill} initialRemark={remark.trim()} busy={busy} error={routeError}
       onCancel={() => { setRouting(false); if (actionButton.current?.isConnected) actionButton.current.focus(); }} onConfirm={sendRoute} />}

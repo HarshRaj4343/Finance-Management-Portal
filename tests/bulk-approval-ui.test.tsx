@@ -72,13 +72,13 @@ describe("bulk approval on a desk", () => {
 
     await press("a");
     expect(window.confirm).toHaveBeenCalledOnce(); // one confirmation for the batch
-    expect(host.textContent).toMatch(/Approving 3 bills/);
+    expect(host.textContent).toMatch(/Releasing 3 bills/);
     await act(async () => { vi.advanceTimersByTime(7_900); });
     expect(mocks.post).not.toHaveBeenCalled();
     await act(async () => { vi.advanceTimersByTime(200); });
     expect(mocks.post).toHaveBeenCalledWith("/api/bills/bulk-action", { bills: [1, 2, 3].map((n) => ({ id: bill(n).id, expected_revision: 2 })) });
     expect(host.querySelectorAll("[data-bill-card]")).toHaveLength(1);
-    expect(notices.at(-1)).toMatchObject({ kind: "ok", text: expect.stringContaining("3 bills approved") });
+    expect(notices.at(-1)).toMatchObject({ kind: "ok", text: expect.stringContaining("3 bills released") });
   });
 
   it("undo with U sends nothing and keeps the ticks", async () => {
@@ -96,7 +96,7 @@ describe("bulk approval on a desk", () => {
 
   it("keeps to 75 bills and ₹25 lakh, and leaves out bills above ₹5 lakh", async () => {
     await render(Array.from({ length: 9 }, (_, i) => bill(i + 1, i === 0 ? 600000 : 400000)));
-    expect(host.textContent).toContain("approve this bill on its own");
+    expect(host.textContent).toContain("release this bill on its own");
     await press("A", { shiftKey: true });
     // Bill 1 is above ₹5 lakh; six ₹4 lakh bills reach ₹24 lakh, a seventh would pass ₹25 lakh.
     expect(ticked()).toBe(6);

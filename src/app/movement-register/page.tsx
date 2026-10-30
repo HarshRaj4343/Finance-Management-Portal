@@ -9,7 +9,7 @@ import Notice, { type NoticeState } from "@/components/Notice";
 import FilterBar, { FilterField, filterInput } from "@/components/FilterBar";
 import { EmptyState, ExportButton, LoadingState, PageHeader } from "@/components/ui/page";
 import { api, money, qs, when, count } from "@/lib/api";
-import { canOpenMovementRegister, deskLabel, homeFor, normaliseRole } from "@/lib/roles";
+import { canMarkMovements, canOpenMovementRegister, deskLabel, homeFor, normaliseRole, seesOwnFilingsOnly } from "@/lib/roles";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { Kbd, ShortcutHelp, type ShortcutList } from "@/components/DeskShortcuts";
 
@@ -21,23 +21,37 @@ type Entry = {
   counterpart: string; nature: string; actor_name: string | null; actor_code: string | null; remark: string | null;
   moved_at: string; seconds_at_desk: number | null;
   received: boolean; received_by: string | null; received_marked_at: string | null;
+  /** Inward entry for the bill's current wait at this desk: the desk can review it now. */
+  pending_here?: boolean;
 };
+
+/** One mark per entry (0009), worded for its register: an inward file is received, an outward one sent. */
+const MARK = {
+  Inward: { yes: "Received", no: "Not received", column: "Receipt", key: "R" },
+  Outward: { yes: "Sent", no: "Not sent", column: "Dispatch", key: "S" },
+} as const;
+
+/** Stored as "Final approval" (0008); shown as the bill's release. */
+const movementLabel = (nature: string) => (nature === "Final approval" ? "Released" : nature);
 
 const DESKS = ["Student Purchase", "Audit", "Finance Admin"] as const;
 
-const REGISTER_SHORTCUTS: ShortcutList = [
+const registerShortcuts = (register: Register): ShortcutList => {
+  const m = MARK[register];
+  return [
   [["J", "↓"], "Next entry"],
   [["K", "↑"], "Previous entry"],
-  [["R"], "Mark the selected entry Received"],
-  [["N"], "Mark the selected entry Not received"],
-  [["X", "Space"], "Switch the selected entry between Received and Not received"],
-  [["⇧ J", "⇧ K"], "Mark Received while moving down / up"],
+  [[m.key], `Mark the selected entry ${m.yes}`],
+  [["N"], `Mark the selected entry ${m.no}`],
+  [["X", "Space"], `Switch the selected entry between ${m.yes} and ${m.no}`],
+  [["⇧ J", "⇧ K"], `Mark ${m.yes} while moving down / up`],
   [["O", "Enter"], "Open the bill in a new tab"],
   [["←", "→"], "Previous / next page"],
   [["[", "]"], "Inward / Outward register"],
   [["/"], "Search"],
   [["?"], "Show this list"],
-];
+  ];
+};
 const PAGE = 50;
 const th = "whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
 
@@ -53,7 +67,7 @@ function duration(seconds: number | null) {
 const natureTone = (nature: string) =>
   nature === "Rejected" ? "bg-red-50 text-red-800 ring-red-200"
   : nature === "On hold" || nature.startsWith("Sent back") ? "bg-orange-50 text-orange-800 ring-orange-200"
-  : nature === "Final approval" ? "bg-green-50 text-green-800 ring-green-200"
+  : nature === "Final approval" || nature === "Released" ? "bg-green-50 text-green-800 ring-green-200"
   : nature.startsWith("Recalled") ? "bg-amber-50 text-amber-800 ring-amber-200"
   : "bg-slate-50 text-slate-700 ring-slate-200";
 
@@ -66,6 +80,9 @@ export default function MovementRegisterPage() {
   const { data: session, status } = useSession();
   const role = normaliseRole(session?.user?.employee_type);
   const allowed = status === "authenticated" && canOpenMovementRegister(role);
+  // Filers read the register for the bills they filed; they cannot mark it.
+  const ownFilings = seesOwnFilingsOnly(role);
+  const homeDesk = role === "Dean" || ownFilings ? "" : role;
 
   const [register, setRegister] = useState<Register>("Inward");
   // Each desk opens on its own register; the Dean on every desk.
@@ -87,9 +104,9 @@ export default function MovementRegisterPage() {
 
   useEffect(() => {
     if (!allowed || deskChosen) return;
-    setDesk(role === "Dean" ? "" : role);
+    setDesk(homeDesk);
     setDeskChosen(true);
-  }, [allowed, deskChosen, role]);
+  }, [allowed, deskChosen, homeDesk]);
 
   const load = useCallback(async (silent = false) => {
     if (!allowed || !deskChosen) return;
@@ -110,9 +127,9 @@ export default function MovementRegisterPage() {
   }, [load]);
   useLiveRefresh(() => load(true));
 
-  // Received / Not received. Shown at once, put back if the server refuses.
+  // Received / Sent, or not. Shown at once, put back if the server refuses.
   const [marking, setMarking] = useState<Set<number>>(new Set());
-  const canMark = (e: Entry) => role === "Dean" || role === e.desk;
+  const canMark = (e: Entry) => canMarkMovements(role) && (role === "Dean" || role === e.desk);
   const markReceived = async (e: Entry, received: boolean) => {
     const flip = (value: boolean) => setEntries((list) => list.map((x) => (x.id === e.id ? { ...x, received: value } : x)));
     flip(received);
@@ -154,15 +171,15 @@ export default function MovementRegisterPage() {
       switch (ev.key) {
         case "j": case "J": case "ArrowDown": return go(1);
         case "k": case "K": case "ArrowUp": return go(-1);
-        case "x": case "X": case " ": case "r": case "R": case "n": case "N": {
+        case "x": case "X": case " ": case "r": case "R": case "s": case "S": case "n": case "N": {
           if (!here) return;
           // A focused checkbox toggles itself on Space; only take over elsewhere.
           if (ev.key === " " && target.closest("button, a, input")) return;
           ev.preventDefault();
           if (!canMark(here)) { setNotice({ kind: "info", text: `Only ${deskLabel(here.desk)} or the Dean can mark this entry.` }); return; }
-          // R and N set the mark outright, so pressing either twice is harmless; X and Space switch it.
+          // R / S and N set the mark outright, so pressing either twice is harmless; X and Space switch it.
           const key = ev.key.toLowerCase();
-          const received = key === "r" ? true : key === "n" ? false : !here.received;
+          const received = key === "r" || key === "s" ? true : key === "n" ? false : !here.received;
           if (received !== here.received && !marking.has(here.id)) markReceived(here, received);
           return;
         }
@@ -199,6 +216,15 @@ export default function MovementRegisterPage() {
   if (!allowed) return null;
 
   const inward = register === "Inward";
+  const mark = MARK[register];
+  // Tick (if needed) and go straight to the bill on this desk's Pending Bills.
+  const review = async (e: Entry) => {
+    if (!e.received) {
+      const { error } = await api.post(`/api/movements/${e.id}/receipt`, { received: true });
+      if (error) { setNotice({ kind: "bad", text: error }); return; }
+    }
+    window.location.href = `${homeFor(role)}?bill=${e.bill_id}`;
+  };
   const pages = Math.max(Math.ceil(total / PAGE), 1);
   const switchRegister = (r: Register) => { setRegister(r); setPage(0); };
 
@@ -220,15 +246,19 @@ export default function MovementRegisterPage() {
               { value: "Inward", label: "Inward register" }, { value: "Outward", label: "Outward register" }] },
             { key: "desk", label: "Desk", type: "select", any: "All desks", options: DESKS.map((d) => ({ value: d, label: deskLabel(d) })) },
             { key: "department", label: "School / department", type: "department" },
-            { key: "received", label: "Receipt", type: "select", options: [
-              { value: "yes", label: "Received" }, { value: "no", label: "Not received" }] },
+            { key: "received", label: "Received (inward) / Sent (outward)", type: "select", options: [
+              { value: "yes", label: "Received / Sent" }, { value: "no", label: "Not received / Not sent" }] },
             { key: "fy", label: "Financial year", type: "select", options: years, any: "All years" },
             { key: "q", label: "Search", type: "text", placeholder: "Serial, bill no., employee, item" },
             { key: "from", label: "Moved from", type: "date" },
             { key: "to", label: "Moved to", type: "date" },
           ]} />}
         title={inward ? "Inward Register" : "Outward Register"}
-        description={inward
+        description={ownFilings
+          ? inward
+            ? "Each time a bill you filed reached a desk, and where it came from. Read-only: the desks keep this register."
+            : "Each time a bill you filed left a desk, where it went, and how long it stayed. Read-only: the desks keep this register."
+          : inward
           ? "Every bill received at a desk, and where it came from."
           : "Every bill sent on from a desk, where it went, and how long it stayed."}
       />
@@ -237,8 +267,8 @@ export default function MovementRegisterPage() {
         search={search}
         onSearch={(v) => { setSearch(v); setPage(0); }}
         placeholder="Search by serial, bill number, employee, item or desk"
-        onClear={() => { setSearch(""); setFy(""); setDesk(role === "Dean" ? "" : role); setPage(0); }}
-        active={Boolean(search || fy || desk !== (role === "Dean" ? "" : role))}
+        onClear={() => { setSearch(""); setFy(""); setDesk(homeDesk); setPage(0); }}
+        active={Boolean(search || fy || desk !== homeDesk)}
         summary={`${count(total)} ${inward ? "inward" : "outward"} entries${desk ? ` at ${deskLabel(desk)}` : " across all desks"}, newest first`}
         actions={
           <select aria-label="Desk" value={desk} onChange={(e) => { setDesk(e.target.value); setPage(0); }} className={`${filterInput} md:w-56`}>
@@ -263,7 +293,7 @@ export default function MovementRegisterPage() {
             <table className="min-w-full divide-y divide-slate-200 text-sm">
               <thead className="bg-slate-50">
                 <tr>
-                  <th scope="col" className={th}>Receipt</th>
+                  <th scope="col" className={th}>{mark.column}</th>
                   <th scope="col" className={th}>{inward ? "Inward no. / received" : "Outward no. / dispatched"}</th>
                   <th scope="col" className={th}>Bill</th>
                   <th scope="col" className={`${th} text-right`}>Amount</th>
@@ -281,7 +311,7 @@ export default function MovementRegisterPage() {
                       <label
                         className={`inline-flex items-center gap-2 text-xs font-medium ${canMark(e) ? "cursor-pointer" : "cursor-not-allowed opacity-70"} ${e.received ? "text-green-800" : "text-slate-600"}`}
                         title={canMark(e)
-                          ? (e.received_by ? `Marked by ${e.received_by}, ${when(e.received_marked_at)}` : "Press Space or click to mark received")
+                          ? (e.received_by ? `Marked by ${e.received_by}, ${when(e.received_marked_at)}` : `Press Space or click to mark ${mark.yes.toLowerCase()}`)
                           : `Only ${deskLabel(e.desk)} or the Dean can mark this entry`}
                       >
                         <input
@@ -289,10 +319,10 @@ export default function MovementRegisterPage() {
                           checked={e.received}
                           disabled={!canMark(e) || marking.has(e.id)}
                           onChange={(ev) => markReceived(e, ev.target.checked)}
-                          aria-label={`${e.serial_no}: ${e.received ? "Received" : "Not received"}`}
+                          aria-label={`${e.serial_no}: ${e.received ? mark.yes : mark.no}`}
                           className="size-4 rounded border-slate-300 accent-green-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1"
                         />
-                        {e.received ? "Received" : "Not received"}
+                        {e.received ? mark.yes : mark.no}
                       </label>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
@@ -304,11 +334,17 @@ export default function MovementRegisterPage() {
                       <Link href={`/bill/${e.bill_id}`} className="whitespace-nowrap font-mono text-xs font-medium text-blue-700 hover:underline">{e.bill_number ?? "—"}</Link>
                       <p className="truncate text-slate-800" title={e.item_description ?? ""}>{e.item_description || "—"}</p>
                       <p className="truncate text-xs text-slate-500" title={e.department ?? ""}>{e.employee_name} ({e.employee_id})</p>
+                      {e.pending_here && role === e.desk && (
+                        <button type="button" onClick={() => review(e)}
+                          className="mt-1.5 inline-flex h-7 items-center rounded-md border border-blue-300 bg-blue-50 px-2.5 text-xs font-medium text-blue-800 hover:bg-blue-100">
+                          {e.received ? "Review" : "Mark received and review"}
+                        </button>
+                      )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums">{money(e.amount)}</td>
                     <td className="min-w-[11rem] max-w-[16rem] px-4 py-3 text-slate-900">{e.counterpart}</td>
                     <td className="px-4 py-3">
-                      <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${natureTone(e.nature)}`}>{e.nature}</span>
+                      <span className={`inline-flex whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-medium ring-1 ring-inset ${natureTone(e.nature)}`}>{movementLabel(e.nature)}</span>
                       <p className="mt-1 whitespace-nowrap text-xs text-slate-500">by {e.actor_name ?? e.actor_code ?? "—"}</p>
                     </td>
                     {!inward && <td className="whitespace-nowrap px-4 py-3 text-slate-600">{duration(e.seconds_at_desk)}</td>}
@@ -330,14 +366,15 @@ export default function MovementRegisterPage() {
       <p className="hidden flex-wrap items-center justify-center gap-x-3 gap-y-1 text-xs text-slate-500 md:flex">
         <span className="font-medium text-slate-600">Keyboard:</span>
         <span><Kbd>J</Kbd> <Kbd>K</Kbd> move</span>
-        <span><Kbd>R</Kbd> received</span>
-        <span><Kbd>N</Kbd> not received</span>
+        <span><Kbd>{mark.key}</Kbd> {mark.yes.toLowerCase()}</span>
+        <span><Kbd>N</Kbd> {mark.no.toLowerCase()}</span>
         <span><Kbd>X</Kbd> or <Kbd>Space</Kbd> switch</span>
         <span><Kbd>⇧ J</Kbd> mark while moving</span>
         <span><Kbd>?</Kbd> all shortcuts</span>
       </p>
-      <ShortcutHelp open={help} onClose={() => setHelp(false)} list={REGISTER_SHORTCUTS}
-        intro="Go through the register without the mouse. You can mark only your own desk's entries (the Dean, any)." />
+      <ShortcutHelp open={help} onClose={() => setHelp(false)} list={registerShortcuts(register)}
+        intro={ownFilings ? "Go through the register without the mouse. The desks mark the entries; you can read them."
+          : "Go through the register without the mouse. You can mark only your own desk's entries (the Dean, any)."} />
       <p className="text-center text-xs text-slate-500">Register entries are permanent. They are written automatically as bills move and cannot be edited or deleted.</p>
     </AppShell>
   );

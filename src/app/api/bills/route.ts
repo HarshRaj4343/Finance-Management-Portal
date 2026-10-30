@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { query, queryOne, Params, whereClause, likePattern } from "@/server/db";
+import { query, queryOne, Params, whereClause, likePattern, INWARD_AT_DESK } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok, badRequest } from "@/server/http";
 import { canSeeAllBills, isApprover } from "@/lib/roles";
@@ -21,7 +21,7 @@ const BILL_COLUMNS = `
   status, snp, audit, finance_admin, noted,
   remarks, remarks1, remarks2, remarks3, remarks4,
   decided_at, created_at::text, updated_at::text, editable_until, edit_paused_until, edit_paused_seconds, edit_paused_since, edit_pause_used_seconds, funding_pool, funding_fy,
-  returned_from, returned_remark, returned_at::text,
+  returned_from, returned_remark, returned_at::text, ${INWARD_AT_DESK},
   greatest(
     (select max(a.created_at) from public.bill_approvals a
       where a.bill_id = bills.id and a.to_status = bills.status
@@ -31,7 +31,7 @@ const BILL_COLUMNS = `
 `;
 
 type CsvRow = Record<string, unknown>;
-const desk = (s: unknown) => (s === "Student Purchase" ? "Store and Purchase Department" : s);
+const desk = (s: unknown) => (s === "Student Purchase" ? "Store and Purchase Department" : s === "Accepted" ? "Released" : s);
 const CSV_COLUMNS: CsvColumn<CsvRow>[] = [
   ["Bill number", (r) => r.bill_number], ["Filed (IST)", (r) => istStamp(r.created_at)], ["Status", (r) => desk(r.status)],
   ["Applicant ID", (r) => r.employee_id], ["Applicant", (r) => r.employee_name], ["Department", (r) => r.employee_department],

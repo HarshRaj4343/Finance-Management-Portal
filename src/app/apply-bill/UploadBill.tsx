@@ -513,7 +513,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
                 if (id) setTouched((t) => (t.has(id) ? t : new Set(t).add(id)));
               }}
             >
-              {step === 0 && <StepSubmitter {...stepProps} lookup={lookup} />}
+              {step === 0 && <StepSubmitter {...stepProps} lookup={lookup} locked={Boolean(initialBill)} />}
               {step === 1 && <StepSupplier {...stepProps} />}
               {step === 2 && <StepBill {...stepProps} />}
               {step === 3 && <StepItems {...stepProps} />}

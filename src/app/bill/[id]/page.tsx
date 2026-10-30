@@ -8,7 +8,7 @@ import QRCode from "react-qr-code";
 import BillItems from "@/components/BillItems";
 import SnpReviewPanel from "@/components/SnpReviewPanel";
 import DeskReviewPanel from "@/components/DeskReviewPanel";
-import { canReviewDesk } from "@/lib/bill-review";
+import { canReviewDesk, deskProgress } from "@/lib/bill-review";
 import { billCorrections, type Revision } from "@/lib/bill-changes";
 import AppShell, { sharedLinks } from "@/components/AppShell";
 import { LoadingState, StatusBadge } from "@/components/ui/page";
@@ -162,7 +162,7 @@ export default function BillDetailsPage() {
           className={`px-3 py-1 rounded-full text-sm font-medium ${statusColor(bill.status)}`}
         >
           {bill.status === "Accepted"
-            ? "Approved"
+            ? "Released"
             : bill.status === "Rejected"
             ? "Rejected"
             : `With ${deskLabel(bill.status)}`}
@@ -315,10 +315,10 @@ export default function BillDetailsPage() {
         <section aria-label="Desk decisions" className="rounded-xl border border-slate-200 p-4">
           <h2 className="mb-2 text-sm font-semibold text-slate-900">Desk decisions</h2>
           <dl className="space-y-1.5 text-sm">
-            {([["Store and Purchase", bill.snp], ["Audit", bill.audit], ["Finance Admin", bill.finance_admin]] as const).map(([desk, state]) => (
+            {([["Store and Purchase", bill.snp, "Student Purchase"], ["Audit", bill.audit, "Audit"], ["Finance Admin", bill.finance_admin, "Finance Admin"]] as const).map(([desk, state, stage]) => (
               <div key={desk} className="grid grid-cols-[9rem_1fr] items-center gap-2">
                 <dt className="text-slate-500">{desk}</dt>
-                <dd>{state ? <StatusBadge value={state} /> : <span className="text-slate-500">Not on this bill&apos;s route</span>}</dd>
+                <dd>{state ? <StatusBadge value={state} /> : <span className="text-slate-500">{deskProgress(bill, stage)}</span>}</dd>
               </div>
             ))}
             {bill.has_bank_guarantee && (
@@ -377,6 +377,8 @@ export default function BillDetailsPage() {
                   ? deskLabel(e.remark)
                   : e.action === "Returned"
                   ? `${deskLabel(e.stage)} — Sent back to ${deskLabel(e.to_status)}`
+                  : e.action === "Approved" && e.to_status === "Accepted"
+                  ? `${deskLabel(e.stage)} — Released`
                   : `${deskLabel(e.stage)} — ${e.action}`}
               </span>
               <span className="text-xs text-slate-500">{when(e.created_at)}</span>

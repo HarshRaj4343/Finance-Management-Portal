@@ -132,6 +132,8 @@ export interface BillRow {
   returned_from?: string | null;
   returned_remark?: string | null;
   returned_at?: string | null;
+  /** Inward register entry for its current arrival at its desk; a desk decides only once Received (0011). */
+  inward?: { id: number; serial_no: string; received: boolean; received_by: string | null; received_at: string | null } | null;
   /** When the bill reached the desk it is at now (list endpoint only). */
   stage_entered_at?: string | null;
 }

@@ -23,11 +23,21 @@ export type Lookup = {
 // Step 1 — Submitter
 // ---------------------------------------------------------------------
 
-export function StepSubmitter({ f, set, errors, lookup }: StepProps & { lookup: Lookup }) {
+export function StepSubmitter({ f, set, errors, lookup, locked = false }: StepProps & {
+  lookup: Lookup;
+  /**
+   * Correcting a filed bill: the applicant is fixed. The bill's money is
+   * reserved in their account and its number, registers and history are
+   * theirs, so the server refuses any change (fn_amend_bill).
+   */
+  locked?: boolean;
+}) {
   return (
-    <Card title="Submitter" description="Enter the employee ID or student enrolment number associated with this bill.">
+    <Card title="Submitter" description={locked ? "The applicant of a filed bill cannot be changed." : "Enter the employee ID or student enrolment number associated with this bill."}>
       <Grid>
-        <TextField
+        {locked ? (
+          <ReadOnlyField id="f-requester" label="Employee ID / Student Enrolment" value={f.requesterCode} source="the filed bill" />
+        ) : <TextField
           id="f-requester"
           label="Employee ID / Student Enrolment"
           required
@@ -37,11 +47,19 @@ export function StepSubmitter({ f, set, errors, lookup }: StepProps & { lookup: 
           hint={lookup.state === "looking" ? "Looking up…" : "IDs are matched without regard to letter case."}
           autoComplete="off"
           placeholder="e.g. E001 or B24101"
-        />
+        />}
         <ReadOnlyField id="f-requester-name" label="Name" value={lookup.state === "found" ? lookup.name ?? "" : ""} source="the employee directory" />
         <ReadOnlyField id="f-requester-dept" label="Department / Section" value={lookup.state === "found" ? lookup.department ?? "" : ""} source="the employee directory" />
         <ReadOnlyField id="f-sub-date" label="Submission Date" value={shortDate(todayISO())} source="today’s date" />
       </Grid>
+      {locked && (
+        <div className="mt-5">
+          <Banner tone="info">
+            Its money is reserved in this applicant&apos;s account, and its bill number, register entries and history belong to them.
+            To bill someone else, file a new bill for that person and ask the desk holding this one to reject it.
+          </Banner>
+        </div>
+      )}
       {lookup.state === "missing" && lookup.message && !errors["f-requester"] && (
         <div className="mt-5"><Banner tone="warning">{lookup.message}</Banner></div>
       )}

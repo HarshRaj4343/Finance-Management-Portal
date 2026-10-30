@@ -53,14 +53,14 @@ export type BillNotification = {
 };
 
 const HEADLINE: Record<Outcome, (stage: string) => string> = {
-  Approved: () => "Your bill has been approved",
+  Approved: () => "Your bill has been released",
   Rejected: (stage) => `Your bill was rejected at ${stage}`,
   Hold: (stage) => `Your bill is on hold at ${stage}`,
 };
 
 const LEAD: Record<Outcome, (stage: string) => string> = {
   Approved: () =>
-    "This bill has completed the approval workflow and has been entered in the departmental purchase register.",
+    "This bill has been released by Finance Admin after every approval and has been entered in the departmental purchase register.",
   Rejected: (stage) =>
     `The ${stage} desk has rejected this bill. The amount has been returned to the PDA account. A fresh bill will need to be filed.`,
   Hold: (stage) =>

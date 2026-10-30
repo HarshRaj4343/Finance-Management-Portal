@@ -4,7 +4,7 @@ import { HttpError, requireActor } from "@/server/session";
 import { CSV_ROW_LIMIT, columnsResponse, csvResponse, isoDay, istStamp, pickColumns, toCsv, type CsvColumn } from "@/server/csv";
 import { fail, ok, badRequest } from "@/server/http";
 import { pagination } from "@/lib/security";
-import { canOpenMovementRegister } from "@/lib/roles";
+import { canOpenMovementRegister, seesOwnFilingsOnly } from "@/lib/roles";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -18,12 +18,16 @@ function csvColumns(inward: boolean): CsvColumn<CsvRow>[] {
     ["Desk", (r) => r.desk === "Student Purchase" ? "Store and Purchase Department" : r.desk], ["Financial year", (r) => r.financial_year],
     ["Bill number", (r) => r.bill_number], ["Item", (r) => r.item_description], ["Applicant ID", (r) => r.employee_id],
     ["Applicant", (r) => r.employee_name], ["Department", (r) => r.department], ["Amount (INR)", (r) => r.amount == null ? "" : Number(r.amount).toFixed(2)],
-    [inward ? "From" : "To", (r) => r.counterpart], ["Movement", (r) => r.nature], ["By", (r) => r.actor_name ?? r.actor_code],
+    [inward ? "From" : "To", (r) => r.counterpart], ["Movement", (r) => movementLabel(String(r.nature))], ["By", (r) => r.actor_name ?? r.actor_code],
     ...(inward ? [] : [["Hours at desk", (r: CsvRow) => r.hours_at_desk] as CsvColumn<CsvRow>]),
     ["Remarks", (r) => r.shown_remark],
-    ["Receipt", (r) => (r.received ? "Received" : "Not received")], ["Receipt marked by", (r) => r.received_by],
+    inward ? ["Receipt", (r) => (r.received ? "Received" : "Not received")] : ["Dispatch", (r) => (r.received ? "Sent" : "Not sent")],
+    [inward ? "Receipt marked by" : "Dispatch marked by", (r) => r.received_by],
   ];
 }
+
+/** Stored as "Final approval" (0008); shown as the release of the bill. */
+const movementLabel = (nature: string) => (nature === "Final approval" ? "Released" : nature);
 
 /**
  * GET /api/movements?register=Inward|Outward[&desk=Audit][&fy=2026-27][&q=]
@@ -31,15 +35,18 @@ function csvColumns(inward: boolean): CsvColumn<CsvRow>[] {
  *   ?format=csv[&col=..]  spreadsheet of the chosen columns; ?format=columns lists them
  *
  * The inward (diary) and outward (dispatch) registers of the bill flow,
- * newest first. Open to the Dean and the three approval desks only.
+ * newest first. Open to the Dean and the three approval desks; a bill
+ * filer (Bill Employee) sees only the entries of bills they filed.
  * Outward rows carry how long the bill spent at that desk. Every row
- * carries its Received / Not received mark (0009).
+ * carries its mark (0009): Received / Not received on inward entries,
+ * Sent / Not sent on outward ones. pending_here: the bill is waiting at
+ * this entry's desk on this very arrival, so the desk can review it now.
  */
 export async function GET(req: NextRequest) {
   try {
     const actor = await requireActor();
     if (!canOpenMovementRegister(actor.role)) {
-      throw new HttpError(403, "Only the Dean, Finance Admin, Audit and Store and Purchase can open the inward / outward register.");
+      throw new HttpError(403, "Only the Dean, Finance Admin, Audit, Store and Purchase and bill filers can open the inward / outward register.");
     }
     const p = req.nextUrl.searchParams;
     const register = p.get("register") ?? "Inward";
@@ -50,6 +57,8 @@ export async function GET(req: NextRequest) {
 
     const params = new Params();
     const where = [`m.register = ${params.add(register)}`];
+    // Not negotiable, and applied before anything from the query string.
+    if (seesOwnFilingsOnly(actor.role)) where.push(`m.bill_id in (select id from public.bills where created_by = ${params.add(actor.code)})`);
     const desk = p.get("desk");
     if (desk) {
       if (!DESKS.includes(desk)) return badRequest("Choose a desk.");
@@ -66,7 +75,7 @@ export async function GET(req: NextRequest) {
     if (to) where.push(`(m.moved_at at time zone 'Asia/Kolkata')::date <= ${params.add(to)}::date`);
     const received = p.get("received");
     if (received) {
-      if (!["yes", "no"].includes(received)) return badRequest("Choose received or not received.");
+      if (!["yes", "no"].includes(received)) return badRequest("Choose marked (received / sent) or not.");
       where.push(received === "yes" ? "m.received" : "not m.received");
     }
     const text = p.get("q")?.trim();
@@ -99,6 +108,10 @@ export async function GET(req: NextRequest) {
                 -- The filing event's remark is the system's own reservation note, not a person's remark.
                 case when m.nature = 'New bill' then null else m.remark end as remark, m.moved_at,
                 m.received, m.received_by, m.received_marked_at,
+                (m.register = 'Inward' and exists (select 1 from public.bills b where b.id = m.bill_id and b.status = m.desk
+                    and (b.editable_until is null or b.editable_until <= now()))
+                  and m.id = (select max(x.id) from public.bill_movements x
+                               where x.bill_id = m.bill_id and x.desk = m.desk and x.register = 'Inward')) as pending_here,
                 case when m.register = 'Outward' then
                   extract(epoch from m.moved_at - (
                     select max(i.moved_at) from public.bill_movement_entries i

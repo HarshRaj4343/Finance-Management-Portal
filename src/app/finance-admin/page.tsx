@@ -361,7 +361,7 @@ export default function FinanceAdminDashboard() {
     <DeskQueue
       desk="Finance Admin"
       title="Finance Admin"
-      description="Final approval desk. Approving here debits the bill's fund and enters the purchase in the register."
+      description="Release desk. Releasing a bill here debits its fund and enters the purchase in the register."
       hints={{
         Pending: "Waiting for you",
         Approved: "Ready for payment",

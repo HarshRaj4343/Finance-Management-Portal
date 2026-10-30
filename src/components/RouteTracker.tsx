@@ -26,7 +26,7 @@ const DOT: Record<StepState, string> = {
 
 /**
  * Where a bill is on its own route: Filed, each desk it must pass, then
- * final approval. Desks a bill never visits (e.g. Audit at ₹50,000 or less)
+ * its release by Finance Admin. Desks a bill never visits (e.g. Audit at ₹50,000 or less)
  * are not shown.
  */
 export default function RouteTracker({ bill }: { bill: Bill }) {
@@ -34,7 +34,7 @@ export default function RouteTracker({ bill }: { bill: Bill }) {
   const steps: { label: string; state: StepState }[] = [
     { label: "Filed", state: "done" },
     ...desks.map((d) => ({ label: LABEL[d], state: deskState(bill, d) })),
-    { label: "Approved", state: bill.status === "Accepted" ? "done" : "upcoming" },
+    { label: "Released", state: bill.status === "Accepted" ? "done" : "upcoming" },
   ];
   return (
     <ol aria-label="Approval progress" className="flex items-start">

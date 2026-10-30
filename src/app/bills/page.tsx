@@ -237,7 +237,7 @@ export default function AllBillsPage() {
             { key: "department", label: "School / department", type: "department" },
             { key: "status", label: "Where the bill is", type: "select", options: [
               { value: "Student Purchase", label: "At Store and Purchase Department" }, { value: "Audit", label: "At Audit" },
-              { value: "Finance Admin", label: "At Finance Admin" }, { value: "Accepted", label: "Accepted" }, { value: "Rejected", label: "Rejected" },
+              { value: "Finance Admin", label: "At Finance Admin" }, { value: "Accepted", label: "Released" }, { value: "Rejected", label: "Rejected" },
             ] },
             { key: "category", label: "Category", type: "select", options: CATEGORY_OPTIONS },
             { key: "source", label: "Source of fund", type: "select", options: FUND_OPTIONS },

@@ -93,6 +93,22 @@ describe("Reject asks where the bill goes", () => {
     expect(dialog()!.textContent).toContain("Reject permanently");
   });
 
+  it("keeps the decision buttons off until the bill is ticked Received, then turns them on", async () => {
+    mocks.post.mockResolvedValue({ data: { receipt: { received: true, received_by_name: "Finance", received_at: "2026-10-27 10:00:00+05:30" } }, error: null });
+    const onReceipt = vi.fn();
+    const inward = { id: 41, serial_no: "FA/IN/2026-27/00041", received: false, received_by: null, received_at: null };
+    await act(async () => root.render(<DeskReviewPanel bill={{ ...bill, inward }} desk="Finance Admin" actorCode="TEST-F" actorRole="Finance Admin"
+      onDecided={onDecided} onReceipt={onReceipt} />));
+    expect(host.textContent).toContain("FA/IN/2026-27/00041");
+    expect(host.textContent).toContain("Not received");
+    for (const name of ["Release", "Hold", "Reject"]) expect(button(name).disabled).toBe(true);
+    const tick = host.querySelector<HTMLInputElement>("input[data-inward-receipt]")!;
+    await act(async () => tick.click());
+    expect(mocks.post).toHaveBeenCalledWith("/api/movements/41/receipt", { received: true });
+    expect(onReceipt).toHaveBeenCalledWith(expect.objectContaining({ inward: expect.objectContaining({ received: true, received_by: "Finance" }) }));
+    for (const name of ["Release", "Hold", "Reject"]) expect(button(name).disabled).toBe(false);
+  });
+
   it("tells the receiving desk who sent it back and why, with the correction form", async () => {
     await render({ ...bill, status: "Audit", audit: "Pending", finance_admin: "Returned", returned_from: "Finance Admin",
       returned_remark: "Recheck the quoted rate", returned_at: "2026-10-16 15:00:00+05:30" }, "Audit", "TEST-A");

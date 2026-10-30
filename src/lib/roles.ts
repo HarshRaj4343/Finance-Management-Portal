@@ -91,9 +91,18 @@ export function isApprover(role: Role): role is Stage {
   return (APPROVAL_STAGES as readonly string[]).includes(role);
 }
 
-/** The inward / outward register is kept for the Dean and the three approval desks. */
-export function canOpenMovementRegister(role: string | null | undefined): boolean {
+/** The inward / outward register is kept by the Dean and the three approval desks: they tick its entries. */
+export function canMarkMovements(role: string | null | undefined): boolean {
   return ["Dean", "Finance Admin", "Audit", "Student Purchase"].includes(normaliseRole(role));
+}
+
+/** Bill filers read the register too, but only for the bills they filed, and cannot tick it. */
+export function seesOwnFilingsOnly(role: string | null | undefined): boolean {
+  return ["Bill Employee", "Bill Editor"].includes(normaliseRole(role));
+}
+
+export function canOpenMovementRegister(role: string | null | undefined): boolean {
+  return canMarkMovements(role) || seesOwnFilingsOnly(role);
 }
 
 /** Roles allowed to see every bill in the portal, not just their own. */

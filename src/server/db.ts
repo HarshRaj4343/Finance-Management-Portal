@@ -118,6 +118,18 @@ export function whereClause(conditions: string[]): string {
   return conditions.length ? `where ${conditions.join(" and ")}` : "";
 }
 
+/**
+ * The inward register entry for a bill's current arrival at its desk, as
+ * `inward` (null when the bill is not at a desk, or arrived before the
+ * registers). A desk decides only once it is Received (0011).
+ */
+export const INWARD_AT_DESK = `(
+  select jsonb_build_object('id', m.id, 'serial_no', m.serial_no, 'received', m.received,
+                            'received_by', m.received_by_name, 'received_at', m.received_at)
+    from public.bill_movements m
+   where m.bill_id = bills.id and m.desk = bills.status and m.register = 'Inward'
+   order by m.id desc limit 1) as inward`;
+
 /** A search term made safe for ILIKE: wildcards the person typed are literal. */
 export function likePattern(text: string): string {
   return `%${text.replace(/[\\%_]/g, (c) => `\\${c}`)}%`;

@@ -145,7 +145,7 @@ export default function FundRegisterPage() {
             <StatCard label="Allocated" value={money(head?.allocated ?? 0)} hint={`Sanctioned for ${fy || "this year"}`} />
             <StatCard label="Available" value={money(head?.balance ?? 0)} hint="Free for new bills" tone="green" />
             <StatCard label="Committed" value={money(head?.committed ?? 0)} hint="Reserved by bills in progress" tone="amber" />
-            <StatCard label="Spent" value={money(head?.spent ?? 0)} hint="Finally approved bills" tone="blue" />
+            <StatCard label="Spent" value={money(head?.spent ?? 0)} hint="Released bills" tone="blue" />
           </div>
 
           <Panel title="Sanctions" bodyClassName="overflow-x-auto">

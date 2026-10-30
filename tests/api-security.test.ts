@@ -94,8 +94,8 @@ describe("API authority and financial boundaries", () => {
     }
     expect(mocks.query).not.toHaveBeenCalled();
   });
-  it("opens the inward / outward register to the Dean and the three approval desks only", async () => {
-    for (const role of ["User", "Bill Employee", "PDA Manager"]) {
+  it("opens the inward / outward register to the Dean, the three approval desks, and filers for their own bills", async () => {
+    for (const role of ["User", "PDA Manager"]) {
       mocks.actor.role = role;
       expect((await movements(req("/api/movements?register=Inward"))).status).toBe(403);
     }
@@ -106,6 +106,12 @@ describe("API authority and financial boundaries", () => {
       expect((await movements(req("/api/movements?register=Outward&desk=Audit"))).status).toBe(200);
     }
     expect((await movements(req("/api/movements?register=Sideways"))).status).toBe(400);
+    // A filer sees only the bills they filed, whatever they ask for.
+    mocks.query.mockClear(); mocks.actor.role = "Bill Employee"; mocks.actor.code = "TEST-C";
+    expect((await movements(req("/api/movements?register=Inward&desk=Audit"))).status).toBe(200);
+    const [sql, values] = mocks.query.mock.calls[0];
+    expect(sql).toContain("created_by = $2");
+    expect(values.slice(0, 2)).toEqual(["Inward", "TEST-C"]);
   });
   it("opens the OH-31 / OH-35 registers and allocations to the Dean only", async () => {
     for (const role of ["User", "Bill Employee", "Student Purchase", "Audit", "Finance Admin", "PDA Manager"]) {

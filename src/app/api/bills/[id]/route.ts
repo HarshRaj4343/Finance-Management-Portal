@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import { query, queryOne } from "@/server/db";
+import { query, queryOne, INWARD_AT_DESK } from "@/server/db";
 import { requireActor } from "@/server/session";
 import { fail, ok } from "@/server/http";
 import { canSeeAllBills, plannedRoute } from "@/lib/roles";
@@ -29,7 +29,7 @@ export async function GET(
 
     if (!isUuid(id)) return ok({ error: "No such bill." }, 404);
 
-    const bill = await queryOne("select * from public.bills where id = $1", [id]);
+    const bill = await queryOne(`select bills.*, ${INWARD_AT_DESK} from public.bills where id = $1`, [id]);
     if (!bill) return ok({ error: "No such bill." }, 404);
 
     if (!canSeeAllBills(actor.role) && bill.employee_id !== actor.code) {

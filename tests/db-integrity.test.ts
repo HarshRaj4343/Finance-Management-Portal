@@ -17,8 +17,14 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
   // Most tests decide straight away, so close the ten-minute edit window first.
   const closeWindow = async (b: { id: string }) => (await db.query("update public.bills set editable_until=now() where id=$1 returning to_jsonb(bills.*) as bill", [b.id])).rows[0].bill;
   const submit = async (p: Record<string, unknown> = payload(billForm()), actor = filer) => closeWindow(await fileBill(p, actor));
+  // A desk decides only a bill whose current inward entry it has ticked Received (0011).
+  const receive = async (billId: string, role: string, code: string) => db.query(
+    `select public.fn_mark_movement_received(m.id, true, $3) from public.bill_movements m
+      where m.id = (select max(id) from public.bill_movements where bill_id = $1 and desk = $2 and register = 'Inward') and not m.received`,
+    [billId, role, code]);
   const decide = async (b: { id: string; revision: number }, role = "Finance Admin", action = "Approved", extra = {}) => {
     const code = role === "Finance Admin" ? "TEST-F" : role === "Audit" ? "TEST-A" : "TEST-S";
+    await receive(b.id, role, code);
     return (await db.query("select public.fn_bill_action($1,$2,$2,$3,$4,$5,$6) as bill", [b.id, code, role, action, action === "Approved" ? null : "Test decision", { ...extra, expected_revision: b.revision }])).rows[0].bill;
   };
   beforeAll(async () => {
@@ -169,6 +175,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     await db.query(readFileSync("db/migrations/0008_movement_registers.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0009_edit_pause_and_receipts.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0010_send_back.sql", "utf8"));
+    await db.query(readFileSync("db/migrations/0011_receipt_before_decision.sql", "utf8"));
     expect((await db.query("select sum(po_value) as total,count(*) as n from public.bills")).rows[0]).toEqual(before);
     await expect(db.query("update public.change_log set actor_code='forged'")).rejects.toThrow(/append-only/);
     expect((await db.query("select count(*)::integer as n from public.pda_balances where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
@@ -500,11 +507,59 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     });
   });
 
+  describe("deciding only a received bill (0011)", () => {
+    const raw = (b: { id: string; revision: number }, action = "Approved", code = "TEST-F", role = "Finance Admin") =>
+      db.query("select public.fn_bill_action($1,$2,$2,$3,$4,$5,$6) as bill", [b.id, code, role, action, action === "Approved" ? null : "Remark", { expected_revision: b.revision }]);
+    const inward = async (id: string, desk: string) => (await db.query(
+      "select * from public.bill_movements where bill_id=$1 and desk=$2 and register='Inward' order by id desc limit 1", [id, desk])).rows[0];
+
+    it("refuses every decision until the desk ticks the inward entry Received", async () => {
+      const b = await submit(payload(billForm("TEST-U", 1500)));
+      const entry = await inward(b.id, "Finance Admin");
+      expect(entry.received).toBe(false);
+      for (const action of ["Approved", "Hold", "Rejected"]) {
+        await expect(raw(b, action)).rejects.toThrow(`Received in the inward register (${entry.serial_no})`);
+      }
+      await db.query("select public.fn_mark_movement_received($1, true, 'TEST-F')", [entry.id]);
+      expect((await raw(b)).rows[0].bill.status).toBe("Accepted");
+    });
+
+    it("asks again at each new desk, and after a send-back or correction", async () => {
+      const p = payload(billForm("TEST-U", 75000, "Major"));
+      let b = await submit(p);
+      b = await decide(b, "Student Purchase");
+      await expect(raw(b, "Approved", "TEST-A", "Audit")).rejects.toThrow(/Received in the inward register/);
+      b = await decide(b, "Audit"); b = await decide(b, "Finance Admin", "Hold");
+      b = await closeWindow((await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...p, expected_revision: b.revision }, filer])).rows[0].bill);
+      await expect(raw(b, "Approved", "TEST-S", "Student Purchase")).rejects.toThrow(/Received in the inward register/);
+      // Unticking blocks the desk again; other desks' entries do not count.
+      const entry = await inward(b.id, "Student Purchase");
+      await db.query("select public.fn_mark_movement_received($1, true, 'TEST-S')", [entry.id]);
+      await db.query("select public.fn_mark_movement_received($1, false, 'TEST-S')", [entry.id]);
+      await expect(raw(b, "Approved", "TEST-S", "Student Purchase")).rejects.toThrow(/Received in the inward register/);
+    });
+
+    it("does not hold up a bill with no inward entry at its desk", async () => {
+      let b = await submit(payload(billForm("TEST-U", 1600)));
+      // A legacy bill from before the registers: remove its entries, bypassing the append-only triggers.
+      const client = await db.connect();
+      try {
+        await client.query("set session_replication_role = replica");
+        await client.query("delete from public.bill_movement_arrivals where movement_id in (select id from public.bill_movements where bill_id=$1)", [b.id]);
+        await client.query("delete from public.bill_movements where bill_id=$1", [b.id]);
+      } finally { await client.query("set session_replication_role = origin"); client.release(); }
+      b = (await raw(b)).rows[0].bill;
+      expect(b.status).toBe("Accepted");
+    });
+  });
+
   describe("sending a bill back to an earlier desk (0010)", () => {
     const codes: Record<string, string> = { "Student Purchase": "TEST-S", "Audit": "TEST-A", "Finance Admin": "TEST-F" };
     const desk = (role: string) => ({ code: codes[role], name: codes[role], role });
-    const sendBack = async (b: { id: string; revision: number }, role: string, to: string, remark: string | null = null) =>
-      (await db.query("select public.fn_bill_action($1,$2,$2,$3,'Returned',$4,$5) as bill", [b.id, codes[role], role, remark, { return_to: to, expected_revision: b.revision }])).rows[0].bill;
+    const sendBack = async (b: { id: string; revision: number }, role: string, to: string, remark: string | null = null) => {
+      await receive(b.id, role, codes[role]);
+      return (await db.query("select public.fn_bill_action($1,$2,$2,$3,'Returned',$4,$5) as bill", [b.id, codes[role], role, remark, { return_to: to, expected_revision: b.revision }])).rows[0].bill;
+    };
     const deskAmend = async (b: { id: string; revision: number }, body: Record<string, unknown>, role: string) =>
       (await db.query("select public.fn_desk_amend_bill($1,$2,$3) as bill", [b.id, { ...body, expected_revision: b.revision }, desk(role)])).rows[0].bill;
     const pda = async () => (await db.query("select balance,committed from public.pda_balances where employee_id='TEST-U'")).rows[0];

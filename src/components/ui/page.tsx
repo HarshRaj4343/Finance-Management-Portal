@@ -66,7 +66,7 @@ const STATUS_TONE: Record<string, string> = {
   Reject: "bg-red-50 text-red-800 ring-red-200",
   Rejected: "bg-red-50 text-red-800 ring-red-200",
 };
-const STATUS_TEXT: Record<string, string> = { Reject: "Rejected", Hold: "On hold", Returned: "Sent back", "Student Purchase": "Store & Purchase", "Store and Purchase Department": "Store & Purchase" };
+const STATUS_TEXT: Record<string, string> = { Accepted: "Released", Reject: "Rejected", Hold: "On hold", Returned: "Sent back", "Student Purchase": "Store & Purchase", "Store and Purchase Department": "Store & Purchase" };
 
 /**
  * One look for every desk decision and bill status. Desk names such as

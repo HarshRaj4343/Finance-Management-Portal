@@ -24,6 +24,7 @@ import {
 } from "@tabler/icons-react";
 
 import type { Bill } from "@/types/database";
+import { deskProgress } from "@/lib/bill-review";
 
 import type { Employee } from "@/types/database";
 
@@ -44,8 +45,11 @@ const STEP_TONE: Record<string, { icon: typeof IconCheck; className: string }> =
   Rejected: { icon: IconX, className: "bg-red-100 text-red-800" },
   "On Hold": { icon: IconPlayerPause, className: "bg-orange-100 text-orange-800" },
   "In Progress": { icon: IconRefresh, className: "bg-blue-100 text-blue-800" },
-  Skipped: { icon: IconArrowRight, className: "bg-slate-100 text-slate-800" },
-  Pending: { icon: IconClock, className: "bg-slate-100 text-slate-800" },
+  Released: { icon: IconCheck, className: "bg-green-100 text-green-800" },
+  "Sent back": { icon: IconArrowRight, className: "bg-orange-100 text-orange-800" },
+  Upcoming: { icon: IconClock, className: "bg-slate-100 text-slate-800" },
+  "Not required": { icon: IconArrowRight, className: "bg-slate-100 text-slate-600" },
+  "Not reached": { icon: IconX, className: "bg-slate-100 text-slate-600" },
 };
 
 export default function UserPage() {
@@ -156,7 +160,7 @@ export default function UserPage() {
     let statusType = "unknown";
 
     if (bill.status === "Accepted") {
-      statusLabel = "Approved (All Stages)";
+      statusLabel = "Released";
       statusType = "approved";
     } else if (
       bill.audit === "Reject" ||
@@ -243,41 +247,11 @@ export default function UserPage() {
       departmentRemarks: remarks,
       workflowProgress: {
         step1_Submission: "Completed",
-        step2_StoreAndPurchase:
-          bill.snp == null && (bill.status === "Audit" || bill.status === "Finance Admin")
-            ? "Skipped"
-            : bill.snp === "Approved"
-            ? "Approved"
-            : bill.snp === "Reject"
-            ? "Rejected"
-            : bill.snp === "Hold"
-            ? "On Hold"
-            : bill.snp === "Pending"
-            ? "In Progress"
-            : "Pending",
-        step3_Audit:
-          bill.audit == null && bill.status === "Finance Admin"
-            ? "Skipped"
-            : bill.audit === "Approved"
-            ? "Approved"
-            : bill.audit === "Reject"
-            ? "Rejected"
-            : bill.audit === "Hold"
-            ? "On Hold"
-            : bill.audit === "Pending"
-            ? "In Progress"
-            : "Pending",
-        step4_FinanceAdmin:
-          bill.finance_admin === "Approved"
-            ? "Approved"
-            : bill.finance_admin === "Reject"
-            ? "Rejected"
-            : bill.finance_admin === "Hold"
-            ? "On Hold"
-            : bill.finance_admin === "Pending"
-            ? "In Progress"
-            : "Pending",
-        step5_FinalApproval: bill.status === "Accepted" ? "Complete" : "Pending",
+        // Desks the bill has not reached say Upcoming, Not required or Not reached (deskProgress).
+        step2_StoreAndPurchase: deskProgress(bill, "Student Purchase"),
+        step3_Audit: deskProgress(bill, "Audit"),
+        step4_FinanceAdmin: deskProgress(bill, "Finance Admin"),
+        step5_FinalApproval: bill.status === "Accepted" ? "Complete" : bill.status === "Rejected" ? "Not reached" : "Upcoming",
       }
     };
   };
@@ -418,11 +392,11 @@ export default function UserPage() {
               <h3 className="mb-2 text-sm font-semibold text-slate-900">Approval progress</h3>
               <ol className="space-y-1.5 text-sm">
                 {Object.entries(details.workflowProgress).map(([step, status]) => {
-                  const tone = STEP_TONE[status] ?? STEP_TONE.Pending;
+                  const tone = STEP_TONE[status] ?? STEP_TONE.Upcoming;
                   const StepIcon = tone.icon;
                   return (
                     <li key={step} className="flex items-center justify-between gap-3">
-                      <span className="text-slate-700">{step.replace(/_/g, " ").replace(/step\d+/i, "").replace("StoreAndPurchase", "Store and Purchase Department").replace("FinalApproval", "Final approval").replace("FinanceAdmin", "Finance Admin").trim()}</span>
+                      <span className="text-slate-700">{step.replace(/_/g, " ").replace(/step\d+/i, "").replace("StoreAndPurchase", "Store and Purchase Department").replace("FinalApproval", "Entered in purchase register").replace("FinanceAdmin", "Finance Admin").trim()}</span>
                       <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${tone.className}`}>
                         <StepIcon className="size-3.5 shrink-0" aria-hidden="true" />
                         {status}

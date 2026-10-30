@@ -38,6 +38,9 @@ export function useBulkApproval({ desk, shown, canDecide, replace, notify }: {
   notify: (notice: NoticeState) => void;
 }) {
   const confirm = useConfirm();
+  // Finance Admin's approval is the final one: it releases each bill.
+  const finalDesk = desk === "Finance Admin";
+  const done = finalDesk ? "released" : "approved";
   const [ticked, setTickedState] = useState<Set<string>>(new Set());
   // Read synchronously: one key press can tick two bills (Shift + J).
   const tickedRef = useRef(ticked);
@@ -122,9 +125,9 @@ export function useBulkApproval({ desk, shown, canDecide, replace, notify }: {
     const failed = data.outcomes.filter((o) => !o.ok);
     // Failed bills stay ticked for a second look.
     setTicked(new Set(failed.map((o) => o.id)));
-    const head = `${data.approved} ${data.approved === 1 ? "bill" : "bills"} approved (${money(data.total)}).`;
+    const head = `${data.approved} ${data.approved === 1 ? "bill" : "bills"} ${done} (${money(data.total)}).`;
     notify(failed.length
-      ? { kind: "bad", text: `${head} ${failed.length} not approved, still ticked: ${failed.slice(0, 5)
+      ? { kind: "bad", text: `${head} ${failed.length} not ${done}, still ticked: ${failed.slice(0, 5)
           .map((o) => `${o.bill_number ?? "bill"} (${o.error})`).join("; ")}${failed.length > 5 ? `; and ${failed.length - 5} more` : ""}.` }
       : { kind: "ok", text: head });
   }
@@ -133,23 +136,22 @@ export function useBulkApproval({ desk, shown, canDecide, replace, notify }: {
     if (pending || busy || selected.length === 0) return;
     const bills = selected;
     const largest = bills.reduce((a, b) => (amount(b) > amount(a) ? b : a));
-    const finalDesk = desk === "Finance Admin";
     const ok = await confirm({
-      title: `Approve ${bills.length} ${bills.length === 1 ? "bill" : "bills"} totalling ${money(sum(bills))}?`,
+      title: `${finalDesk ? "Release" : "Approve"} ${bills.length} ${bills.length === 1 ? "bill" : "bills"} totalling ${money(sum(bills))}?`,
       description: finalDesk
-        ? "This is the final approval for each bill: its money is spent and it is entered in the purchase register. Each bill is approved and recorded separately."
+        ? "This releases each bill: its money is spent and it is entered in the purchase register. Each bill is released and recorded separately."
         : "Each bill is approved and recorded separately and moves on to its next desk.",
       details: [
         ["Bills", `${bills.length} (limit ${BULK_MAX_BILLS})`],
         ["Total", `${money(sum(bills))} (limit ${money(BULK_MAX_TOTAL)})`],
-        ["Goes to", finalDesk ? "Purchase register (final approval)"
+        ["Goes to", finalDesk ? "Purchase register (released)"
           : grouped(bills, (b) => deskLabel(routeAfter(desk as "Student Purchase" | "Audit", b.item_category, amount(b))))],
         ["By fund", grouped(bills, (b) => b.funding_pool ?? b.source_of_fund ?? "PDA")],
         ["Largest", `${largest.bill_number ?? "—"} · ${money(amount(largest))} · ${largest.supplier_name ?? "—"}`],
         ...(desk === "Student Purchase" ? [["Bank guarantee", "None. Approve a bill that needs one on its own."] as [string, ReactNode]] : []),
         ["Undo", `You have ${BULK_UNDO_MS / 1000} seconds to undo (U) before anything is sent.`],
       ],
-      confirmLabel: `Yes, approve ${bills.length}`,
+      confirmLabel: `Yes, ${finalDesk ? "release" : "approve"} ${bills.length}`,
     });
     if (!ok) return;
     const until = Date.now() + BULK_UNDO_MS;
@@ -163,7 +165,7 @@ export function useBulkApproval({ desk, shown, canDecide, replace, notify }: {
     if (timer.current) clearTimeout(timer.current);
     timer.current = null;
     setPending(null);
-    notify({ kind: "info", text: "Bulk approval undone. Nothing was sent; the bills are still ticked." });
+    notify({ kind: "info", text: `Bulk ${finalDesk ? "release" : "approval"} undone. Nothing was sent; the bills are still ticked.` });
     return true;
   };
 
@@ -173,13 +175,13 @@ export function useBulkApproval({ desk, shown, canDecide, replace, notify }: {
   const tickBox = (bill: Bill): ReactNode => {
     if (!canDecide(bill)) return null;
     if (amount(bill) > BULK_LARGE_BILL) {
-      return <p className="mb-2 text-xs text-slate-500">Above {money(BULK_LARGE_BILL)}: approve this bill on its own.</p>;
+      return <p className="mb-2 text-xs text-slate-500">Above {money(BULK_LARGE_BILL)}: {finalDesk ? "release" : "approve"} this bill on its own.</p>;
     }
     return (
       <label className="mb-2 flex w-fit cursor-pointer items-center gap-2 text-sm text-slate-700">
         <input type="checkbox" checked={ticked.has(bill.id)} disabled={Boolean(pending) || busy} onChange={() => toggle(bill.id)}
           className="size-4 rounded border-slate-300 accent-blue-700" />
-        Select for bulk approval
+        Select for bulk {finalDesk ? "release" : "approval"}
       </label>
     );
   };
@@ -187,7 +189,7 @@ export function useBulkApproval({ desk, shown, canDecide, replace, notify }: {
   const overLimit = ticked.size > BULK_MAX_BILLS || total > BULK_MAX_TOTAL;
   const bar: ReactNode = pending ? (
     <div role="status" className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-fit max-w-[calc(100%-2rem)] flex-wrap items-center gap-3 rounded-lg bg-slate-900 px-4 py-3 text-sm text-white shadow-lg">
-      <span>Approving <strong>{pending.bills.length}</strong> bills ({money(pending.total)}) in{" "}
+      <span>{finalDesk ? "Releasing" : "Approving"} <strong>{pending.bills.length}</strong> bills ({money(pending.total)}) in{" "}
         <strong className="tabular-nums">{Math.max(0, Math.ceil((pending.until - now) / 1000))}s</strong>…</span>
       <button type="button" onClick={undo} className="rounded-md bg-white px-3 py-1 font-medium text-slate-900 hover:bg-slate-100">
         Undo <span className="text-slate-500">(U)</span>
@@ -196,12 +198,12 @@ export function useBulkApproval({ desk, shown, canDecide, replace, notify }: {
   ) : ticked.size > 0 || busy ? (
     <div className="fixed inset-x-0 bottom-4 z-40 mx-auto flex w-fit max-w-[calc(100%-2rem)] flex-wrap items-center gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm shadow-lg">
       <span className="font-medium text-slate-900">
-        {busy ? "Recording approvals…" : <>{ticked.size} selected · {money(total)}</>}
+        {busy ? `Recording ${finalDesk ? "releases" : "approvals"}…` : <>{ticked.size} selected · {money(total)}</>}
       </span>
       <span className="text-xs text-slate-500">limit {BULK_MAX_BILLS} bills · {money(BULK_MAX_TOTAL)}</span>
       <button type="button" onClick={approve} disabled={busy || overLimit}
         className="inline-flex h-9 items-center gap-2 rounded-md bg-green-600 px-4 font-medium text-white hover:bg-green-700 disabled:opacity-50">
-        Approve selected <Kbd>A</Kbd>
+        {finalDesk ? "Release" : "Approve"} selected <Kbd>A</Kbd>
       </button>
       <button type="button" onClick={clear} disabled={busy} className="inline-flex h-9 items-center gap-2 rounded-md px-3 font-medium text-slate-700 hover:bg-slate-100">
         Clear <Kbd>Esc</Kbd>

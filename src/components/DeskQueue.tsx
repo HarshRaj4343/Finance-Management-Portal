@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
-import { IconAlertCircle, IconCheck, IconClock, IconClockPause, IconListDetails, IconX } from "@tabler/icons-react";
+import { IconAlertCircle, IconCheck, IconClock, IconClockPause, IconInbox, IconListDetails, IconX } from "@tabler/icons-react";
 import AppShell, { type NavItem } from "./AppShell";
 import BillCard from "./BillCard";
 import DeskReviewPanel from "./DeskReviewPanel";
@@ -12,7 +12,7 @@ import Notice, { type NoticeState } from "./Notice";
 import { EmptyState, LoadingState, PageHeader, StatCard, StatGrid } from "./ui/page";
 import { api } from "@/lib/api";
 import { deskLabel, normaliseRole, type Stage } from "@/lib/roles";
-import { canReviewDesk, canReviewSnp, istDay, latestArrivalFirst } from "@/lib/bill-review";
+import { awaitingReceipt, canReviewDesk, canReviewSnp, istDay, latestArrivalFirst } from "@/lib/bill-review";
 import { useLiveRefresh } from "@/lib/useLiveRefresh";
 import { cn } from "@/lib/utils";
 import { Kbd, ShortcutHelp, useDeskShortcuts } from "./DeskShortcuts";
@@ -30,6 +30,7 @@ const STATE_KEY: Record<Stage, "snp" | "audit" | "finance_admin"> = {
 
 const SECTIONS: { filter: DeskFilter; label: string; icon: ReactNode }[] = [
   { filter: "Pending", label: "Pending Bills", icon: <IconClock /> },
+  // "Released Bills" at Finance Admin, whose approval is the final one.
   { filter: "Approved", label: "Approved Bills", icon: <IconCheck /> },
   { filter: "Hold", label: "Hold Bills", icon: <IconClockPause /> },
   { filter: "Reject", label: "Rejected Bills", icon: <IconX /> },
@@ -66,6 +67,19 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
   const [amountFilter, setAmountFilter] = useState({ min: "", max: "" });
   const [dateFilter, setDateFilter] = useState({ start: "", end: "" });
   const [locationFilter, setLocationFilter] = useState("");
+  // ?bill=<id>: opened from the inward register to review one bill.
+  const [focusBill, setFocusBill] = useState<string | null>(null);
+  useEffect(() => {
+    const id = new URLSearchParams(window.location.search).get("bill");
+    if (id) { setFocusBill(id); setSection("Pending"); }
+  }, []);
+  const clearFocus = () => {
+    setFocusBill(null);
+    const url = new URL(window.location.href); url.searchParams.delete("bill");
+    window.history.replaceState(null, "", url);
+  };
+  const final = desk === "Finance Admin";
+  const sections = useMemo(() => SECTIONS.map((s) => (final && s.filter === "Approved" ? { ...s, label: "Released Bills" } : s)), [final]);
 
   useEffect(() => {
     if (status === "unauthenticated") window.location.href = "/login";
@@ -89,6 +103,7 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
   const counts = useMemo(() => ({
     All: bills.length,
     Pending: bills.filter((b) => b[key] === "Pending").length,
+    NotReceived: bills.filter((b) => b[key] === "Pending" && awaitingReceipt(b)).length,
     Approved: bills.filter((b) => b[key] === "Approved").length,
     Hold: bills.filter((b) => b[key] === "Hold").length,
     Reject: bills.filter((b) => b[key] === "Reject").length,
@@ -100,13 +115,16 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
   };
 
   const queueFilter = SECTIONS.some((s) => s.filter === section) ? (section as DeskFilter) : null;
+  const focused = focusBill ? bills.find((b) => b.id === focusBill) ?? null : null;
   const shown = useMemo(() => {
     if (!queueFilter) return [];
     const q = searchQuery.trim().toLowerCase();
     const loc = locationFilter.trim().toLowerCase();
     const min = amountFilter.min ? parseFloat(amountFilter.min) : -Infinity;
     const max = amountFilter.max ? parseFloat(amountFilter.max) : Infinity;
-    return bills
+    // From the inward register: just that bill, wherever it now stands at this desk.
+    if (focusBill) return bills.filter((b) => b.id === focusBill);
+    const list = bills
       .filter((b) => queueFilter === "All" || b[key] === queueFilter)
       .filter((b) => !q || [b.bill_number, b.po_details, b.supplier_name, b.employee_name, b.employee_id, b.item_description, b.bill_details, b.indenter_name]
         .some((v) => (v ?? "").toLowerCase().includes(q)))
@@ -119,21 +137,25 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
       })
       .filter((b) => !loc || [b.location, b.supplier_address].some((v) => (v ?? "").toLowerCase().includes(loc)))
       .sort(latestArrivalFirst);
-  }, [bills, queueFilter, key, searchQuery, categoryFilter, amountFilter, dateFilter, locationFilter]);
+    // Pending: bills whose file has not reached the desk yet come first, then the received ones.
+    return queueFilter === "Pending" ? [...list.filter(awaitingReceipt), ...list.filter((b) => !awaitingReceipt(b))] : list;
+  }, [bills, queueFilter, key, searchQuery, categoryFilter, amountFilter, dateFilter, locationFilter, focusBill]);
 
   const replace = (updated: Bill) => setBills((prev) => prev.map((b) => (b.id === updated.id ? { ...b, ...updated } : b)));
   const canDecide = (bill: Bill) => desk === "Student Purchase"
     ? canReviewSnp(bill, session?.user?.employee_code, session?.user?.employee_type)
     : canReviewDesk(bill, desk, session?.user?.employee_code, session?.user?.employee_type);
 
-  // Tick bills and approve them together (BulkApproval.tsx).
-  const bulk = useBulkApproval({ desk, shown, canDecide, replace, notify: setNotice });
+  // Tick bills and approve them together (BulkApproval.tsx). Only received bills can be decided (0011).
+  const canBulk = (bill: Bill) => canDecide(bill) && !awaitingReceipt(bill);
+  const shownWaiting = shown.filter(awaitingReceipt).length;
+  const bulk = useBulkApproval({ desk, shown, canDecide: canBulk, replace, notify: setNotice });
 
   // Keyboard: J/K to move, A/H/R to decide, ? for the full list (DeskShortcuts.tsx).
   const shortcuts = useDeskShortcuts({
     enabled: ready && Boolean(queueFilter),
     ids: useMemo(() => shown.map((b) => b.id), [shown]),
-    sections: SECTIONS.map((s) => s.filter),
+    sections: sections.map((s) => s.filter),
     section,
     onSection: setSection,
     onRefuse: (text) => setNotice({ kind: "info", text }),
@@ -145,10 +167,10 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
   if (!ready) return null;
 
   const nav: NavItem[] = [
-    ...SECTIONS.map((s) => ({ label: s.label, icon: s.icon, onClick: () => setSection(s.filter), active: section === s.filter, badge: counts[s.filter] || null })),
+    ...sections.map((s) => ({ label: s.label, icon: s.icon, onClick: () => { clearFocus(); setSection(s.filter); }, active: section === s.filter, badge: counts[s.filter] || null })),
     ...extraNav.map((n) => ({ ...n, onClick: () => setSection(n.key), active: section === n.key })),
   ];
-  const sectionLabel = SECTIONS.find((s) => s.filter === queueFilter)?.label ?? "";
+  const sectionLabel = sections.find((s) => s.filter === queueFilter)?.label ?? "";
 
   return (
     <AppShell desk={deskLabel(desk)} nav={nav}>
@@ -159,8 +181,8 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
           {loading ? <LoadingState label="Loading bills…" /> : (
             <>
               <StatGrid>
-                <StatCard label="Pending" value={counts.Pending} hint={hints.Pending} tone="blue" icon={<IconClock />} onClick={() => setSection("Pending")} active={queueFilter === "Pending"} />
-                <StatCard label="Approved" value={counts.Approved} hint={hints.Approved} tone="green" icon={<IconCheck />} onClick={() => setSection("Approved")} active={queueFilter === "Approved"} />
+                <StatCard label="Pending" value={counts.Pending} hint={counts.NotReceived ? `${counts.NotReceived} not yet received` : hints.Pending} tone="blue" icon={<IconClock />} onClick={() => setSection("Pending")} active={queueFilter === "Pending"} />
+                <StatCard label={final ? "Released" : "Approved"} value={counts.Approved} hint={hints.Approved} tone="green" icon={<IconCheck />} onClick={() => setSection("Approved")} active={queueFilter === "Approved"} />
                 <StatCard label="Hold" value={counts.Hold} hint={hints.Hold} tone="amber" icon={<IconClockPause />} onClick={() => setSection("Hold")} active={queueFilter === "Hold"} />
                 <StatCard label="Rejected" value={counts.Reject} hint={hints.Reject} tone="red" icon={<IconX />} onClick={() => setSection("Reject")} active={queueFilter === "Reject"} />
                 <StatCard label="All" value={counts.All} hint={hints.All} icon={<IconListDetails />} onClick={() => setSection("All")} active={queueFilter === "All"} />
@@ -211,6 +233,16 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
                 <span><Kbd>?</Kbd> all shortcuts</span>
               </p>
 
+              {focusBill && (
+                <div role="status" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-900">
+                  <span>
+                    {focused ? <>Showing <strong>{focused.bill_number ?? "one bill"}</strong> from the inward register.</>
+                      : "That bill is no longer waiting at this desk."}
+                  </span>
+                  <button type="button" onClick={clearFocus} className="font-medium text-blue-800 underline-offset-2 hover:underline">Show all bills</button>
+                </div>
+              )}
+
               {shown.length === 0 ? (
                 <EmptyState
                   icon={<IconAlertCircle />}
@@ -219,8 +251,15 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
                 />
               ) : (
                 <div className={cn("space-y-4", bulk.active && "pb-24")}>
-                  {shown.map((bill) => (
-                    <div key={bill.id} data-bill-card={bill.id} tabIndex={-1} onFocusCapture={() => shortcuts.select(bill.id)}
+                  {shown.map((bill, i) => (
+                    <div key={bill.id} className="space-y-2">
+                    {queueFilter === "Pending" && !focusBill && (i === 0 || awaitingReceipt(shown[i - 1]) !== awaitingReceipt(bill)) && (
+                      <h2 className="flex items-center gap-2 pt-2 text-sm font-semibold text-slate-700">
+                        {awaitingReceipt(bill) ? <><IconInbox className="size-4" aria-hidden="true" /> Not yet received ({shownWaiting})</>
+                          : <><IconCheck className="size-4" aria-hidden="true" /> Received ({shown.length - shownWaiting})</>}
+                      </h2>
+                    )}
+                    <div data-bill-card={bill.id} tabIndex={-1} onFocusCapture={() => shortcuts.select(bill.id)}
                       onMouseDown={() => shortcuts.select(bill.id)}
                       className={cn("scroll-mt-4 rounded-xl outline-none transition-shadow",
                         shortcuts.current === bill.id && "ring-2 ring-blue-500 ring-offset-2")}>
@@ -229,7 +268,7 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
                       {canDecide(bill) ? (
                         desk === "Student Purchase" ? (
                           <SnpReviewPanel bill={bill} actorCode={session?.user?.employee_code} actorRole={session?.user?.employee_type}
-                            onDecided={(updated) => {
+                            onReceipt={replace} onDecided={(updated) => {
                               replace(updated);
                               // The card leaves the queue, so say what happened above it.
                               setNotice({ kind: "ok", text: `${updated.bill_number ?? "Bill"}: ${updated.snp === "Approved" ? `approved and sent to ${deskLabel(updated.status)}`
@@ -239,19 +278,22 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
                             }} />
                         ) : (
                           <DeskReviewPanel bill={bill} desk={desk} actorCode={session?.user?.employee_code} actorRole={session?.user?.employee_type}
-                            onDecided={(updated, text) => { replace(updated); setNotice({ kind: "ok", text }); }} />
+                            onReceipt={replace} onDecided={(updated, text) => { replace(updated); setNotice({ kind: "ok", text }); }} />
                         )
                       ) : (
                         <p className={`flex items-center gap-2 text-sm font-medium ${bill[key] === "Approved" ? "text-green-800" : bill[key] === "Reject" ? "text-red-800" : "text-slate-600"}`}>
                           {bill[key] === "Approved" ? <IconCheck className="size-4" /> : bill[key] === "Reject" ? <IconX className="size-4" /> : null}
                           {bill[key] === "Approved"
-                            ? bill.status === "Accepted" ? `Approved by ${deskLabel(desk)}. Final approval complete.` : `Approved by ${deskLabel(desk)}. Now with ${deskLabel(bill.status)}.`
+                            ? bill.status === "Accepted"
+                              ? final ? "Released by Finance Admin and entered in the purchase register." : `Approved by ${deskLabel(desk)}. Released by Finance Admin.`
+                              : `Approved by ${deskLabel(desk)}. Now with ${deskLabel(bill.status)}.`
                             : bill[key] === "Reject" ? `Rejected by ${deskLabel(desk)}.`
                             : bill[key] === "Returned" ? `Sent back by ${deskLabel(desk)} to ${deskLabel(bill.status)}. It returns here once approved there.`
                             : bill.status === desk ? "Waiting at this desk." : `With ${deskLabel(bill.status)}.`}
                         </p>
                       )}
                     </BillCard>
+                    </div>
                     </div>
                   ))}
                 </div>

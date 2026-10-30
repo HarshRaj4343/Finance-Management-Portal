@@ -1,5 +1,5 @@
 import type { Bill } from "@/types/database";
-import { normaliseRole } from "./roles";
+import { normaliseRole, plannedRoute, type Stage } from "./roles";
 
 /** Mirrors fn_edit_window in 0006_edit_window.sql. The database enforces it. */
 export const EDIT_WINDOW_MINUTES = 10;
@@ -63,6 +63,32 @@ export function returnTargets(bill: DeskBill): ReturnDesk[] {
 /** Sent back to the desk it is at now, and not yet decided there: that desk may correct it. */
 export function sentBackHere(bill: Pick<Bill, "status" | "returned_from">): boolean {
   return Boolean(bill.returned_from) && DESK_ORDER.includes(bill.status as (typeof DESK_ORDER)[number]);
+}
+
+export type DeskProgress = "Released" | "Approved" | "Rejected" | "On Hold" | "Sent back" | "In Progress" | "Upcoming" | "Not required" | "Not reached";
+
+/**
+ * Where one desk stands on a bill, in words for the applicant. A desk with
+ * no decision yet is "Upcoming" if the bill is still on its way there,
+ * "Not required" if the bill's route never includes it (e.g. Audit at
+ * ₹50,000 or less, Store and Purchase for consumables), and "Not reached"
+ * if the bill was closed before getting there. Finance Admin's approval is
+ * the release.
+ */
+export function deskProgress(bill: Pick<Bill, "status" | "snp" | "audit" | "finance_admin" | "item_category" | "po_value">, desk: Stage): DeskProgress {
+  const state = desk === "Student Purchase" ? bill.snp : desk === "Audit" ? bill.audit : bill.finance_admin;
+  if (state === "Approved") return desk === "Finance Admin" ? "Released" : "Approved";
+  if (state === "Reject") return "Rejected";
+  if (state === "Hold") return "On Hold";
+  if (state === "Returned") return "Sent back";
+  if (state === "Pending" && bill.status === desk) return "In Progress";
+  if (!plannedRoute(bill.item_category, Number(bill.po_value)).includes(desk)) return "Not required";
+  return bill.status === "Rejected" || bill.status === "Accepted" ? "Not reached" : "Upcoming";
+}
+
+/** At a desk whose inward entry is not yet ticked Received: no decision until it is (0011). */
+export function awaitingReceipt(bill: Pick<Bill, "inward">): boolean {
+  return Boolean(bill.inward && !bill.inward.received);
 }
 
 /** The remark explaining the current hold or the rejection, if any. */

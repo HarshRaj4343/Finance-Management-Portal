@@ -134,7 +134,7 @@ export default function EmployeeDashboard() {
         ...(canFile ? [{ label: "Apply Bill", icon: <IconFilePlus />, onClick: () => setActivePage("upload"), active: activePage === "upload" }] : []),
         { label: "Pending Bills", icon: <IconClock />, onClick: () => setActivePage("pending"), active: activePage === "pending" },
         { label: "Rejected Bills", icon: <IconX />, onClick: () => setActivePage("history"), active: activePage === "history", badge: bills.length || null },
-        { label: "Approved Bills", icon: <IconCheck />, onClick: () => setActivePage("approved"), active: activePage === "approved" },
+        { label: "Released Bills", icon: <IconCheck />, onClick: () => setActivePage("approved"), active: activePage === "approved" },
       ]}
     >
       <Notice notice={notice} onDismiss={() => setNotice(null)} />

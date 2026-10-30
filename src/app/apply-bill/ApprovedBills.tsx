@@ -35,18 +35,9 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
         return;
       }
 
-      // Bills this department has had cleared at least one desk, and which
-      // no desk has rejected or is holding.
+      // Released: Finance Admin gave the final approval and the purchase is in the register.
       setError(null);
-      setBills(
-        data!.bills.filter((b) => {
-          const desks = [b.snp, b.audit, b.finance_admin];
-          return (
-            desks.some((d) => d === "Approved") &&
-            desks.every((d) => d === "Approved" || d == null)
-          );
-        })
-      );
+      setBills(data!.bills.filter((b) => b.status === "Accepted"));
     };
 
     fetchApprovedBills();
@@ -76,9 +67,9 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
     printWindow?.print();
   };
 
-  const header = <PageHeader title="Approved Bills" description="Bills that completed every approval. Print a QR sticker to label the purchased item." />;
-  if (loading) return <div className="space-y-6">{header}<LoadingState label="Loading approved bills…" /></div>;
-  if (bills.length === 0) return <div className="space-y-6">{header}<EmptyState title="No approved bills yet" /></div>;
+  const header = <PageHeader title="Released Bills" description="Bills released by Finance Admin after every approval. Print a QR sticker to label the purchased item." />;
+  if (loading) return <div className="space-y-6">{header}<LoadingState label="Loading released bills…" /></div>;
+  if (bills.length === 0) return <div className="space-y-6">{header}<EmptyState title="No released bills yet" /></div>;
 
   const th = "whitespace-nowrap px-4 py-3 text-left text-xs font-medium uppercase tracking-wide text-slate-500";
   return (

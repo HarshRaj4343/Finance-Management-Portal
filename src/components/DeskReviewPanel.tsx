@@ -3,13 +3,14 @@
 import { useRef, useState } from "react";
 import { api, money } from "@/lib/api";
 import { deskLabel } from "@/lib/roles";
-import { canReviewDesk, returnTargets } from "@/lib/bill-review";
+import { awaitingReceipt, canReviewDesk, returnTargets } from "@/lib/bill-review";
 import type { Bill } from "@/types/database";
 import { useConfirm } from "./ConfirmProvider";
 import { billDecisionPrompt, type Decision } from "./confirmBillDecision";
 import DecisionButtons from "./DecisionButtons";
 import RejectRouteDialog, { type RejectRoute } from "./RejectRouteDialog";
 import SentBackNotice from "./SentBackNotice";
+import InwardReceipt from "./InwardReceipt";
 
 type Desk = "Audit" | "Finance Admin";
 
@@ -17,7 +18,7 @@ function outcome(desk: Desk, action: Decision, bill: Bill): string {
   if (action === "Hold") return `The bill stays at ${desk} with its funds reserved, and the filer may correct it.`;
   if (action === "Rejected") return `The bill is rejected and ${money(bill.po_value)} goes back to the applicant's PDA. The filer may correct and resubmit it.`;
   return desk === "Finance Admin"
-    ? `This is the final approval: ${money(bill.po_value)} will be debited from the applicant's PDA and entered in the purchase register.`
+    ? `This releases the bill: ${money(bill.po_value)} will be debited from the applicant's PDA and entered in the purchase register.`
     : "The bill moves on to Finance Admin.";
 }
 
@@ -31,7 +32,7 @@ function done(desk: Desk, action: Decision, bill: Bill, updated: Bill): string {
   if (action === "Hold") return "Bill put on hold. The decision is recorded on the bill timeline.";
   if (action === "Rejected") return `Bill rejected. ${money(bill.po_value)} has gone back to the applicant's PDA.`;
   return desk === "Finance Admin"
-    ? `Bill ${updated.bill_number ?? ""} approved. ${money(bill.po_value)} has been debited and the purchase is now in the register.`
+    ? `Bill ${updated.bill_number ?? ""} released. ${money(bill.po_value)} has been debited and the purchase is now in the register.`
     : `Approved and sent to ${deskLabel(updated.status)}.`;
 }
 
@@ -40,12 +41,14 @@ function done(desk: Desk, action: Decision, bill: Bill, updated: Bill): string {
  * and Finance Admin desks. Used on the desk queues and on Bill details, so
  * a decision looks and behaves the same wherever it is taken.
  */
-export default function DeskReviewPanel({ bill, desk, actorCode, actorRole, onDecided }: {
+export default function DeskReviewPanel({ bill: given, desk, actorCode, actorRole, onDecided, onReceipt }: {
   bill: Bill;
   desk: Desk;
   actorCode?: string | null;
   actorRole?: string | null;
   onDecided: (updated: Bill, message: string) => void | Promise<void>;
+  /** The inward entry was ticked or unticked here. */
+  onReceipt?: (updated: Bill) => void;
 }) {
   const confirm = useConfirm();
   const [remark, setRemark] = useState("");
@@ -53,6 +56,10 @@ export default function DeskReviewPanel({ bill, desk, actorCode, actorRole, onDe
   const [message, setMessage] = useState<{ error: boolean; text: string } | null>(null);
   const [routing, setRouting] = useState(false);
   const [routeError, setRouteError] = useState<string | null>(null);
+  // The tick shows at once, even before the page holding this panel refreshes.
+  const [ticked, setTicked] = useState<Bill["inward"]>(null);
+  const bill: Bill = ticked && ticked.id === given.inward?.id ? { ...given, inward: ticked } : given;
+  const waiting = awaitingReceipt(bill);
   const sending = useRef(false);
   if (!canReviewDesk(bill, desk, actorCode, actorRole)) return null;
   const id = `remark-${bill.id}`;
@@ -76,6 +83,7 @@ export default function DeskReviewPanel({ bill, desk, actorCode, actorRole, onDe
   async function decide(action: Decision) {
     if (sending.current) return;
     setMessage(null);
+    if (waiting) { setMessage({ error: true, text: `Tick Received for inward no. ${bill.inward!.serial_no} before deciding this bill.` }); return; }
     const text = remark.trim();
     // With nowhere to send it back to, the remark is required before the popup, as before.
     if (action === "Rejected" && (text || returnTargets(bill).length > 0)) { setRouteError(null); setRouting(true); return; }
@@ -83,7 +91,7 @@ export default function DeskReviewPanel({ bill, desk, actorCode, actorRole, onDe
       setMessage({ error: true, text: `Write a remark before you ${action === "Rejected" ? "reject" : "hold"} this bill.` });
       return;
     }
-    if (!(await confirm(billDecisionPrompt(bill, action, text, outcome(desk, action, bill))))) return;
+    if (!(await confirm(billDecisionPrompt(bill, action, text, outcome(desk, action, bill), desk === "Finance Admin")))) return;
     sending.current = true; setBusy(true);
     const { data, error } = await api.post<{ bill: Bill }>(`/api/bills/${bill.id}/action`, {
       action, remark: text || undefined, expected_revision: bill.revision,
@@ -98,6 +106,8 @@ export default function DeskReviewPanel({ bill, desk, actorCode, actorRole, onDe
 
   return (
     <section aria-label={`${desk} decision`} className="space-y-3 print:hidden">
+      <InwardReceipt bill={bill} actorRole={actorRole}
+        onChange={(inward) => { setTicked(inward); onReceipt?.({ ...given, inward }); }} />
       <SentBackNotice bill={bill} canCorrect={!busy}
         onCorrected={(updated) => onDecided(updated, `${updated.bill_number ?? "Bill"} corrected. It is still at ${desk}; approve it to send it on.`)} />
       {message && (
@@ -118,7 +128,8 @@ export default function DeskReviewPanel({ bill, desk, actorCode, actorRole, onDe
           placeholder="Explain your decision"
           className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
         />
-        <DecisionButtons onDecide={(action) => decide(action)} disabled={busy || routing} busy={busy} />
+        <DecisionButtons onDecide={(action) => decide(action)} disabled={busy || routing || waiting} busy={busy}
+          approveLabel={desk === "Finance Admin" ? "Release" : undefined} />
       </fieldset>
       {routing && (
         <RejectRouteDialog bill={bill} initialRemark={remark} busy={busy} error={routeError}
