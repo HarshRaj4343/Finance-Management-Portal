@@ -20,12 +20,16 @@ type Movement = {
   bill_id: string; bill_number: string | null; employee_id: string; employee_name: string | null; employee_department: string | null;
   item_description: string | null; status: string; serial_no: string | null;
 };
-type Payload = { code: string; heads: Head[]; allocations: Allocation[]; movements: Movement[]; currentYear: string | null };
+type Payload = { code: string; source: { code: string; description: string; group_name: string; is_active: boolean } | null; heads: Head[]; allocations: Allocation[]; movements: Movement[]; currentYear: string | null };
 
 const HEADS: Record<string, { title: string; description: string }> = {
   "OH-31": { title: "OH-31 Register", description: "General (recurring) institute budget: sanctions received and every bill charged to it." },
   "OH-35": { title: "OH-35 Register", description: "Creation of capital assets: sanctions received and every bill charged to it." },
 };
+
+/** Any budget head the Dean has approved has a register; OH-31 and OH-35 keep their fuller wording. */
+const metaFor = (code: string, source: Payload["source"]) =>
+  HEADS[code] ?? (source ? { title: `${code} Register`, description: `${source.description}: sanctions received and every bill charged to it.` } : null);
 
 const shiftYear = (fy: string, by: number) => {
   const start = Number(fy.slice(0, 4)) + by;
@@ -39,10 +43,9 @@ const MOVEMENT_TEXT: Record<Movement["kind"], string> = { Reserved: "Reserved", 
 export default function FundRegisterPage() {
   const { code: raw } = useParams<{ code: string }>();
   const code = decodeURIComponent(raw ?? "").toUpperCase();
-  const meta = HEADS[code];
   const { data: session, status } = useSession();
   const role = session?.user?.employee_type;
-  const allowed = status === "authenticated" && canOpenPortalPages(role) && Boolean(meta);
+  const allowed = status === "authenticated" && canOpenPortalPages(role);
   const confirm = useConfirm();
 
   const [payload, setPayload] = useState<Payload | null>(null);
@@ -55,14 +58,16 @@ export default function FundRegisterPage() {
 
   useEffect(() => {
     if (status === "unauthenticated") window.location.href = "/login";
-    else if (status === "authenticated" && (!canOpenPortalPages(role) || !meta)) window.location.replace(homeFor(role));
-  }, [status, role, meta]);
+    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(homeFor(role));
+  }, [status, role]);
 
   const load = useCallback(async () => {
     setLoading(true);
     const { data, error } = await api.get<Payload>(`/api/fund-heads?code=${encodeURIComponent(code)}`);
     setLoading(false);
     if (error) { setNotice({ kind: "bad", text: error }); return; }
+    // Not an approved budget head: back to the list of sources.
+    if (!data!.source) { window.location.replace("/fund-sources"); return; }
     setPayload(data);
     setFy((current) => current || data!.currentYear || data!.heads[0]?.financial_year || "");
   }, [code]);
@@ -105,10 +110,11 @@ export default function FundRegisterPage() {
     await load();
   };
 
-  if (!allowed) return null;
+  const meta = metaFor(code, payload?.source ?? null);
+  if (!allowed || !meta) return null;
 
   return (
-    <AppShell desk={meta.title} nav={[]} links={sharedLinks(role, code as "OH-31" | "OH-35")}>
+    <AppShell desk={meta.title} nav={[]} links={sharedLinks(role, code)}>
       <Notice notice={notice} onDismiss={() => setNotice(null)} />
       <PageHeader
         title={meta.title}

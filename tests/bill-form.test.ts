@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-  emptyForm, emptyLine, financialYear, inr, loadDraft, toNum, toPayload, totals, validateStep, purchaseMatchesTotal,
+  emptyForm, emptyLine, financialYear, inr, loadDraft, toNum, toPayload, totals, validateStep, purchaseMatchesTotal, stepOfField,
 } from "../src/app/apply-bill/bill-form/model";
-import { ITEM_TYPES, typesForGroup, groupsForCategory, itemTypesFor, brandsFor, SUPPLIERS, FUNDS } from "../src/app/apply-bill/bill-form/masters";
+import { ITEM_TYPES, typesForGroup, groupsForCategory, itemTypesFor, brandsFor, SUPPLIERS, FUNDS, PURCHASE_TYPES, fundsForCategory, type Fund } from "../src/app/apply-bill/bill-form/masters";
 import { deskLabel } from "@/lib/roles";
 
 const ctx = { requesterFound: true, requesterDepartment: "SCEE", filingDepartment: "SCEE" };
@@ -14,6 +14,7 @@ function filled() {
     poValue: "80000", supplierName: "Acme", supplierAddress: "Mandi", billNo: "INV-9",
     billDate: "2026-09-03", fund: "OH-31", delivered: "yes", deliveryDate: "2026-09-05",
     installRequired: "yes", installDone: "yes", installDate: "2026-09-08",
+    registerName: "Departmental Purchase Register", registerPage: "14", registerSerial: "203",
     declaration: true, totalConfirmed: true,
   });
   const l = emptyLine();
@@ -119,6 +120,38 @@ describe("simplified bill formation", () => {
     const f = filled(); f.fund = "PDA";
     expect(validateStep(4, f, ctx)).toEqual({});
     expect(toPayload(f).source_of_fund).toBe("PDA");
+  });
+
+  it("requires the register name, page number and serial number", () => {
+    const f = filled();
+    for (const [field, id] of [["registerName", "f-register-name"], ["registerPage", "f-register-page"], ["registerSerial", "f-register-serial"]] as const) {
+      const blank = { ...f, [field]: "   " };
+      expect(validateStep(4, blank, ctx)[id]).toBeTruthy();
+      expect(stepOfField(id)).toBe(4);
+    }
+    expect(validateStep(4, { ...f, registerName: "x".repeat(101) }, ctx)["f-register-name"]).toBeTruthy();
+    expect(validateStep(4, { ...f, registerPage: "9".repeat(51) }, ctx)["f-register-page"]).toBeTruthy();
+    expect(validateStep(4, f, ctx)).toEqual({});
+  });
+
+  it("names the purchase types by GeM contract, keeping the stored values", () => {
+    expect(PURCHASE_TYPES.map((p) => [p.value, p.label])).toEqual([["po", "GeM Contract"], ["direct", "Without GeM Contract"]]);
+    expect(toPayload(filled()).po_details).toMatch(/^GeM contract PO\/26\/1 dated/);
+    expect(toPayload({ ...filled(), purchaseType: "direct" }).po_details).toMatch(/^Without GeM contract, value/);
+  });
+
+  it("offers only the approved sources the browser loaded, and each one's categories", () => {
+    const approved: Fund[] = [
+      { code: "OH-31", description: "General", group: "Institute budget heads", categories: ["Consumables", "Minor"] },
+      { code: "GRANT-1", description: "Research grant", group: "Grants", categories: ["Major"] },
+    ];
+    const f = filled();
+    expect(validateStep(4, { ...f, fund: "GRANT-1", category: "Major" }, { ...ctx, funds: approved })).toEqual({});
+    expect(validateStep(4, { ...f, fund: "GRANT-1", category: "Minor" }, { ...ctx, funds: approved })["f-fund"]).toMatch(/cannot be charged for minor/);
+    expect(validateStep(4, { ...f, fund: "OH-35" }, { ...ctx, funds: approved })["f-fund"]).toMatch(/approved sources/);
+    expect(fundsForCategory("Major", approved).map((x) => x.code)).toEqual(["GRANT-1"]);
+    // The server has no list: an unknown code passes here and the database decides.
+    expect(validateStep(4, { ...f, fund: "GRANT-1" }, ctx)).toEqual({});
   });
 
   it("retains employee lookup and department checks", () => {

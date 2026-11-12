@@ -9,10 +9,13 @@
  * Supplier suggestions below are clearly labelled demo fixtures; typed values remain available.
  */
 
+/** The stored values ("po", "direct") are unchanged; only the names shown to people moved to GeM wording. */
 export const PURCHASE_TYPES = [
-  { value: "po", label: "Against PO" },
-  { value: "direct", label: "Direct Purchase (No PO)" },
+  { value: "po", label: "GeM Contract" },
+  { value: "direct", label: "Without GeM Contract" },
 ] as const;
+
+export const purchaseTypeLabel = (value: string) => PURCHASE_TYPES.find((p) => p.value === value)?.label ?? "";
 
 /** Existing options on the live form -- the database CHECK knows exactly these. */
 export const ITEM_CATEGORIES = ["Minor", "Major", "Consumables"] as const;
@@ -46,7 +49,15 @@ export const SUPPLIERS: Supplier[] = [
   { name: "Demo Stationery & Consumables", address: "Demo address: 8 Main Bazaar, Mandi, Himachal Pradesh 175001" },
 ];
 
-export type Fund = { code: string; description: string; group: string };
+/**
+ * A source of fund. The list a filer chooses from comes from the database
+ * (/api/fund-sources), where the Dean's office approves each source; the
+ * three below are the standing ones, used until that list has loaded and as
+ * the labels for bills filed under them.
+ */
+export type Fund = { code: string; description: string; group: string; categories: string[] };
+
+const ALL_CATEGORIES = ["Consumables", "Minor", "Major"];
 
 /**
  * OH-31 and OH-35 are institute budget heads allocated each financial year
@@ -54,22 +65,14 @@ export type Fund = { code: string; description: string; group: string };
  * reserves and spends only the pool it names (0007_fund_heads.sql).
  */
 export const FUNDS: Fund[] = [
-  { code: "OH-31", description: "General (recurring)", group: "Institute budget heads" },
-  { code: "OH-35", description: "Capital assets", group: "Institute budget heads" },
-  { code: "PDA", description: "Applicant's PDA", group: "Personal Development Account" },
+  { code: "OH-31", description: "General (recurring)", group: "Institute budget heads", categories: ["Consumables", "Minor"] },
+  { code: "OH-35", description: "Capital assets", group: "Institute budget heads", categories: ["Minor", "Major"] },
+  { code: "PDA", description: "Applicant's PDA", group: "Personal Development Account", categories: ALL_CATEGORIES },
 ];
 
-/** Mirrors fn_validate_fund: capital money is not for consumables, recurring money not for major equipment. */
-export const FUNDS_BY_CATEGORY: Record<string, string[]> = {
-  Consumables: ["OH-31", "PDA"],
-  Minor: ["OH-31", "OH-35", "PDA"],
-  Major: ["OH-35", "PDA"],
-};
-
-export const fundsForCategory = (category: string) =>
-  FUNDS.filter((fund) => (FUNDS_BY_CATEGORY[category] ?? FUNDS.map((f) => f.code)).includes(fund.code));
-
-export const FUND_PATTERN = /^(OH-\d{2,3}|PDA)$/;
+/** Mirrors fn_validate_fund: each source lists the categories the Dean approved it for. */
+export const fundsForCategory = (category: string, funds: Fund[] = FUNDS) =>
+  funds.filter((fund) => !ITEM_CATEGORIES.includes(category as (typeof ITEM_CATEGORIES)[number]) || fund.categories.includes(category));
 
 // ---------------------------------------------------------------------
 // Item master (Stock_Index.xlsx -> Bill-form.md §5)

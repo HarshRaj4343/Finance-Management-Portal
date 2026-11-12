@@ -3,10 +3,12 @@
 import React from "react";
 import { Banner, Card, ComboField, Full, Grid, MoneyField, ReadOnlyField, SelectField, TextField, AreaField } from "./ui";
 import { FormState, shortDate, todayISO } from "./model";
-import { PURCHASE_TYPES, SUPPLIERS } from "./masters";
+import { PURCHASE_TYPES, SUPPLIERS, type Fund } from "./masters";
 
 export type StepProps = {
   f: FormState;
+  /** The approved sources of fund (see useFunds); the standing three when omitted. */
+  funds?: Fund[];
   set: (patch: Partial<FormState>) => void;
   errors: Record<string, string>;
 };

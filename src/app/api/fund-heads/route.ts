@@ -8,7 +8,8 @@ import { isMoney } from "@/lib/security";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const CODES = ["OH-31", "OH-35"];
+/** A budget head code; whether it is an approved source is decided by the database (fund_sources). */
+const CODE = /^[A-Z0-9][A-Z0-9-]{1,19}$/;
 const KINDS = ["Allocation", "Reserved", "Released", "Spent"];
 
 type CsvRow = Record<string, unknown>;
@@ -22,10 +23,10 @@ const CSV_COLUMNS: CsvColumn<CsvRow>[] = [
   ["Item", (r) => r.item_description], ["Remarks", (r) => r.remarks], ["Entered by", (r) => r.actor_code],
 ];
 
-/** RBAC: the OH-31 and OH-35 registers are open to the Dean only. */
+/** RBAC: the budget-head registers (OH-31, OH-35 and any source the Dean approves) are open to the Dean only. */
 async function requireDean() {
   const actor = await requireActor();
-  if (actor.role !== "Dean") throw new HttpError(403, "Only the Dean can open the OH-31 and OH-35 registers.");
+  if (actor.role !== "Dean") throw new HttpError(403, "Only the Dean can open the budget-head registers.");
   return actor;
 }
 
@@ -40,7 +41,7 @@ export async function GET(req: NextRequest) {
   try {
     await requireDean();
     const code = req.nextUrl.searchParams.get("code") ?? "";
-    if (!CODES.includes(code)) return badRequest("Choose OH-31 or OH-35.");
+    if (!CODE.test(code)) return badRequest("Choose a budget head such as OH-31 or OH-35.");
     const fy = req.nextUrl.searchParams.get("fy") || null;
     if (fy && !/^\d{4}-\d{2}$/.test(fy)) return badRequest("Choose a financial year such as 2026-27.");
 
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
       return csvResponse(`${code}-register-${fy || "all-years"}.csv`, toCsv<CsvRow>(pickColumns(CSV_COLUMNS, p), rows));
     }
 
-    const [heads, allocations, movements, current] = await Promise.all([
+    const [heads, allocations, movements, current, source] = await Promise.all([
       query(
         `select code, financial_year, allocated, balance, committed, spent, updated_at
            from public.fund_heads where code = $1 order by financial_year desc`, [code]),
@@ -92,8 +93,9 @@ export async function GET(req: NextRequest) {
           where e.code = $1 and e.kind <> 'Allocation' and ($2::text is null or e.financial_year = $2)
           order by e.id desc limit 500`, [code, fy]),
       queryOne<{ fy: string }>("select public.fn_financial_year() as fy"),
+      queryOne("select code, description, group_name, is_active from public.fund_sources where code = $1 and kind = 'budget'", [code]),
     ]);
-    return ok({ code, heads, allocations, movements, currentYear: current?.fy ?? null });
+    return ok({ code, source: source ?? null, heads, allocations, movements, currentYear: current?.fy ?? null });
   } catch (err) {
     return fail(err, "Could not load the register.");
   }
@@ -109,7 +111,7 @@ export async function POST(req: NextRequest) {
     const amount = Number(b.amount);
     const reference = String(b.reference ?? "").trim();
     const date = b.date ? String(b.date) : null;
-    if (!CODES.includes(code)) return badRequest("Choose OH-31 or OH-35.");
+    if (!CODE.test(code)) return badRequest("Choose a budget head such as OH-31 or OH-35.");
     if (!/^\d{4}-\d{2}$/.test(fy)) return badRequest("Choose a financial year such as 2026-27.");
     if (!isMoney(amount) || amount <= 0) return badRequest("Enter a positive amount with at most two decimal places.");
     if (!reference || reference.length > 200) return badRequest("Enter the sanction letter or order reference.");

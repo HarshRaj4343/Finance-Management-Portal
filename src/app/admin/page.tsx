@@ -25,9 +25,9 @@ import type { Employee, PdaBalanceRow, DepartmentRow } from "@/types/database";
  *
  * architecture.jpeg: "Check Employee Type" / "No Employee Type Matched".
  * LDAP proves who somebody is; this page decides what they may do. It is
- * the only place a role is assigned, and the API enforces that too -- a
- * Finance Admin can correct a name here, but the role dropdown is refused
- * for anybody but the Dean.
+ * the only place people are added, corrected or given a role, and the API
+ * enforces that too: only the Dean may use it (Finance Admin no longer manages
+ * employees).
  */
 
 type EmployeeWithPda = Employee & { pda: PdaBalanceRow | null };
@@ -286,7 +286,7 @@ export default function AdminPage() {
     );
   }
 
-  if (myRole !== "Dean" && myRole !== "Finance Admin") {
+  if (myRole !== "Dean") {
     return (
       <div className="flex items-center justify-center h-screen bg-slate-50 p-4">
         <div className="bg-white rounded-lg shadow p-8 text-center max-w-md">

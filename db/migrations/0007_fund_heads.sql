@@ -72,7 +72,8 @@ for each row execute function public.fn_change_log();
 alter table public.bills add column if not exists funding_pool text;
 alter table public.bills add column if not exists funding_fy text;
 do $$ begin
-  if not exists (select 1 from pg_constraint where conname = 'bills_funding_pool_check') then
+  -- 0012 replaces this check with a foreign key to fund_sources; either means it is in place.
+  if not exists (select 1 from pg_constraint where conname in ('bills_funding_pool_check', 'bills_funding_pool_fk')) then
     alter table public.bills add constraint bills_funding_pool_check
       check (funding_pool is null or funding_pool in ('PDA', 'OH-31', 'OH-35'));
   end if;

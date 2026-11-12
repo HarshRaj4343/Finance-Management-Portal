@@ -105,6 +105,16 @@ export function canOpenMovementRegister(role: string | null | undefined): boolea
   return canMarkMovements(role) || seesOwnFilingsOnly(role);
 }
 
+/**
+ * The purchase register is kept by the Dean and the Store and Purchase
+ * Department, who read all of it. Bill filers read it too, but only the
+ * entries of bills they filed (as with the inward / outward register).
+ * Nobody can write to it: entries are cut at final approval.
+ */
+export function canOpenPurchaseRegister(role: string | null | undefined): boolean {
+  return ["Dean", "Student Purchase"].includes(normaliseRole(role)) || seesOwnFilingsOnly(role);
+}
+
 /** Roles allowed to see every bill in the portal, not just their own. */
 export function canSeeAllBills(role: Role): boolean {
   return role !== "User";

@@ -176,6 +176,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     await db.query(readFileSync("db/migrations/0009_edit_pause_and_receipts.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0010_send_back.sql", "utf8"));
     await db.query(readFileSync("db/migrations/0011_receipt_before_decision.sql", "utf8"));
+    await db.query(readFileSync("db/migrations/0012_fund_sources_and_register_reference.sql", "utf8"));
     expect((await db.query("select sum(po_value) as total,count(*) as n from public.bills")).rows[0]).toEqual(before);
     await expect(db.query("update public.change_log set actor_code='forged'")).rejects.toThrow(/append-only/);
     expect((await db.query("select count(*)::integer as n from public.pda_balances where allocated <> balance+committed+spent")).rows[0].n).toBe(0);
@@ -224,6 +225,8 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
       const sql = `select md5(coalesce(string_agg(row_to_json(t)::text, ',' order by row_to_json(t)::text),'')) fingerprint from public.${table} t`;
       const before = (await db.query(sql)).rows[0];
       await db.query(readFileSync("db/migrations/0005_bill_form_review.sql", "utf8"));
+      // An upgrade always runs through to the latest migration, which restores the current rules.
+      await db.query(readFileSync("db/migrations/0012_fund_sources_and_register_reference.sql", "utf8"));
       expect((await db.query(sql)).rows[0]).toEqual(before);
     }
   });
@@ -339,6 +342,115 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
       const after = await pda();
       expect(Number(reserved.committed) - Number(after.committed)).toBe(500);
       expect(Number((await head("OH-31")).committed) - Number(headBefore.committed)).toBe(500);
+    });
+  });
+
+  describe("sources of fund approved by the Dean", () => {
+    const dean = async () => (await db.query("select employee_code from public.employees where employee_type='Dean' and is_active order by employee_code limit 1")).rows[0].employee_code as string;
+    const fy = async () => (await db.query("select public.fn_financial_year() as fy")).rows[0].fy as string;
+    const addSource = async (code: string, categories: string[] | null, actor?: string) =>
+      db.query("select public.fn_add_fund_source($1,$2,'Grants',$3::text[],$4) as source", [code, `${code} test grant`, categories, actor ?? await dean()]);
+    const allocate = async (code: string, amount: number) =>
+      db.query("select public.fn_add_fund_allocation($1,$2,$3,'Sanction',null,'Test',$4)", [code, await fy(), amount, await dean()]);
+    const head = async (code: string) => (await db.query("select allocated,balance,committed,spent from public.fund_heads where code=$1 and financial_year=public.fn_financial_year()", [code])).rows[0];
+    const pda = async () => (await db.query("select balance,committed,spent from public.pda_balances where employee_id='TEST-U'")).rows[0];
+    const withFund = (amount: number, category: string, fund: string) => { const f = billForm("TEST-U", amount, category); f.fund = fund; return payload(f); };
+
+    it("seeds the three standing sources, which cannot be switched off, changed or deleted", async () => {
+      const rows = (await db.query("select code, kind, is_builtin, is_active from public.fund_sources order by code")).rows;
+      expect(rows).toEqual([
+        { code: "OH-31", kind: "budget", is_builtin: true, is_active: true },
+        { code: "OH-35", kind: "budget", is_builtin: true, is_active: true },
+        { code: "PDA", kind: "pda", is_builtin: true, is_active: true },
+      ].concat(rows.filter((r) => !r.is_builtin)).sort((a, b) => a.code.localeCompare(b.code)));
+      await expect(db.query("select public.fn_set_fund_source_active('OH-31', false, $1)", [await dean()])).rejects.toThrow(/cannot be switched off/);
+      await expect(db.query("delete from public.fund_sources where code='PDA'")).rejects.toThrow(/cannot be deleted/);
+      await expect(db.query("update public.fund_sources set kind='pda' where code='OH-35'")).rejects.toThrow(/cannot change/);
+    });
+
+    it("lets only the Dean approve or switch a source, with a sensible code", async () => {
+      await expect(addSource("NOPE-1", null, "TEST-F")).rejects.toThrow(/Only the Dean/);
+      await expect(addSource("bad code", null)).rejects.toThrow(/capital letters/);
+      await expect(addSource("OH-31", null)).rejects.toThrow(/already a source/);
+      await addSource("GRANT-1", null);
+      await expect(db.query("select public.fn_set_fund_source_active('GRANT-1', false, 'TEST-F')")).rejects.toThrow(/Only the Dean/);
+      expect((await db.query("select count(*)::integer as n from public.change_log where entity='fund_sources' and entity_id=(select id::text from public.fund_sources where code='GRANT-1')")).rows[0].n).toBe(1);
+    });
+
+    it("charges a new source like any budget head: nothing before a sanction, then reserve, release and spend", async () => {
+      await addSource("GRANT-2", null);
+      await expect(submit(withFund(1000, "Consumables", "GRANT-2"))).rejects.toThrow(/No GRANT-2 budget/);
+      await allocate("GRANT-2", 10000);
+      const before = await pda();
+      let b = await submit(withFund(2000, "Consumables", "GRANT-2"));
+      expect(b).toMatchObject({ funding_pool: "GRANT-2", funding_fy: await fy() });
+      expect(await pda()).toEqual(before);
+      expect(await head("GRANT-2")).toMatchObject({ allocated: "10000.00", balance: "8000.00", committed: "2000.00" });
+      b = await decide(b, "Finance Admin", "Rejected");
+      expect(await head("GRANT-2")).toMatchObject({ balance: "10000.00", committed: "0.00" });
+      b = await decide(await submit(withFund(2500, "Consumables", "GRANT-2")));
+      expect(b.status).toBe("Accepted");
+      expect(await head("GRANT-2")).toMatchObject({ balance: "7500.00", committed: "0.00", spent: "2500.00" });
+      expect(await pda()).toEqual(before);
+      expect((await db.query("select source_of_fund from public.purchase_register where bill_id=$1", [b.id])).rows[0].source_of_fund).toBe("GRANT-2");
+      await expect(submit(withFund(999999, "Consumables", "GRANT-2"))).rejects.toThrow(/Insufficient GRANT-2/);
+    });
+
+    it("keeps to the categories a source was approved for, and refuses unknown or switched-off sources", async () => {
+      await addSource("GRANT-3", ["Major"]);
+      await allocate("GRANT-3", 50000);
+      await expect(submit(withFund(1000, "Minor", "GRANT-3"))).rejects.toThrow(/cannot be charged for minor/);
+      await expect(submit(withFund(1000, "Consumables", "GRANT-3"))).rejects.toThrow(/cannot be charged for consumables/);
+      expect((await submit(withFund(3000, "Major", "GRANT-3"))).funding_pool).toBe("GRANT-3");
+      await expect(submit(withFund(1000, "Minor", "NO-SUCH"))).rejects.toThrow(/not an approved source/);
+      const pending = await fileBill(withFund(700, "Major", "GRANT-3"));
+      await db.query("select public.fn_set_fund_source_active('GRANT-3', false, $1)", [await dean()]);
+      await expect(submit(withFund(1000, "Major", "GRANT-3"))).rejects.toThrow(/not an approved source of fund at present/);
+      await expect(allocate("GRANT-3", 5)).rejects.toThrow(/approved, active budget head/);
+      // A bill already charged to it still settles into the same head.
+      const committed = Number((await head("GRANT-3")).committed);
+      await decide(await closeWindow(pending), "Student Purchase", "Rejected");
+      expect(Number((await head("GRANT-3")).committed)).toBe(committed - 700);
+    });
+
+    it("survives a repeat upgrade with bills already charged to a new source", async () => {
+      const before = (await db.query("select count(*)::integer as n from public.bills where funding_pool like 'GRANT-%'")).rows[0].n;
+      expect(before).toBeGreaterThan(0);
+      for (const file of ["0004_integrity", "0005_bill_form_review", "0006_edit_window", "0007_fund_heads", "0008_movement_registers", "0009_edit_pause_and_receipts",
+        "0010_send_back", "0011_receipt_before_decision", "0012_fund_sources_and_register_reference"]) await db.query(readFileSync(`db/migrations/${file}.sql`, "utf8"));
+      expect((await db.query("select count(*)::integer as n from public.bills where funding_pool like 'GRANT-%'")).rows[0].n).toBe(before);
+      expect((await db.query("select count(*)::integer as n from public.fund_sources")).rows[0].n).toBeGreaterThanOrEqual(3);
+      await expect(submit(withFund(1000, "Minor", "NO-SUCH"))).rejects.toThrow(/not an approved source/);
+    });
+  });
+
+  describe("register name, page and serial", () => {
+    const ref = async (id: string) => (await db.query("select register_name, register_page, register_serial, form_data->>'registerPage' as form_page from public.bills where id=$1", [id])).rows[0];
+    const amend = async (b: { id: string; revision: number }, p: Record<string, unknown>) =>
+      (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...p, expected_revision: b.revision }, filer])).rows[0].bill;
+
+    it("is mandatory on filing, kept on the bill, and carried by every correction", async () => {
+      for (const field of ["registerName", "registerPage", "registerSerial"] as const) {
+        const f = billForm(); f[field] = "  ";
+        await expect(fileBill(payload(f))).rejects.toThrow(/Enter the (name|page number|serial number) of/);
+      }
+      const long = billForm(); long.registerName = "n".repeat(101);
+      await expect(fileBill(payload(long))).rejects.toThrow(/register/);
+      const f = billForm(); Object.assign(f, { registerName: " Departmental Purchase Register ", registerPage: "14", registerSerial: "203/B" });
+      const p = payload(f);
+      const b = await fileBill(p);
+      expect(await ref(b.id)).toEqual({ register_name: "Departmental Purchase Register", register_page: "14", register_serial: "203/B", form_page: "14" });
+      const corrected = { ...p, form_data: { ...f, registerPage: "15", registerSerial: "1" } };
+      const after = await amend(b, corrected);
+      expect(await ref(b.id)).toMatchObject({ register_page: "15", register_serial: "1" });
+      expect(after.revision).toBe(b.revision + 1);
+      const blank = { ...p, form_data: { ...f, registerSerial: "" } };
+      await expect(amend(after, blank)).rejects.toThrow(/serial number/);
+    });
+
+    it("leaves bills filed before the register fields untouched", async () => {
+      const legacy = (await db.query("select register_name, register_page, register_serial from public.bills where employee_id='LEGACY-U'")).rows[0];
+      expect(legacy).toEqual({ register_name: null, register_page: null, register_serial: null });
     });
   });
 

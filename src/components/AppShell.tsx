@@ -5,10 +5,10 @@ import Link from "next/link";
 import React, { useEffect, useState, type ReactNode } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { IconArrowsExchange, IconBook, IconBuildingBank, IconFileText, IconHome, IconLogout, IconMenu2, IconX } from "@tabler/icons-react";
+import { IconArrowsExchange, IconBook, IconBuildingBank, IconCoins, IconFileText, IconHome, IconLogout, IconMenu2, IconX } from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import BillSearch from "./BillSearch";
-import { canOpenMovementRegister, deskLabel, homeFor, normaliseRole } from "@/lib/roles";
+import { canOpenMovementRegister, canOpenPurchaseRegister, deskLabel, homeFor, normaliseRole } from "@/lib/roles";
 
 export type NavItem = {
   label: string;
@@ -22,22 +22,25 @@ export type NavItem = {
   badge?: number | string | null;
 };
 
-/** Only the Dean may open the portal-wide bill list and the purchase register. */
+/** Only the Dean may open the portal-wide bill list, the fund registers and the sources of fund. */
 export const canOpenPortalPages = (role: string | null | undefined) => normaliseRole(role) === "Dean";
 
 /** Pages a desk can open besides its own sections. */
-export function sharedLinks(role: string | null | undefined, current?: "bills" | "register" | "detail" | "movements" | "OH-31" | "OH-35"): NavItem[] {
+export function sharedLinks(role: string | null | undefined, current?: "bills" | "register" | "detail" | "movements" | "fund-sources" | (string & {})): NavItem[] {
   const r = normaliseRole(role);
   const items: NavItem[] = [];
   if (current) items.push({ label: "My desk", icon: <IconHome />, href: homeFor(r) });
   if (canOpenMovementRegister(r)) {
     items.push({ label: "Inward / Outward", icon: <IconArrowsExchange />, href: "/movement-register", active: current === "movements" });
   }
+  if (canOpenPortalPages(r)) items.push({ label: "All Bills", icon: <IconFileText />, href: "/bills", active: current === "bills" });
+  if (canOpenPurchaseRegister(r)) items.push({ label: "Purchase Register", icon: <IconBook />, href: "/register", active: current === "register" });
   if (canOpenPortalPages(r)) {
-    items.push({ label: "All Bills", icon: <IconFileText />, href: "/bills", active: current === "bills" });
-    items.push({ label: "Purchase Register", icon: <IconBook />, href: "/register", active: current === "register" });
     items.push({ label: "OH-31 Register", icon: <IconBuildingBank />, href: "/fund-register/OH-31", active: current === "OH-31" });
     items.push({ label: "OH-35 Register", icon: <IconBuildingBank />, href: "/fund-register/OH-35", active: current === "OH-35" });
+    // Registers of budget heads the Dean approved later also sit under Source of Funds.
+    const own = ["bills", "register", "detail", "movements", "OH-31", "OH-35"];
+    items.push({ label: "Source of Funds", icon: <IconCoins />, href: "/fund-sources", active: current === "fund-sources" || Boolean(current && !own.includes(current)) });
   }
   return items;
 }

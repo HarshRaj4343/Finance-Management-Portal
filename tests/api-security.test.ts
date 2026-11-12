@@ -20,10 +20,11 @@ import { POST as submit } from "@/app/api/bills/route";
 import { GET as register } from "@/app/api/register/route";
 import { GET as fundHeads, POST as addFunding } from "@/app/api/fund-heads/route";
 import { GET as movements } from "@/app/api/movements/route";
-import { POST as addEmployee } from "@/app/api/admin/employees/route";
+import { GET as listEmployees, POST as addEmployee } from "@/app/api/admin/employees/route";
 import { PATCH as updateEmployee } from "@/app/api/admin/employees/[code]/route";
 import { PATCH as pda } from "@/app/api/admin/pda/route";
 import { GET as funding } from "@/app/api/bills/funding/route";
+import { GET as sources, POST as addSource, PATCH as setSource } from "@/app/api/fund-sources/route";
 const req = (path: string, body?: unknown) => new NextRequest(`http://localhost${path}`, body ? { method: "POST", body: JSON.stringify(body), headers: { "content-type": "application/json" } } : undefined);
 beforeEach(() => { vi.clearAllMocks(); mocks.actor.role = "Bill Employee"; mocks.actor.code = "TEST-C"; mocks.actor.department = "A"; mocks.findEmployee.mockResolvedValue({ employee_code: "TEST-U", employee_name: "Applicant", department: "A", is_active: true }); });
 describe("API authority and financial boundaries", () => {
@@ -71,14 +72,27 @@ describe("API authority and financial boundaries", () => {
     expect((await funding(req("/api/bills/funding"))).status).toBe(400);
     expect(mocks.queryOne).toHaveBeenCalledTimes(5);
   });
-  it("blocks allocations via employee creation and rejects NaN before any write", async () => {
-    mocks.actor.role = "Finance Admin";
+  it("leaves employee management to the Dean: Finance Admin and every other role are refused", async () => {
     const person = { employee_code: "U", employee_name: "User", email: "user@example.test", department: "A" };
-    for (const allocated of [100, "NaN"]) expect((await addEmployee(req("/api/admin/employees", { ...person, allocated }))).status).toBe(400);
+    for (const role of ["Finance Admin", "Bill Employee", "Student Purchase", "Audit", "PDA Manager", "User"]) {
+      mocks.actor.role = role;
+      expect((await addEmployee(req("/api/admin/employees", person))).status).toBe(403);
+      expect((await updateEmployee(req("/api/admin/employees/U", { employee_name: "Updated" }), { params: Promise.resolve({ code: "U" }) })).status).toBe(403);
+      expect((await listEmployees(req("/api/admin/employees"))).status).toBe(403);
+    }
     expect(mocks.actorQueryOne).not.toHaveBeenCalled();
+    expect(mocks.query).not.toHaveBeenCalled();
   });
-  it("allows Finance Admin contact edits without requiring a role change", async () => {
-    mocks.actor.role = "Finance Admin"; mocks.actorQueryOne.mockResolvedValue({ employee_code: "U" });
+  it("lets the Dean add people, and rejects NaN before any write", async () => {
+    mocks.actor.role = "Dean"; mocks.actorQueryOne.mockResolvedValue({ employee_code: "U", employee_name: "User" });
+    const person = { employee_code: "U", employee_name: "User", email: "user@example.test", department: "A" };
+    expect((await addEmployee(req("/api/admin/employees", { ...person, allocated: "NaN" }))).status).toBe(400);
+    expect(mocks.actorQueryOne).not.toHaveBeenCalled();
+    expect((await addEmployee(req("/api/admin/employees", { ...person, employee_type: "Audit", allocated: 100 }))).status).toBe(201);
+    expect(mocks.actorQueryOne.mock.calls[0][2][4]).toBe("Audit");
+  });
+  it("lets the Dean correct contact details and roles, but never deactivate through a string flag", async () => {
+    mocks.actor.role = "Dean"; mocks.actorQueryOne.mockResolvedValue({ employee_code: "U" });
     expect((await updateEmployee(req("/api/admin/employees/U", { employee_name: "Updated" }), { params: Promise.resolve({ code: "U" }) })).status).toBe(200);
     expect((await updateEmployee(req("/api/admin/employees/U", { is_active: "false" }), { params: Promise.resolve({ code: "U" }) })).status).toBe(400);
   });
@@ -87,12 +101,25 @@ describe("API authority and financial boundaries", () => {
     expect((await pda(req("/api/admin/pda", { employee_id: "U", top_up: 100 }))).status).toBe(200);
     expect(mocks.queryOne).toHaveBeenCalledExactlyOnceWith("select public.fn_top_up_pda($1, $2, $3) as account", ["U", 100, "TEST-C"]);
   });
-  it("opens the purchase register to the Dean only", async () => {
-    for (const role of ["User", "Bill Employee", "Student Purchase", "Audit", "Finance Admin", "PDA Manager"]) {
+  it("opens the purchase register to the Dean, Store and Purchase and filers (their own bills only)", async () => {
+    for (const role of ["User", "Audit", "Finance Admin", "PDA Manager"]) {
       mocks.actor.role = role;
       expect((await register(req("/api/register"))).status).toBe(403);
     }
     expect(mocks.query).not.toHaveBeenCalled();
+    mocks.query.mockResolvedValue([]); mocks.queryOne.mockResolvedValue({ total: 0, totals: {} });
+    for (const role of ["Dean", "Student Purchase"]) {
+      mocks.actor.role = role; mocks.query.mockClear();
+      expect((await register(req("/api/register"))).status).toBe(200);
+      expect(mocks.query.mock.calls[0][0]).not.toContain("created_by");
+    }
+    // A filer is limited to the bills they filed, whatever they ask for, and the register reference rides along.
+    mocks.query.mockClear(); mocks.actor.role = "Bill Employee"; mocks.actor.code = "TEST-C";
+    expect((await register(req("/api/register?q=ledger"))).status).toBe(200);
+    const [sql, values] = mocks.query.mock.calls[0];
+    expect(sql).toContain("created_by = $1");
+    expect(sql).toContain("b.register_name");
+    expect(values[0]).toBe("TEST-C");
   });
   it("opens the inward / outward register to the Dean, the three approval desks, and filers for their own bills", async () => {
     for (const role of ["User", "PDA Manager"]) {
@@ -121,10 +148,31 @@ describe("API authority and financial boundaries", () => {
     }
     expect(mocks.queryOne).not.toHaveBeenCalled();
     mocks.actor.role = "Dean"; mocks.actor.code = "TEST-D"; mocks.queryOne.mockResolvedValue({ head: {} });
-    expect((await addFunding(req("/api/fund-heads", { code: "OH-40", financial_year: "2026-27", amount: 100, reference: "R" }))).status).toBe(400);
+    expect((await addFunding(req("/api/fund-heads", { code: "oh 40", financial_year: "2026-27", amount: 100, reference: "R" }))).status).toBe(400);
     expect((await addFunding(req("/api/fund-heads", { code: "OH-35", financial_year: "2026-27", amount: 100.123, reference: "R" }))).status).toBe(400);
     expect((await addFunding(req("/api/fund-heads", { code: "OH-35", financial_year: "2026-27", amount: 100, reference: "MoE/1" }))).status).toBe(201);
     expect(mocks.queryOne).toHaveBeenCalledWith(expect.stringContaining("fn_add_fund_allocation"), ["OH-35", "2026-27", 100, "MoE/1", null, "", "TEST-D"]);
+  });
+  it("lets anyone signed in read the active sources of fund, the Dean alone manage them", async () => {
+    mocks.query.mockResolvedValue([{ code: "PDA" }]);
+    for (const role of ["User", "Bill Employee", "Dean"]) { mocks.actor.role = role; expect((await sources(req("/api/fund-sources"))).status).toBe(200); }
+    expect(mocks.query.mock.calls[0][0]).toContain("where s.is_active");
+    mocks.query.mockClear();
+    for (const role of ["Bill Employee", "Finance Admin", "Student Purchase"]) {
+      mocks.actor.role = role;
+      expect((await sources(req("/api/fund-sources?all=1"))).status).toBe(403);
+      expect((await addSource(req("/api/fund-sources", { code: "OH-36", description: "d" }))).status).toBe(403);
+      expect((await setSource(new NextRequest("http://localhost/api/fund-sources", { method: "PATCH", body: JSON.stringify({ code: "OH-36", is_active: false }) }))).status).toBe(403);
+    }
+    expect(mocks.query).not.toHaveBeenCalled(); expect(mocks.actorQueryOne).not.toHaveBeenCalled();
+    mocks.actor.role = "Dean"; mocks.actor.code = "TEST-D"; mocks.actorQueryOne.mockResolvedValue({ source: {} });
+    expect((await sources(req("/api/fund-sources?all=1"))).status).toBe(200);
+    expect(mocks.query.mock.calls[0][0]).not.toContain("where s.is_active");
+    expect((await addSource(req("/api/fund-sources", { code: "OH-36", description: "d", categories: ["Weapons"] }))).status).toBe(400);
+    expect((await addSource(req("/api/fund-sources", { code: "OH-36", description: "Equipment grant", group: "Grants", categories: ["Major"] }))).status).toBe(201);
+    expect(mocks.actorQueryOne).toHaveBeenCalledWith("TEST-D", expect.stringContaining("fn_add_fund_source"), ["OH-36", "Equipment grant", "Grants", ["Major"], "TEST-D"]);
+    expect((await setSource(new NextRequest("http://localhost/api/fund-sources", { method: "PATCH", body: JSON.stringify({ code: "OH-36", is_active: "no" }) }))).status).toBe(400);
+    expect((await setSource(new NextRequest("http://localhost/api/fund-sources", { method: "PATCH", body: JSON.stringify({ code: "OH-36", is_active: false }) }))).status).toBe(200);
   });
   it("exports the purchase register as CSV for the Dean only, with the same filters", async () => {
     mocks.actor.role = "Finance Admin";

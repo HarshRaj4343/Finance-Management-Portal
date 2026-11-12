@@ -15,7 +15,7 @@ export async function PATCH(
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const actor = await requireRole("Dean", "Finance Admin");
+    const actor = await requireRole("Dean");
     const { code } = await params;
     const target = code.trim();
     const b = (await req.json()) as Record<string, unknown>;
@@ -27,15 +27,7 @@ export async function PATCH(
       if (!ROLES.includes(String(b.employee_type) as (typeof ROLES)[number])) return badRequest("That is not a role we recognise.");
       if (!ASSIGNABLE_ROLES.includes(role)) return badRequest("The Bill Editor role has been retired. Use Bill Employee, which files and corrects bills.");
 
-      // architecture.jpeg puts one person in charge of who is what. This is
-      // that gate: a Finance Admin can correct a name or an email, but only
-      // the Dean of Finance decides which desk somebody sits at.
-      if (actor.role !== "Dean") {
-        return badRequest(
-          "Only the Dean of Finance can change somebody's role. You can still update their name, email and department."
-        );
-      }
-
+      // architecture.jpeg puts one person in charge of who is what: the Dean.
       // The Dean must not be able to demote themselves out of the only
       // page that can put anybody back.
       if (target === actor.code && role !== "Dean") {
@@ -103,7 +95,7 @@ export async function DELETE(
   { params }: { params: Promise<{ code: string }> }
 ) {
   try {
-    const actor = await requireRole("Dean", "Finance Admin");
+    const actor = await requireRole("Dean");
     const { code } = await params;
     const target = code.trim();
 

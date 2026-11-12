@@ -125,7 +125,11 @@ export interface BillRow {
   updated_at: string;
   /** Until this instant the filer may correct the bill and no desk sees it. */
   editable_until?: string | null;
-  /** Which pool holds the bill's money: PDA, OH-31 or OH-35 (null on older bills = PDA). */
+  /** Where the purchase was entered in the physical registers (0012); null on bills filed before it. */
+  register_name?: string | null;
+  register_page?: string | null;
+  register_serial?: string | null;
+  /** Which pool holds the bill's money: PDA or an approved budget head such as OH-31 or OH-35 (null on older bills = PDA). */
   funding_pool?: string | null;
   funding_fy?: string | null;
   /** The desk that sent this bill back to the desk it is at now, its optional reason, and when (0010). */
@@ -190,6 +194,10 @@ export interface PurchaseRegisterRow {
 
   recorded_by: string | null;
   recorded_at: string;
+  /** From the bill (0012): where the purchase was entered in the physical registers. */
+  register_name?: string | null;
+  register_page?: string | null;
+  register_serial?: string | null;
 }
 
 export interface DepartmentRow {

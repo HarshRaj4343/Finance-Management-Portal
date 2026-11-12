@@ -21,9 +21,8 @@ const EMAIL = /^[^@\s,]+@[^@\s,]+\.[a-zA-Z]{2,}$/;
 /** GET /api/admin/employees — everyone, with their PDA position. */
 export async function GET(req: NextRequest) {
   try {
-    // Finance Admin keeps the directory it has always had; only the
-    // Dean may decide what role anybody holds (see PATCH).
-    await requireRole("Dean", "Finance Admin");
+    // The employee directory is the Dean's: Finance Admin no longer manages employees.
+    await requireRole("Dean");
     const p = req.nextUrl.searchParams;
 
     const params = new Params();
@@ -74,17 +73,15 @@ export async function GET(req: NextRequest) {
  */
 export async function POST(req: NextRequest) {
   try {
-    const actor = await requireRole("Dean", "Finance Admin");
+    const actor = await requireRole("Dean");
     const b = (await req.json()) as Record<string, string | number | boolean>;
 
     const code = String(b.employee_code ?? "").trim();
     const name = String(b.employee_name ?? "").trim();
     const email = String(b.email ?? "").trim().toLowerCase();
     const department = String(b.department ?? "").trim();
-    // Adding a person is one thing; deciding they are an auditor is
-    // another. Anyone but the Dean adds them as a plain user.
     const requested = normaliseRole(String(b.employee_type ?? "User"));
-    const role = actor.role === "Dean" ? requested : "User";
+    const role = requested;
 
     if (!code) return badRequest("An employee code is required.");
     if (!name) return badRequest("A name is required.");
@@ -95,7 +92,6 @@ export async function POST(req: NextRequest) {
     // statement, so a failed PDA insert does not leave the person half-added.
     const allocated = Number(b.allocated ?? 0);
     if (!isMoney(allocated)) return badRequest("Enter a finite allocation of zero or more, with at most two decimal places.");
-    if (allocated > 0 && actor.role !== "Dean") return badRequest("Only the Dean or PDA Manager may allocate funds. Add the employee without an allocation first.");
     if (b.employee_type !== undefined && !ROLES.includes(String(b.employee_type) as (typeof ROLES)[number])) return badRequest("Choose a recognised role.");
     if (!ASSIGNABLE_ROLES.includes(role)) return badRequest("The Bill Editor role has been retired. Use Bill Employee, which files and corrects bills.");
     const data = await actorQueryOne(actor.code,
@@ -117,10 +113,7 @@ export async function POST(req: NextRequest) {
     return ok(
       {
         employee: data,
-        note:
-          requested !== role
-            ? `${name} was added as a plain user. Only the Dean of Finance can assign the ${requested} role.`
-            : null,
+        note: null,
       },
       201
     );

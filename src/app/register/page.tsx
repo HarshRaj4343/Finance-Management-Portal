@@ -10,10 +10,11 @@ import {
 } from "@tabler/icons-react";
 import { api, money, qs, when, dateOnly, count } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
-import AppShell, { canOpenPortalPages, sharedLinks } from "@/components/AppShell";
+import AppShell, { sharedLinks } from "@/components/AppShell";
 import FilterBar, { FilterField, filterInput } from "@/components/FilterBar";
-import { CATEGORY_OPTIONS, ExportButton, FUND_OPTIONS, PageHeader, StatCard } from "@/components/ui/page";
-import { homeFor, normaliseRole } from "@/lib/roles";
+import { CATEGORY_OPTIONS, ExportButton, PageHeader, StatCard } from "@/components/ui/page";
+import { useFundCodes } from "@/lib/useFundCodes";
+import { canOpenPurchaseRegister, homeFor, normaliseRole, seesOwnFilingsOnly } from "@/lib/roles";
 import type { RegisterEntry, DepartmentRow } from "@/types/database";
 
 /**
@@ -56,13 +57,15 @@ export default function RegisterPage() {
   const pageSize = 50;
 
   const role = normaliseRole((session?.user as { employee_type?: string })?.employee_type);
-  const scoped = role === "User";
+  const fundCodes = useFundCodes();
+  // A filer sees only the purchases of the bills they filed; the API applies that too.
+  const ownOnly = seesOwnFilingsOnly(role);
 
-  // RBAC: the purchase register is a Dean-only page; the API refuses everyone else too.
-  const allowed = status === "authenticated" && canOpenPortalPages(role);
+  // RBAC: the Dean, Store and Purchase and bill filers; the API refuses everyone else too.
+  const allowed = status === "authenticated" && canOpenPurchaseRegister(role);
   useEffect(() => {
     if (status === "unauthenticated") window.location.href = "/login";
-    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(homeFor(role));
+    else if (status === "authenticated" && !canOpenPurchaseRegister(role)) window.location.replace(homeFor(role));
   }, [status, role]);
 
   useEffect(() => {
@@ -161,14 +164,14 @@ export default function RegisterPage() {
             { key: "department", label: "School / department", type: "department" },
             { key: "fy", label: "Financial year", type: "select", options: years, any: "All years" },
             { key: "category", label: "Category", type: "select", options: CATEGORY_OPTIONS },
-            { key: "source", label: "Source of fund", type: "select", options: FUND_OPTIONS },
+            { key: "source", label: "Source of fund", type: "select", options: fundCodes },
             { key: "from", label: "Entered from", type: "date" },
             { key: "to", label: "Entered to", type: "date" },
-            { key: "q", label: "Search", type: "text", placeholder: "Serial, bill no., item, supplier, employee" },
+            { key: "q", label: "Search", type: "text", placeholder: "Serial, bill no., item, supplier, employee, register" },
           ]} />}
         title="Purchase Register"
-        description={scoped
-          ? "Your purchases, as entered in the departmental register."
+        description={ownOnly
+          ? "The purchases of the bills you filed, as entered in the departmental register."
           : "Every purchase that completed the approval workflow."}
       />
 
@@ -246,6 +249,7 @@ export default function RegisterPage() {
                       "Amount",
                       "Department",
                       "Indenter",
+                      "Physical register",
                       "Bill",
                     ].map((h) => (
                       <th scope="col"
@@ -291,6 +295,14 @@ export default function RegisterPage() {
                         <span className="block text-xs text-slate-500">
                           {e.employee_code}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-600">
+                        {e.register_name ? (
+                          <>
+                            <span className="block max-w-[12rem] truncate" title={e.register_name}>{e.register_name}</span>
+                            <span className="block text-xs text-slate-500">Page {e.register_page ?? "—"} · Serial {e.register_serial ?? "—"}</span>
+                          </>
+                        ) : "—"}
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <a

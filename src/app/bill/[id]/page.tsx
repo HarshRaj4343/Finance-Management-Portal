@@ -298,6 +298,7 @@ export default function BillDetailsPage() {
             ["Quantity / issued", `${bill.qty ?? "—"} / ${bill.qty_issued ?? "—"}`],
             ["Stock entry", bill.stock_entry],
             ["Location", bill.location],
+            ["Physical register", bill.register_name ? `${bill.register_name} · page ${bill.register_page ?? "—"} · serial ${bill.register_serial ?? "—"}` : null],
           ]],
         ] as const).map(([heading, rows]) => (
           <section key={heading} aria-label={heading} className="rounded-xl border border-slate-200 p-4">

@@ -7,7 +7,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useSession } from "next-auth/react";
 import AppShell, { canOpenPortalPages, sharedLinks } from "@/components/AppShell";
-import { CATEGORY_OPTIONS, ExportButton, FUND_OPTIONS, PageHeader, StatusBadge } from "@/components/ui/page";
+import { CATEGORY_OPTIONS, ExportButton, PageHeader, StatusBadge } from "@/components/ui/page";
+import { useFundCodes } from "@/lib/useFundCodes";
 import { BillWithEmployee } from "@/types/database";
 import { Input } from "@/components/ui/input";
 
@@ -122,6 +123,7 @@ function istDay(ts: string | null | undefined): string | null {
 export default function AllBillsPage() {
   const router = useRouter();
   const { data: session, status } = useSession();
+  const fundCodes = useFundCodes();
   const role = session?.user?.employee_type;
   // RBAC: the portal-wide bill list is a Dean-only page.
   const allowed = status === "authenticated" && canOpenPortalPages(role);
@@ -240,7 +242,7 @@ export default function AllBillsPage() {
               { value: "Finance Admin", label: "At Finance Admin" }, { value: "Accepted", label: "Released" }, { value: "Rejected", label: "Rejected" },
             ] },
             { key: "category", label: "Category", type: "select", options: CATEGORY_OPTIONS },
-            { key: "source", label: "Source of fund", type: "select", options: FUND_OPTIONS },
+            { key: "source", label: "Source of fund", type: "select", options: fundCodes },
             { key: "finance_admin", label: "Finance Admin decision", type: "select", options: FINANCE_STATES },
             { key: "q", label: "Search", type: "text", placeholder: "Bill no., applicant, supplier, item" },
             { key: "from", label: "Filed from", type: "date" },

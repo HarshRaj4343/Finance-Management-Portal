@@ -35,6 +35,7 @@ import {
 import { Lookup, StepBill, StepSubmitter, StepSupplier } from "./bill-form/steps-basic";
 import { StepFunding, StepItems } from "./bill-form/steps-items";
 import { StepReview, SummaryPanel } from "./bill-form/review";
+import { useFunds } from "./bill-form/useFunds";
 import { useConfirm } from "@/components/ConfirmProvider";
 import { EDIT_WINDOW_MINUTES } from "@/lib/bill-review";
 import EditPauseNotice from "@/components/EditPauseNotice";
@@ -69,7 +70,9 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
   const confirm = useConfirm();
   const draftKey = `iitm-bill-draft:${session?.user?.id ?? "anon"}:${initialBill ? `${initialBill.id}:${initialBill.revision}` : "new"}`;
 
-  const [f, setF] = useState<FormState>(() => initialBill?.form_data ?? {
+  const { funds, loaded: fundsLoaded } = useFunds();
+  // A bill filed before the register entry existed has no such fields; start them blank.
+  const [f, setF] = useState<FormState>(() => initialBill?.form_data ? { ...emptyForm(), ...initialBill.form_data } : {
     ...emptyForm(), ...(initialBill ? { requesterCode: initialBill.employee_id, requesterName: initialBill.employee_name ?? "",
       supplierName: initialBill.supplier_name ?? "", supplierAddress: initialBill.supplier_address ?? "", category: initialBill.item_category,
       fund: initialBill.source_of_fund ?? "", billNo: initialBill.invoice_no ?? "", billDate: initialBill.invoice_date ?? "" } : {}),
@@ -156,6 +159,8 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
     requesterDepartment: lookup.department ?? null,
     // Store and Purchase files for every school, so no department lock.
     filingDepartment: isUmbrellaDepartment(department) ? null : (department ?? null),
+    // Until the approved list arrives, leave the choice to the database.
+    funds: fundsLoaded ? funds : undefined,
   };
 
   // ---- errors: shown once a field is left, or after a failed Next ----
@@ -418,7 +423,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
   // The wizard
   // ---------------------------------------------------------------------
   const errorList = attempted ? Object.entries(all) : [];
-  const stepProps = { f, set, errors };
+  const stepProps = { f, set, errors, funds };
   const canSubmit = Object.keys(validateStep(LAST, f, ctx)).length === 0 && !submitting;
   const route = totals(f).total > 0 ? routeAfter("Submit", f.category, totals(f).total) : null;
 
@@ -529,14 +534,14 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
           </div>
 
           <div className="hidden lg:sticky lg:top-0 lg:block">
-            <SummaryPanel f={f} variant="side" />
+            <SummaryPanel f={f} variant="side" funds={funds} />
           </div>
         </div>
       </div>
 
       {/* mobile summary + sticky actions */}
       <div className="shrink-0 lg:hidden">
-        <SummaryPanel f={f} variant="bar" />
+        <SummaryPanel f={f} variant="bar" funds={funds} />
       </div>
       <div className="shrink-0 border-t border-slate-200 bg-white/95 py-3 backdrop-blur">
         {confirmCancel ? (

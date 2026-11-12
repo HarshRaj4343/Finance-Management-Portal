@@ -15,7 +15,7 @@ const BILL_COLUMNS = `
   id, revision, created_by, invoice_no, invoice_date, form_data, bill_number, employee_id, employee_name, employee_department,
   po_details, po_value, supplier_name, supplier_address,
   item_category, item_description, qty, qty_issued, bill_details,
-  indenter_name, source_of_fund, stock_entry, location,
+  indenter_name, source_of_fund, stock_entry, location, register_name, register_page, register_serial,
   has_bank_guarantee, bank_guarantee_details, bank_guarantee_amount,
   date_of_installation, date_of_delivery,
   status, snp, audit, finance_admin, noted,
@@ -40,6 +40,7 @@ const CSV_COLUMNS: CsvColumn<CsvRow>[] = [
   ["Supplier", (r) => r.supplier_name], ["Invoice number", (r) => r.invoice_no], ["Invoice date", (r) => r.invoice_date],
   ["PO details", (r) => r.po_details], ["Store and Purchase", (r) => r.snp], ["Audit", (r) => r.audit],
   ["Finance Admin", (r) => r.finance_admin], ["Decided (IST)", (r) => istStamp(r.decided_at)], ["Stock entry", (r) => r.stock_entry],
+  ["Register name", (r) => r.register_name], ["Register page no.", (r) => r.register_page], ["Register serial no.", (r) => r.register_serial],
 ];
 
 /**
@@ -53,7 +54,7 @@ const CSV_COLUMNS: CsvColumn<CsvRow>[] = [
  *   ?status=Accepted      by final state
  *   ?employee=E001        one person's bills (approvers only)
  *   ?q=pump               free text over item, supplier, bill number, PO
- *   ?source=PDA           by source of fund (PDA, OH-31, OH-35)
+ *   ?source=PDA           by source of fund (any approved source: PDA, OH-31, OH-35, ...)
  *   ?format=csv[&col=..]  spreadsheet of the chosen columns; ?format=columns lists them
  *   ?from=2026-04-01 &to=  filed between these IST dates, inclusive
  *   ?limit= &offset=      paging, default 100
@@ -110,7 +111,8 @@ export async function GET(req: NextRequest) {
       where.push(
         `(item_description ilike ${like} or supplier_name ilike ${like}
           or bill_number ilike ${like} or po_details ilike ${like}
-          or employee_name ilike ${like} or employee_id ilike ${like} or invoice_no ilike ${like})`
+          or employee_name ilike ${like} or employee_id ilike ${like} or invoice_no ilike ${like}
+          or register_name ilike ${like} or register_page ilike ${like} or register_serial ilike ${like})`
       );
     }
 

@@ -1,7 +1,7 @@
 import { emptyForm, emptyLine, type FormState } from "@/app/apply-bill/bill-form/model";
 let serial = 0;
 export function billForm(code = "TEST-U", amount = 1000, category = "Consumables"): FormState {
-  return { ...emptyForm(), requesterCode: code, requesterName: "Test applicant", purchaseType: "direct", poValue: String(amount),
+  return { ...emptyForm(), requesterCode: code, requesterName: "Test applicant", purchaseType: "direct", registerName: "Test register", registerPage: "1", registerSerial: "1", poValue: String(amount),
     supplierName: "Test supplier", supplierAddress: "Mandi", billNo: `TEST-INV-${Date.now()}-${++serial}`,
     billDate: "2026-01-01", delivered: "yes", deliveryDate: "2026-01-02", installRequired: "no",
     fund: "PDA", declaration: true, totalConfirmed: true, category,

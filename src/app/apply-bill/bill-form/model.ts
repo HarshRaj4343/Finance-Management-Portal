@@ -1,4 +1,4 @@
-import { findItemType, FUND_PATTERN, FUNDS, ITEM_CATEGORIES, fundsForCategory, groupsForCategory } from "./masters";
+import { findItemType, FUNDS, ITEM_CATEGORIES, fundsForCategory, groupsForCategory, type Fund } from "./masters";
 
 // ---------------------------------------------------------------------
 // Shape of the form
@@ -47,6 +47,11 @@ export type FormState = {
   lines: Line[];
 
   fund: string;
+
+  /** Where this purchase was entered in the physical registers not yet moved to the database. */
+  registerName: string;
+  registerPage: string;
+  registerSerial: string;
 
   declaration: boolean;
   totalConfirmed: boolean;
@@ -100,6 +105,9 @@ export const emptyForm = (): FormState => ({
   category: "Minor",
   lines: [emptyLine()],
   fund: "",
+  registerName: "",
+  registerPage: "",
+  registerSerial: "",
   declaration: false,
   totalConfirmed: false,
 });
@@ -197,7 +205,16 @@ export type Context = {
   requesterFound: boolean;
   requesterDepartment: string | null;
   filingDepartment: string | null;
+  /**
+   * The approved sources of fund the form offers. The browser passes the
+   * list it loaded; the server leaves it out and the database, which holds
+   * the Dean's approvals, makes the final decision (fn_validate_fund).
+   */
+  funds?: Fund[];
 };
+
+export const REGISTER_NAME_MAX = 100;
+export const REGISTER_REF_MAX = 50;
 
 const isInt = (s: string) => /^\d+$/.test(s.trim());
 
@@ -289,14 +306,26 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
   }
 
   if (step === 4) {
-    const fund = FUNDS.find((x) => x.code === f.fund);
+    const offered = ctx.funds ?? FUNDS;
+    const fund = offered.find((x) => x.code === f.fund);
     if (!f.fund) e["f-fund"] = "Choose the source of fund.";
-    else if (!FUND_PATTERN.test(f.fund) || !fund) e["f-fund"] = "Choose an active fund code.";
-    else if (!fundsForCategory(f.category).some((x) => x.code === f.fund)) {
+    else if (!fund) {
+      // With the browser's list, a code outside it is not approved. Without
+      // one (the server), the database checks it against the approved sources.
+      if (ctx.funds) e["f-fund"] = "Choose one of the approved sources of fund.";
+    } else if (!fundsForCategory(f.category, offered).some((x) => x.code === f.fund)) {
       e["f-fund"] = f.fund === "OH-35"
         ? "OH-35 is for creation of capital assets. Charge consumables to OH-31 or the PDA."
-        : "OH-31 is the general (recurring) head. Charge major equipment to OH-35 or the PDA.";
+        : f.fund === "OH-31"
+          ? "OH-31 is the general (recurring) head. Charge major equipment to OH-35 or the PDA."
+          : `${f.fund} cannot be charged for ${f.category.toLowerCase()} purchases.`;
     }
+    if (!f.registerName.trim()) e["f-register-name"] = "Enter the name of the register this purchase was entered in.";
+    else if (f.registerName.trim().length > REGISTER_NAME_MAX) e["f-register-name"] = `Keep it to ${REGISTER_NAME_MAX} characters.`;
+    if (!f.registerPage.trim()) e["f-register-page"] = "Enter the page number of the entry.";
+    else if (f.registerPage.trim().length > REGISTER_REF_MAX) e["f-register-page"] = `Keep it to ${REGISTER_REF_MAX} characters.`;
+    if (!f.registerSerial.trim()) e["f-register-serial"] = "Enter the serial number of the entry.";
+    else if (f.registerSerial.trim().length > REGISTER_REF_MAX) e["f-register-serial"] = `Keep it to ${REGISTER_REF_MAX} characters.`;
     f.lines.forEach((l, i) => {
       const id = (k: string) => `line-${i}-${k}`;
       const qi = l.qtyIssued.trim();
@@ -324,7 +353,7 @@ export function stepOfField(id: string): number {
   if (/^f-(purchase-type|po-|supplier|address)/.test(id)) return 1;
   if (/^f-(bill-|remarks|deliver|install)/.test(id)) return 2;
   if (/^f-(category)/.test(id) || /^line-\d+-(group|type|brand|model|description|qty$|uom|price)/.test(id)) return 3;
-  if (/^f-fund/.test(id) || /^line-\d+-(custodian|qty-issued|room|building|floor)/.test(id)) return 4;
+  if (/^f-(fund|register)/.test(id) || /^line-\d+-(custodian|qty-issued|room|building|floor)/.test(id)) return 4;
   return 5;
 }
 
@@ -366,8 +395,8 @@ export function toPayload(f: FormState) {
     employee_name: f.requesterName.trim(),
     po_details:
       f.purchaseType === "po"
-        ? `PO ${f.poNumber.trim()} dated ${shortDate(f.poDate)}, value ${inr(toNum(f.poValue))}`
-        : `Direct purchase (no PO), value ${inr(toNum(f.poValue))}`,
+        ? `GeM contract ${f.poNumber.trim()} dated ${shortDate(f.poDate)}, value ${inr(toNum(f.poValue))}`
+        : `Without GeM contract, value ${inr(toNum(f.poValue))}`,
     // The amount reserved against the PDA and used for routing.
     po_value: T.total,
     supplier_name: f.supplierName.trim(),
