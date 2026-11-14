@@ -107,7 +107,7 @@ Legend: **Req** = required. **Auto** = system-filled, read-only. **DD** = dropdo
 
 | Field | Type | Req | Source / Values | Validation |
 |---|---|---|---|---|
-| Purchase Type | DD | Yes | `GeM Contract`, `Without GeM Contract` (stored as `po` / `direct`) | Controls the fields below |
+| Purchase Type | DD | Yes | `GeM Contract`, `Without GeM Contract`, `Others` (stored as `po` / `direct` / `others`) | Controls the fields below |
 | PO Number | Searchable DD | If "GeM Contract" | Open POs from PO Master | Must exist and be open |
 | PO Date | Auto | If PO | PO Master | None |
 | PO Value (₹) | Auto (editable if Direct Purchase) | Yes | PO Master | Number > 0, 2 decimals |
@@ -260,7 +260,7 @@ Each Item Type carries: `stock_register_page`, `asset_tracking` (bool), `default
 
 ---
 
-> **Update (migration 0012):** the source of fund is now a master the Dean approves on the Source of Funds page, and the dropdown lists only the approved, active sources (OH-31, OH-35 and PDA are standing). Codes are 2 to 20 capital letters, digits or hyphens, so the `OH-<number>` pattern below is the convention for budget heads, not the only form. Each bill also records the **Register Name, Page Number and Serial Number** of the physical register entry (mandatory), in the Funding and Stock step.
+> **Update (migration 0012):** the source of fund is now a master the Dean approves on the Source of Funds page, and the dropdown lists only the approved, active sources (OH-31, OH-35 and PDA are standing). Codes are 2 to 20 capital letters, digits or hyphens, so the `OH-<number>` pattern below is the convention for budget heads, not the only form. Each bill also records the **Register No., Page No. and Serial No.** of the physical register entry (mandatory), in the Register Details section of the Items step.
 
 ## 6. Source of Fund: standard format
 

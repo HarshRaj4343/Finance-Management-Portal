@@ -424,7 +424,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     });
   });
 
-  describe("register name, page and serial", () => {
+  describe("register no., page no. and serial no.", () => {
     const ref = async (id: string) => (await db.query("select register_name, register_page, register_serial, form_data->>'registerPage' as form_page from public.bills where id=$1", [id])).rows[0];
     const amend = async (b: { id: string; revision: number }, p: Record<string, unknown>) =>
       (await db.query("select public.fn_amend_bill($1,$2,$3) as bill", [b.id, { ...p, expected_revision: b.revision }, filer])).rows[0].bill;
@@ -432,7 +432,7 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
     it("is mandatory on filing, kept on the bill, and carried by every correction", async () => {
       for (const field of ["registerName", "registerPage", "registerSerial"] as const) {
         const f = billForm(); f[field] = "  ";
-        await expect(fileBill(payload(f))).rejects.toThrow(/Enter the (name|page number|serial number) of/);
+        await expect(fileBill(payload(f))).rejects.toThrow(/Enter the (register number|page number|serial number)/);
       }
       const long = billForm(); long.registerName = "n".repeat(101);
       await expect(fileBill(payload(long))).rejects.toThrow(/register/);
@@ -446,6 +446,17 @@ describe.skipIf(!enabled)("PostgreSQL financial integrity (isolated database onl
       expect(after.revision).toBe(b.revision + 1);
       const blank = { ...p, form_data: { ...f, registerSerial: "" } };
       await expect(amend(after, blank)).rejects.toThrow(/serial number/);
+    });
+
+    it("makes the type of purchase order mandatory when the purchase type is Others", async () => {
+      const f = billForm(); f.purchaseType = "others";
+      await expect(fileBill(payload(f))).rejects.toThrow(/type of purchase order/);
+      f.otherPurchaseType = "   ";
+      await expect(fileBill(payload(f))).rejects.toThrow(/type of purchase order/);
+      f.otherPurchaseType = "Rate contract";
+      const b = await fileBill(payload(f));
+      expect(b.po_details).toMatch(/^Other purchase \(Rate contract\)/);
+      expect((await db.query("select form_data->>'otherPurchaseType' as t from public.bills where id=$1", [b.id])).rows[0].t).toBe("Rate contract");
     });
 
     it("leaves bills filed before the register fields untouched", async () => {

@@ -147,7 +147,7 @@ export default function PrintBillPage() {
             <Row label="Source of fund">{fund ? `${fund.code} — ${fund.description}` : bill.source_of_fund}</Row>
             <Row label="Charged to">{bill.funding_pool && bill.funding_pool !== "PDA" ? `Institute ${bill.funding_pool} budget, ${bill.funding_fy}` : `PDA of ${bill.employee_id}`}</Row>
             <Row label="Category">{bill.item_category}</Row>
-            {bill.register_name && <Row label="Physical register">{`${bill.register_name} · page ${bill.register_page ?? "—"} · serial ${bill.register_serial ?? "—"}`}</Row>}
+            {bill.register_name && <Row label="Register details">{`Register ${bill.register_name} · page ${bill.register_page ?? "—"} · serial ${bill.register_serial ?? "—"}`}</Row>}
             {bill.has_bank_guarantee && <Row label="Bank guarantee">{`${money(bill.bank_guarantee_amount)} — ${bill.bank_guarantee_details ?? ""}`}</Row>}
           </dl>
         </Section>

@@ -122,22 +122,31 @@ describe("simplified bill formation", () => {
     expect(toPayload(f).source_of_fund).toBe("PDA");
   });
 
-  it("requires the register name, page number and serial number", () => {
+  it("requires the register no., page no. and serial no. on the Items step", () => {
     const f = filled();
     for (const [field, id] of [["registerName", "f-register-name"], ["registerPage", "f-register-page"], ["registerSerial", "f-register-serial"]] as const) {
       const blank = { ...f, [field]: "   " };
-      expect(validateStep(4, blank, ctx)[id]).toBeTruthy();
-      expect(stepOfField(id)).toBe(4);
+      expect(validateStep(3, blank, ctx)[id]).toBeTruthy();
+      expect(stepOfField(id)).toBe(3);
     }
-    expect(validateStep(4, { ...f, registerName: "x".repeat(101) }, ctx)["f-register-name"]).toBeTruthy();
-    expect(validateStep(4, { ...f, registerPage: "9".repeat(51) }, ctx)["f-register-page"]).toBeTruthy();
-    expect(validateStep(4, f, ctx)).toEqual({});
+    expect(validateStep(3, { ...f, registerName: "x".repeat(101) }, ctx)["f-register-name"]).toBeTruthy();
+    expect(validateStep(3, { ...f, registerPage: "9".repeat(51) }, ctx)["f-register-page"]).toBeTruthy();
+    expect(validateStep(3, f, ctx)).toEqual({});
   });
 
   it("names the purchase types by GeM contract, keeping the stored values", () => {
-    expect(PURCHASE_TYPES.map((p) => [p.value, p.label])).toEqual([["po", "GeM Contract"], ["direct", "Without GeM Contract"]]);
+    expect(PURCHASE_TYPES.map((p) => [p.value, p.label])).toEqual([["po", "GeM Contract"], ["direct", "Without GeM Contract"], ["others", "Others"]]);
     expect(toPayload(filled()).po_details).toMatch(/^GeM contract PO\/26\/1 dated/);
     expect(toPayload({ ...filled(), purchaseType: "direct" }).po_details).toMatch(/^Without GeM contract, value/);
+    expect(toPayload({ ...filled(), purchaseType: "others", otherPurchaseType: " Rate contract " }).po_details).toMatch(/^Other purchase \(Rate contract\), value/);
+    // "Others" needs no PO number or date, but the filer must say what type of purchase order it is.
+    const others = { ...filled(), purchaseType: "others" as const, poNumber: "", poDate: "" };
+    expect(validateStep(1, { ...others, otherPurchaseType: "Rate contract" }, ctx)).toEqual({});
+    for (const blank of ["", "   "]) expect(validateStep(1, { ...others, otherPurchaseType: blank }, ctx)["f-other-purchase-type"]).toBeTruthy();
+    expect(validateStep(1, { ...others, otherPurchaseType: "x".repeat(101) }, ctx)["f-other-purchase-type"]).toBeTruthy();
+    expect(stepOfField("f-other-purchase-type")).toBe(1);
+    // The field matters only for "Others".
+    expect(validateStep(1, { ...filled(), otherPurchaseType: "" }, ctx)["f-other-purchase-type"]).toBeUndefined();
   });
 
   it("offers only the approved sources the browser loaded, and each one's categories", () => {

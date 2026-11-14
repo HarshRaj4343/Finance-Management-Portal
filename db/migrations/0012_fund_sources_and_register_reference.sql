@@ -20,7 +20,7 @@
 --    switched off, so no existing bill, balance or register entry changes.
 --
 -- 2. A bill records where it was entered in the physical registers that
---    have not yet moved to the database: register name, page number and
+--    have not yet moved to the database: register number, page number and
 --    serial number. They are mandatory on every new or corrected bill.
 --    The values live in bills.form_data (as for every other form field)
 --    and are copied into three plain columns so they can be searched,
@@ -225,7 +225,7 @@ begin
   -- Where the purchase was entered in the physical registers: mandatory on every new or corrected bill.
   if jsonb_typeof(p->'form_data') = 'object' then
     if coalesce(btrim(p->'form_data'->>'registerName'), '') = '' or length(btrim(p->'form_data'->>'registerName')) > 100 then
-      raise exception 'Enter the name of the register this purchase was entered in (up to 100 characters).';
+      raise exception 'Enter the register number this purchase was entered in (up to 100 characters).';
     end if;
     if coalesce(btrim(p->'form_data'->>'registerPage'), '') = '' or length(btrim(p->'form_data'->>'registerPage')) > 50 then
       raise exception 'Enter the page number of that register entry (up to 50 characters).';
@@ -233,6 +233,11 @@ begin
     if coalesce(btrim(p->'form_data'->>'registerSerial'), '') = '' or length(btrim(p->'form_data'->>'registerSerial')) > 50 then
       raise exception 'Enter the serial number of that register entry (up to 50 characters).';
     end if;
+  end if;
+  -- A purchase of type "Others" must say what kind of purchase order it is.
+  if p->'form_data'->>'purchaseType' = 'others'
+    and (coalesce(btrim(p->'form_data'->>'otherPurchaseType'), '') = '' or length(btrim(p->'form_data'->>'otherPurchaseType')) > 100) then
+    raise exception 'Say what type of purchase order this is (up to 100 characters).';
   end if;
   if jsonb_typeof(p->'form_data') is distinct from 'object'
     or jsonb_typeof(p->'form_data'->'lines') is distinct from 'array'

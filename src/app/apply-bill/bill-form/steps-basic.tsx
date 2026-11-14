@@ -89,6 +89,18 @@ export function StepSupplier({ f, set, errors }: StepProps) {
             placeholder="Select purchase type"
             error={errors["f-purchase-type"]}
           />
+          {f.purchaseType === "others" && (
+            <TextField
+              id="f-other-purchase-type"
+              label="Type of Purchase Order"
+              required
+              value={f.otherPurchaseType}
+              onChange={(v) => set({ otherPurchaseType: v })}
+              placeholder="e.g. Rate contract, Local purchase"
+              error={errors["f-other-purchase-type"]}
+              hint="Say what kind of purchase order this is."
+            />
+          )}
           {isPo && (
             <TextField
               id="f-po-number"

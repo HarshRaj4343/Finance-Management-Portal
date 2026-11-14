@@ -18,12 +18,12 @@ const CSV_COLUMNS: CsvColumn<PurchaseRegisterRow>[] = [
   ["Supplier address", (e) => e.supplier_address], ["Amount (INR)", (e) => Number(e.amount).toFixed(2)],
   ["Source of fund", (e) => e.source_of_fund], ["Stock entry", (e) => e.stock_entry], ["Location", (e) => e.location],
   ["Recorded by", (e) => e.recorded_by], ["Recorded at (IST)", (e) => istStamp(e.recorded_at)],
-  ["Register name", (e) => e.register_name], ["Register page no.", (e) => e.register_page], ["Register serial no.", (e) => e.register_serial],
+  ["Register no.", (e) => e.register_name], ["Register page no.", (e) => e.register_page], ["Register serial no.", (e) => e.register_serial],
 ];
 
 /**
  * The register with where each purchase was entered in the physical
- * registers (register name, page, serial), kept on the bill. Wrapped so
+ * registers (register no., page, serial), kept on the bill. Wrapped so
  * every filter below keeps addressing plain column names.
  */
 const REGISTER = `(select r.*, b.register_name, b.register_page, b.register_serial

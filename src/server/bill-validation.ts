@@ -31,7 +31,7 @@ export function validateBillForm(value: unknown): FormState {
     if (!(UOMS as readonly string[]).includes(line.uom)) throw new HttpError(400, "Choose a recognised unit.");
   }
   const form = raw as unknown as FormState;
-  if (!["po", "direct"].includes(form.purchaseType) || form.delivered !== "yes" || !["yes", "no"].includes(form.installRequired) || (form.installRequired === "yes" && form.installDone !== "yes")) throw new HttpError(400, "Goods must be delivered and any required installation completed.");
+  if (!["po", "direct", "others"].includes(form.purchaseType) || form.delivered !== "yes" || !["yes", "no"].includes(form.installRequired) || (form.installRequired === "yes" && form.installDone !== "yes")) throw new HttpError(400, "Goods must be delivered and any required installation completed.");
   for (const date of [form.billDate, form.deliveryDate, ...(form.purchaseType === "po" ? [form.poDate] : []), ...(form.installRequired === "yes" ? [form.installDate] : [])]) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(Date.parse(date)) || new Date(date).toISOString().slice(0, 10) !== date) throw new HttpError(400, "Enter valid calendar dates.");
   }

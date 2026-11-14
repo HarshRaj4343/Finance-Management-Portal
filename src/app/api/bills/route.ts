@@ -40,7 +40,7 @@ const CSV_COLUMNS: CsvColumn<CsvRow>[] = [
   ["Supplier", (r) => r.supplier_name], ["Invoice number", (r) => r.invoice_no], ["Invoice date", (r) => r.invoice_date],
   ["PO details", (r) => r.po_details], ["Store and Purchase", (r) => r.snp], ["Audit", (r) => r.audit],
   ["Finance Admin", (r) => r.finance_admin], ["Decided (IST)", (r) => istStamp(r.decided_at)], ["Stock entry", (r) => r.stock_entry],
-  ["Register name", (r) => r.register_name], ["Register page no.", (r) => r.register_page], ["Register serial no.", (r) => r.register_serial],
+  ["Register no.", (r) => r.register_name], ["Register page no.", (r) => r.register_page], ["Register serial no.", (r) => r.register_serial],
 ];
 
 /**

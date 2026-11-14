@@ -13,6 +13,7 @@
 export const PURCHASE_TYPES = [
   { value: "po", label: "GeM Contract" },
   { value: "direct", label: "Without GeM Contract" },
+  { value: "others", label: "Others" },
 ] as const;
 
 export const purchaseTypeLabel = (value: string) => PURCHASE_TYPES.find((p) => p.value === value)?.label ?? "";

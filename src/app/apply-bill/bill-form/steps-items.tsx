@@ -134,6 +134,37 @@ export function StepItems({ f, set, errors }: StepProps) {
         </Grid>
       </Card>
 
+      <Card title="Register Details" description="Where this purchase was entered in the physical register, until the registers are moved into the portal.">
+        <Grid>
+          <TextField
+            id="f-register-name"
+            label="Register No."
+            required
+            value={f.registerName}
+            onChange={(v) => set({ registerName: v })}
+            error={errors["f-register-name"]}
+            hint="The number or name of the register it was written in."
+          />
+          <TextField
+            id="f-register-page"
+            label="Page No."
+            required
+            value={f.registerPage}
+            onChange={(v) => set({ registerPage: v })}
+            error={errors["f-register-page"]}
+          />
+          <TextField
+            id="f-register-serial"
+            label="Serial No."
+            required
+            value={f.registerSerial}
+            onChange={(v) => set({ registerSerial: v })}
+            error={errors["f-register-serial"]}
+            hint="The serial number of the entry on that page."
+          />
+        </Grid>
+      </Card>
+
       {f.lines.map((l, i) => (
         <LineCard
           key={l.key}
@@ -342,37 +373,6 @@ export function StepFunding({ f, set, errors, funds = FUNDS }: StepProps) {
               <div><dt>This bill</dt><dd>{inr(T.total)}</dd></div></dl> : <p className="mt-2 text-red-700">No active PDA account. Ask the PDA Manager to open/fund it.</p>}
         </div>
         )}
-      </Card>
-
-      <Card title="Register Entry" description="Where this purchase was entered in the physical register, until the registers are moved into the portal.">
-        <Grid>
-          <TextField
-            id="f-register-name"
-            label="Register Name"
-            required
-            value={f.registerName}
-            onChange={(v) => set({ registerName: v })}
-            error={errors["f-register-name"]}
-            hint="The register it was written in, e.g. Departmental Purchase Register."
-          />
-          <TextField
-            id="f-register-page"
-            label="Page Number"
-            required
-            value={f.registerPage}
-            onChange={(v) => set({ registerPage: v })}
-            error={errors["f-register-page"]}
-          />
-          <TextField
-            id="f-register-serial"
-            label="Serial Number"
-            required
-            value={f.registerSerial}
-            onChange={(v) => set({ registerSerial: v })}
-            error={errors["f-register-serial"]}
-            hint="The serial number of the entry on that page."
-          />
-        </Grid>
       </Card>
 
       {f.lines.map((l, i) => {

@@ -26,7 +26,9 @@ export type FormState = {
   requesterCode: string;
   requesterName: string;
 
-  purchaseType: "" | "po" | "direct";
+  purchaseType: "" | "po" | "direct" | "others";
+  /** Required when the purchase type is "Others": what kind of purchase order it is. */
+  otherPurchaseType: string;
   poNumber: string;
   poDate: string;
   poValue: string;
@@ -89,6 +91,7 @@ export const emptyForm = (): FormState => ({
   requesterCode: "",
   requesterName: "",
   purchaseType: "",
+  otherPurchaseType: "",
   poNumber: "",
   poDate: "",
   poValue: "",
@@ -214,6 +217,7 @@ export type Context = {
 };
 
 export const REGISTER_NAME_MAX = 100;
+export const OTHER_PURCHASE_TYPE_MAX = 100;
 export const REGISTER_REF_MAX = 50;
 
 const isInt = (s: string) => /^\d+$/.test(s.trim());
@@ -236,6 +240,10 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
 
   if (step === 1) {
     if (!f.purchaseType) e["f-purchase-type"] = "Choose how this was purchased.";
+    if (f.purchaseType === "others") {
+      if (!f.otherPurchaseType.trim()) e["f-other-purchase-type"] = "Say what type of purchase order this is.";
+      else if (f.otherPurchaseType.trim().length > OTHER_PURCHASE_TYPE_MAX) e["f-other-purchase-type"] = `Keep it to ${OTHER_PURCHASE_TYPE_MAX} characters.`;
+    }
     if (f.purchaseType === "po") {
       if (!f.poNumber.trim()) e["f-po-number"] = "Enter or select the PO number.";
       if (!f.poDate) e["f-po-date"] = "Enter the PO date.";
@@ -302,6 +310,12 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
       if (l.type === "Miscellaneous" && (!l.descriptionEdited || l.description.trim() === "Miscellaneous")) e[id("description")] = "Describe your custom item.";
 
     });
+    if (!f.registerName.trim()) e["f-register-name"] = "Enter the register number.";
+    else if (f.registerName.trim().length > REGISTER_NAME_MAX) e["f-register-name"] = `Keep it to ${REGISTER_NAME_MAX} characters.`;
+    if (!f.registerPage.trim()) e["f-register-page"] = "Enter the page number.";
+    else if (f.registerPage.trim().length > REGISTER_REF_MAX) e["f-register-page"] = `Keep it to ${REGISTER_REF_MAX} characters.`;
+    if (!f.registerSerial.trim()) e["f-register-serial"] = "Enter the serial number.";
+    else if (f.registerSerial.trim().length > REGISTER_REF_MAX) e["f-register-serial"] = `Keep it to ${REGISTER_REF_MAX} characters.`;
     if (T.total > 0 && !purchaseMatchesTotal(f)) e["f-total"] = `Bill total ${inr(T.total)} (quantities × unit prices) must match purchase value ${inr(T.poValue)}.`;
   }
 
@@ -320,12 +334,6 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
           ? "OH-31 is the general (recurring) head. Charge major equipment to OH-35 or the PDA."
           : `${f.fund} cannot be charged for ${f.category.toLowerCase()} purchases.`;
     }
-    if (!f.registerName.trim()) e["f-register-name"] = "Enter the name of the register this purchase was entered in.";
-    else if (f.registerName.trim().length > REGISTER_NAME_MAX) e["f-register-name"] = `Keep it to ${REGISTER_NAME_MAX} characters.`;
-    if (!f.registerPage.trim()) e["f-register-page"] = "Enter the page number of the entry.";
-    else if (f.registerPage.trim().length > REGISTER_REF_MAX) e["f-register-page"] = `Keep it to ${REGISTER_REF_MAX} characters.`;
-    if (!f.registerSerial.trim()) e["f-register-serial"] = "Enter the serial number of the entry.";
-    else if (f.registerSerial.trim().length > REGISTER_REF_MAX) e["f-register-serial"] = `Keep it to ${REGISTER_REF_MAX} characters.`;
     f.lines.forEach((l, i) => {
       const id = (k: string) => `line-${i}-${k}`;
       const qi = l.qtyIssued.trim();
@@ -350,10 +358,10 @@ export function validateStep(step: number, f: FormState, ctx: Context): Errors {
 /** Which step a field id lives on, so a submit error can jump back to it. */
 export function stepOfField(id: string): number {
   if (id === "f-requester") return 0;
-  if (/^f-(purchase-type|po-|supplier|address)/.test(id)) return 1;
+  if (/^f-(purchase-type|other-purchase-type|po-|supplier|address)/.test(id)) return 1;
   if (/^f-(bill-|remarks|deliver|install)/.test(id)) return 2;
-  if (/^f-(category)/.test(id) || /^line-\d+-(group|type|brand|model|description|qty$|uom|price)/.test(id)) return 3;
-  if (/^f-(fund|register)/.test(id) || /^line-\d+-(custodian|qty-issued|room|building|floor)/.test(id)) return 4;
+  if (/^f-(category|register)/.test(id) || /^line-\d+-(group|type|brand|model|description|qty$|uom|price)/.test(id)) return 3;
+  if (/^f-fund/.test(id) || /^line-\d+-(custodian|qty-issued|room|building|floor)/.test(id)) return 4;
   return 5;
 }
 
@@ -396,7 +404,9 @@ export function toPayload(f: FormState) {
     po_details:
       f.purchaseType === "po"
         ? `GeM contract ${f.poNumber.trim()} dated ${shortDate(f.poDate)}, value ${inr(toNum(f.poValue))}`
-        : `Without GeM contract, value ${inr(toNum(f.poValue))}`,
+        : f.purchaseType === "others"
+          ? `Other purchase (${f.otherPurchaseType.trim()}), value ${inr(toNum(f.poValue))}`
+          : `Without GeM contract, value ${inr(toNum(f.poValue))}`,
     // The amount reserved against the PDA and used for routing.
     po_value: T.total,
     supplier_name: f.supplierName.trim(),

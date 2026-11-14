@@ -249,7 +249,7 @@ export default function RegisterPage() {
                       "Amount",
                       "Department",
                       "Indenter",
-                      "Physical register",
+                      "Register details",
                       "Bill",
                     ].map((h) => (
                       <th scope="col"

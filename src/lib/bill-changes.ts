@@ -33,7 +33,7 @@ const FIELDS: [key: string, label: string, kind: Kind][] = [
   ["po_details", "PO details", "text"],
   ["source_of_fund", "Source of fund", "text"],
   ["location", "Location", "text"],
-  ["register_name", "Register name", "text"],
+  ["register_name", "Register no.", "text"],
   ["register_page", "Register page no.", "text"],
   ["register_serial", "Register serial no.", "text"],
   ["date_of_delivery", "Delivery date", "date"],
