@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
@@ -98,8 +99,8 @@ export default function MovementRegisterPage() {
   const [notice, setNotice] = useState<NoticeState>(null);
 
   useEffect(() => {
-    if (status === "unauthenticated") window.location.href = "/login";
-    else if (status === "authenticated" && !canOpenMovementRegister(role)) window.location.replace(homeFor(role));
+    if (status === "unauthenticated") window.location.href = withBase("/login");
+    else if (status === "authenticated" && !canOpenMovementRegister(role)) window.location.replace(withBase(homeFor(role)));
   }, [status, role]);
 
   useEffect(() => {
@@ -186,7 +187,7 @@ export default function MovementRegisterPage() {
         case "o": case "O": case "Enter":
           if (!here || (ev.key === "Enter" && target.closest("button, a, input"))) return;
           ev.preventDefault();
-          window.open(`/bill/${here.bill_id}`, "_blank", "noopener");
+          window.open(withBase(`/bill/${here.bill_id}`), "_blank", "noopener");
           return;
         case "ArrowLeft": case "ArrowRight": {
           ev.preventDefault();
@@ -223,7 +224,7 @@ export default function MovementRegisterPage() {
       const { error } = await api.post(`/api/movements/${e.id}/receipt`, { received: true });
       if (error) { setNotice({ kind: "bad", text: error }); return; }
     }
-    window.location.href = `${homeFor(role)}?bill=${e.bill_id}`;
+    window.location.href = withBase(`${homeFor(role)}?bill=${e.bill_id}`);
   };
   const pages = Math.max(Math.ceil(total / PAGE), 1);
   const switchRegister = (r: Register) => { setRegister(r); setPage(0); };

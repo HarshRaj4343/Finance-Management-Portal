@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import { useEffect, useRef, useState } from "react";
 import type { Bill } from "@/types/database";
 import { api } from "./api";
@@ -40,7 +41,7 @@ export function useEditWindowPause(billId: string | null, enabled: boolean, onRe
     let live = true;
     const url = `/api/bills/${billId}/edit-window`;
     const pause = () => send(billId, true).then((r) => { if (live && r.data) setBill(r.data.bill); });
-    const onHide = () => navigator.sendBeacon(url, JSON.stringify({ pause: false }));
+    const onHide = () => navigator.sendBeacon(withBase(url), JSON.stringify({ pause: false }));
     const onShow = (e: PageTransitionEvent) => { if (e.persisted) pause(); };
 
     pause();

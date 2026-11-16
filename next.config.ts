@@ -1,7 +1,15 @@
 import type { NextConfig } from "next";
 
+/**
+ * The URL prefix the portal is served under: "/finance" behind the
+ * institute's Apache at https://cas.iitmandi.ac.in/finance, nothing for a
+ * local run. Fixed at build time; src/lib/base-path.ts reads the same value.
+ */
+const basePath = (process.env.NEXT_PUBLIC_BASE_PATH ?? "").trim().replace(/\/+$/, "");
+
 const nextConfig: NextConfig = {
   output: 'standalone',
+  ...(basePath ? { basePath: basePath.startsWith("/") ? basePath : `/${basePath}` } : {}),
 
   // Type errors now fail the build. They used to be ignored, which is how a
   // types file describing a schema that no longer existed survived in the

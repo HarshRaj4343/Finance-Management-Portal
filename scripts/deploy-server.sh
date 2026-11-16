@@ -14,7 +14,13 @@
 #
 # Options, as environment variables:
 #   PORTAL_PORT=8116                 the port the institute allocated
-#   PORTAL_HOST=172.22.100.12        how people reach it (IP or hostname)
+#   PORTAL_HOST=172.22.100.12        this machine's address (IP or hostname)
+#   PUBLIC_URL=https://cas.iitmandi.ac.in/finance
+#                                    the address people open; the institute's
+#                                    Apache forwards it to PORTAL_HOST:PORTAL_PORT.
+#                                    Its path (/finance) becomes the app's prefix.
+#                                    Set PUBLIC_URL=https://<host>:<port> to
+#                                    serve at the root, without Apache.
 #   SSL_CERT_FILE=/path/to/cert      skip certificate auto-detection
 #   SSL_KEY_FILE=/path/to/key
 #
@@ -22,6 +28,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 PORTAL_PORT=${PORTAL_PORT:-8116}
+PUBLIC_URL=${PUBLIC_URL:-https://cas.iitmandi.ac.in/finance}
+PUBLIC_URL=${PUBLIC_URL%/}
+# The path part of PUBLIC_URL: "/finance", or "" for a URL with no path.
+BASE_PATH=$(sed -E 's#^[a-z]+://[^/]+##' <<<"$PUBLIC_URL")
+# NextAuth must be told where its own routes are once there is a prefix.
+EXPECTED_AUTH_URL=$PUBLIC_URL${BASE_PATH:+/api/auth}
 say()  { printf '==> %s\n' "$*"; }
 warn() { printf '    !  %s\n' "$*" >&2; }
 die()  { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
@@ -134,7 +146,11 @@ PORTAL_PORT=$PORTAL_PORT
 # that docker-compose.yml builds unparseable.
 POSTGRES_PASSWORD=$(openssl rand -hex 24)
 NEXTAUTH_SECRET=$(openssl rand -base64 32 | tr -d '\n')
-NEXTAUTH_URL=https://$PORTAL_HOST:$PORTAL_PORT
+
+# People open $PUBLIC_URL; Apache forwards it here.
+# The prefix is compiled into the image: change it, then rebuild.
+NEXT_PUBLIC_BASE_PATH=$BASE_PATH
+NEXTAUTH_URL=$EXPECTED_AUTH_URL
 
 SSL_CERT_FILE=$CERT
 SSL_KEY_FILE=$KEY
@@ -161,10 +177,13 @@ for var in POSTGRES_PASSWORD NEXTAUTH_SECRET NEXTAUTH_URL SSL_CERT_FILE SSL_KEY_
 done
 grep -qE "^NEXTAUTH_URL=https://" .env || warn "NEXTAUTH_URL is not https -- sign-in cookies will be dropped"
 CONFIGURED_URL=$(grep -E '^NEXTAUTH_URL=' .env | cut -d= -f2-)
-if [ "$CONFIGURED_URL" != "https://$PORTAL_HOST:$PORTAL_PORT" ]; then
-  warn "NEXTAUTH_URL in .env is $CONFIGURED_URL"
-  warn "people reaching the portal at https://$PORTAL_HOST:$PORTAL_PORT will not be able to sign in."
-  warn "fix it in .env, then: ${DOCKER[*]} compose up -d --force-recreate next-app"
+CONFIGURED_BASE=$( (grep -E '^NEXT_PUBLIC_BASE_PATH=' .env || true) | cut -d= -f2-)
+if [ "$CONFIGURED_URL" != "$EXPECTED_AUTH_URL" ] || [ "$CONFIGURED_BASE" != "$BASE_PATH" ]; then
+  warn ".env has NEXTAUTH_URL=$CONFIGURED_URL and NEXT_PUBLIC_BASE_PATH=$CONFIGURED_BASE"
+  warn "people opening $PUBLIC_URL will not be able to use the portal. Put these two lines in .env:"
+  warn "  NEXT_PUBLIC_BASE_PATH=$BASE_PATH"
+  warn "  NEXTAUTH_URL=$EXPECTED_AUTH_URL"
+  warn "then re-run this script (the prefix is compiled in, so the image must be rebuilt)."
 fi
 
 # -------------------------------------------------------------- bring up
@@ -205,7 +224,7 @@ say "starting the containers"
 "${DOCKER[@]}" compose up -d
 
 say "waiting for the portal to answer"
-URL="https://127.0.0.1:$PORTAL_PORT/login"
+URL="https://127.0.0.1:$PORTAL_PORT$CONFIGURED_BASE/login"
 for _ in $(seq 1 60); do
   code=$(curl -sk -o /dev/null -w '%{http_code}' --max-time 5 "$URL" || true)
   [ "$code" = "200" ] && break
@@ -217,7 +236,8 @@ echo
 echo
 
 if [ "${code:-}" = "200" ]; then
-  say "the portal is up at https://$PORTAL_HOST:$PORTAL_PORT"
+  say "the portal is up at https://$PORTAL_HOST:$PORTAL_PORT$CONFIGURED_BASE"
+  [ -n "$CONFIGURED_BASE" ] && say "and, through the institute's Apache, at $PUBLIC_URL"
   BILLS=$("${DOCKER[@]}" compose exec -T db psql -U ifmp -d ifmp -tAc 'select count(*) from bills' 2>/dev/null | tr -d ' \r' || echo '?')
   say "database holds $BILLS bills"
   say "Configure LDAP and provision the first Dean as described in README.md."

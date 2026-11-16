@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
@@ -57,8 +58,8 @@ export default function FundRegisterPage() {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (status === "unauthenticated") window.location.href = "/login";
-    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(homeFor(role));
+    if (status === "unauthenticated") window.location.href = withBase("/login");
+    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(withBase(homeFor(role)));
   }, [status, role]);
 
   const load = useCallback(async () => {
@@ -67,7 +68,7 @@ export default function FundRegisterPage() {
     setLoading(false);
     if (error) { setNotice({ kind: "bad", text: error }); return; }
     // Not an approved budget head: back to the list of sources.
-    if (!data!.source) { window.location.replace("/fund-sources"); return; }
+    if (!data!.source) { window.location.replace(withBase("/fund-sources")); return; }
     setPayload(data);
     setFy((current) => current || data!.currentYear || data!.heads[0]?.financial_year || "");
   }, [code]);

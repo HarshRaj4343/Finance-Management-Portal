@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import { homeFor } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
 import { api, money, dateOnly } from "@/lib/api";
@@ -128,8 +129,8 @@ export default function AllBillsPage() {
   // RBAC: the portal-wide bill list is a Dean-only page.
   const allowed = status === "authenticated" && canOpenPortalPages(role);
   useEffect(() => {
-    if (status === "unauthenticated") window.location.href = "/login";
-    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(homeFor(role));
+    if (status === "unauthenticated") window.location.href = withBase("/login");
+    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(withBase(homeFor(role)));
   }, [status, role]);
   const [bills, setBills] = useState<BillWithEmployee[]>([]);
   const [filtered, setFiltered] = useState<BillWithEmployee[]>([]);

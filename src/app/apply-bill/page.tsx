@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import React, { useEffect, useState } from "react";
 import { api } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
@@ -39,12 +40,12 @@ export default function EmployeeDashboard() {
     if (status === "loading") return;
 
     if (status === "unauthenticated") {
-      if (typeof window !== "undefined") window.location.href = "/login";
+      if (typeof window !== "undefined") window.location.href = withBase("/login");
       return;
     }
 
     if (session && !["Bill Employee", "Bill Editor"].includes(normaliseRole(session.user?.employee_type))) {
-      window.location.href = "/";
+      window.location.href = withBase("/");
     }
   }, [status, session]);
 

@@ -106,7 +106,9 @@ export async function notifyApplicant(n: BillNotification): Promise<void> {
     const to = REDIRECT_TO ?? intended;
     const redirected = REDIRECT_TO !== null && REDIRECT_TO !== intended;
 
-    const base = (process.env.NEXTAUTH_URL ?? "").replace(/\/$/, "");
+    // Behind a path prefix NEXTAUTH_URL names the auth routes
+    // (https://cas.iitmandi.ac.in/finance/api/auth); pages are one level up.
+    const base = (process.env.NEXTAUTH_URL ?? "").replace(/\/+$/, "").replace(/\/api\/auth$/, "");
     const link = base ? `${base}/bill/${bill.id}` : null;
 
     const html = `

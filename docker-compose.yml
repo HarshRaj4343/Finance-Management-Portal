@@ -44,6 +44,10 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+      args:
+        # URL prefix compiled into the build: /finance behind the
+        # institute's Apache (https://cas.iitmandi.ac.in/finance).
+        NEXT_PUBLIC_BASE_PATH: ${NEXT_PUBLIC_BASE_PATH:-}
 
     image: iitmandi-finance-portal:latest
     container_name: my_next_app

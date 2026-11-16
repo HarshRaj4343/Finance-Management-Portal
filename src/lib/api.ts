@@ -6,6 +6,8 @@
  * before they get here. Callers show `error` to the person and carry on.
  */
 
+import { withBase } from "@/lib/base-path";
+
 export type Result<T> = { data: T; error: null } | { data: null; error: string };
 
 async function request<T>(
@@ -13,7 +15,7 @@ async function request<T>(
   init?: RequestInit
 ): Promise<Result<T>> {
   try {
-    const res = await fetch(url, {
+    const res = await fetch(withBase(url), {
       ...init,
       headers: {
         "Content-Type": "application/json",

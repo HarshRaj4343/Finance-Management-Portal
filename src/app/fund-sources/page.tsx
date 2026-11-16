@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
@@ -42,8 +43,8 @@ export default function FundSourcesPage() {
   const [busy, setBusy] = useState<string | null>(null);
 
   useEffect(() => {
-    if (status === "unauthenticated") window.location.href = "/login";
-    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(homeFor(role));
+    if (status === "unauthenticated") window.location.href = withBase("/login");
+    else if (status === "authenticated" && !canOpenPortalPages(role)) window.location.replace(withBase(homeFor(role)));
   }, [status, role]);
 
   const load = useCallback(async () => {

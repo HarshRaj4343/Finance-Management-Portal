@@ -125,6 +125,31 @@ Migration 0006 adds the edit window and the reopen-after-rejection correction ru
 
 On first Docker database creation, migrations 0001–0010 run in order. Existing volumes do not rerun init scripts. `scripts/deploy-server.sh` takes a custom-format database backup before applying additive migrations; it does not reset volumes. Configure TLS, LDAP and mail in `.env`; see `docker-compose.yml` and `deploy/nginx/`.
 
+## Serving under /finance (institute Apache)
+
+The institute publishes the portal at **https://cas.iitmandi.ac.in/finance**: its Apache server forwards that path to this server's nginx on port 8116. The portal therefore runs under the `/finance` prefix, compiled in at build time. On the server, `.env` needs:
+
+```sh
+NEXT_PUBLIC_BASE_PATH=/finance
+NEXTAUTH_URL=https://cas.iitmandi.ac.in/finance/api/auth
+```
+
+then a rebuild (`./scripts/deploy-server.sh`, or `docker compose up -d --build next-app`). The portal is then also reachable directly at `https://172.22.100.12:8116/finance`; the bare root returns 404. For a local run at the root, leave `NEXT_PUBLIC_BASE_PATH` empty. In code, `<Link>`, `router.push` and `redirect()` add the prefix by themselves; anything else that names a path (`fetch`, `window.location`, `window.open`, plain `<a href>`, `<Image src>` for `public/` files, NextAuth callback URLs) must use `withBase()` from `src/lib/base-path.ts`.
+
+The Apache side must keep the prefix and pass the portal's own error responses through:
+
+```apache
+SSLProxyEngine On
+SSLProxyCheckPeerName Off            # backend certificate is *.iitmandi.ac.in, reached by IP
+<Location "/finance">
+    ProxyPass        https://172.22.100.12:8116/finance
+    ProxyPassReverse https://172.22.100.12:8116/finance
+    ProxyPreserveHost On
+    RequestHeader set X-Forwarded-Proto "https"
+    ProxyErrorOverride Off
+</Location>
+```
+
 `DECISIONS.md` and `Bill-form.md` are retained design/history references, not deployment instructions. Earlier Supabase, destructive demo-dataset and Vercel instructions in the historical decision log are superseded.
 
 ## Verification

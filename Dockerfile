@@ -18,9 +18,11 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
-# No build args: the browser never talks to the database, so nothing about
-# it is compiled into the bundle. DATABASE_URL and the other secrets are
-# read at runtime.
+# The only build arg is the URL prefix ("/finance" behind the institute's
+# Apache): Next compiles it into every page and asset path. Nothing secret
+# is compiled in -- DATABASE_URL and the other secrets are read at runtime.
+ARG NEXT_PUBLIC_BASE_PATH=""
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 ENV NEXT_TELEMETRY_DISABLED=1
 
 RUN npm run build
@@ -33,6 +35,8 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
+ARG NEXT_PUBLIC_BASE_PATH=""
+ENV NEXT_PUBLIC_BASE_PATH=$NEXT_PUBLIC_BASE_PATH
 
 # Run as an unprivileged user: a flaw in the app then cannot write to the
 # image or read files it does not own. node:alpine ships a `node` user.
@@ -53,6 +57,6 @@ EXPOSE 3000
 
 # The login page needs no database, so this reports the web tier only.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:3000'+(process.env.NEXT_PUBLIC_BASE_PATH||'')+'/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
 CMD ["node", "server.js"]

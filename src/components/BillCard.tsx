@@ -1,3 +1,4 @@
+import { withBase } from "@/lib/base-path";
 import React, { type ReactNode } from 'react';
 import Link from "next/link";
 import { when, dateOnly, money } from "@/lib/api";
@@ -33,7 +34,7 @@ export const BillCard: React.FC<BillCardProps> = ({
 
 
  // The A4 bill sheet, sent straight to the printer.
-  const handlePrintBill = () => window.open(`/bill/${bill.id}/print?print=1`, "_blank", "noopener");
+  const handlePrintBill = () => window.open(withBase(`/bill/${bill.id}/print?print=1`), "_blank", "noopener");
 
   const remarks = [
     ["Store and Purchase Department", bill.remarks1],

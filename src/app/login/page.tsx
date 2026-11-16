@@ -1,4 +1,5 @@
 "use client";
+import { withBase, stripBase } from "@/lib/base-path";
 import Image from "next/image";
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -63,7 +64,7 @@ function LoginForm() {
         // to bounce somebody to another site after they sign in.
         const safe = safeCallbackPath(callbackUrl);
 
-        window.location.href = safe ?? homeFor(session.user.employee_type);
+        window.location.href = withBase(safe ? stripBase(safe) : homeFor(session.user.employee_type));
         return;
       } catch {
         setError(
@@ -83,7 +84,7 @@ function LoginForm() {
     <main className="flex min-h-screen items-center justify-center bg-[#217093] p-4 sm:p-6">
       <div className="mx-auto w-full max-w-md rounded-xl bg-white p-6 shadow-lg sm:p-8">
         <div className="mb-6 flex flex-col items-center space-y-3 sm:mb-8">
-          <Image width={80} height={80} src="/iit.png" alt="IIT Mandi" className="h-16 w-16 sm:h-20 sm:w-20" priority />
+          <Image width={80} height={80} src={withBase("/iit.png")} alt="IIT Mandi" className="h-16 w-16 sm:h-20 sm:w-20" priority />
           <h1 className="text-2xl font-semibold text-slate-900 sm:text-3xl">Sign in</h1>
           <p className="text-center text-sm text-slate-600">Integrated Finance Management Portal</p>
         </div>

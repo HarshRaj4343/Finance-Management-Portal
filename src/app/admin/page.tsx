@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import Link from "next/link";
 import React, { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
@@ -77,7 +78,7 @@ export default function AdminPage() {
   const [topUpAmount, setTopUpAmount] = useState("");
 
   useEffect(() => {
-    if (status === "unauthenticated") window.location.href = "/login";
+    if (status === "unauthenticated") window.location.href = withBase("/login");
   }, [status]);
 
   useEffect(() => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase, stripBase } from "@/lib/base-path";
 import { useEffect, useRef, useState } from "react";
 import { signOut, useSession } from "next-auth/react";
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from "./ui/alert-dialog";
@@ -34,13 +35,13 @@ export default function SessionExpiryWarning() {
   useEffect(() => {
     if (status === "authenticated" && deadline && left <= 0 && !ended.current) {
       ended.current = true;
-      signOut({ callbackUrl: `/login?expired=1&callbackUrl=${encodeURIComponent(window.location.pathname)}` });
+      signOut({ callbackUrl: withBase(`/login?expired=1&callbackUrl=${encodeURIComponent(stripBase(window.location.pathname))}`) });
     }
   }, [status, deadline, left]);
 
   const open = status === "authenticated" && left > 0 && left <= SESSION_WARN_MS && !dismissed;
   const signInAgain = () =>
-    signOut({ callbackUrl: `/login?callbackUrl=${encodeURIComponent(window.location.pathname + window.location.search)}` });
+    signOut({ callbackUrl: withBase(`/login?callbackUrl=${encodeURIComponent(stripBase(window.location.pathname) + window.location.search)}`) });
 
   return (
     <AlertDialog open={open}>

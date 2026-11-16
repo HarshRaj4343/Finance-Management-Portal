@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import { deskLabel } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
@@ -92,7 +93,7 @@ export default function BillDetailsPage() {
 
     if (authStatus === "unauthenticated") {
       // Come back here once they have signed in.
-      window.location.href = `/login?callbackUrl=${encodeURIComponent(`/bill/${id}`)}`;
+      window.location.href = withBase(`/login?callbackUrl=${encodeURIComponent(`/bill/${id}`)}`);
       return;
     }
     if (!id) return;
@@ -140,7 +141,7 @@ export default function BillDetailsPage() {
     <div className="mx-auto max-w-4xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm print:border-0 print:shadow-none">
       <div className="mb-6 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <button onClick={() => history.length > 1 ? history.back() : window.location.assign("/")} className="mb-2 text-sm font-medium text-blue-700 hover:underline print:hidden">
+          <button onClick={() => history.length > 1 ? history.back() : window.location.assign(withBase("/"))} className="mb-2 text-sm font-medium text-blue-700 hover:underline print:hidden">
             ← Back
           </button>
           <h1 className="text-2xl font-semibold text-slate-900">Bill details</h1>
@@ -149,7 +150,7 @@ export default function BillDetailsPage() {
           )}
         </div>
         <a
-          href={`/bill/${bill.id}/print`}
+          href={withBase(`/bill/${bill.id}/print`)}
           className="inline-flex h-9 items-center rounded-md border border-slate-300 bg-white px-4 text-sm font-medium text-slate-700 hover:bg-slate-50 print:hidden"
         >
           Print bill

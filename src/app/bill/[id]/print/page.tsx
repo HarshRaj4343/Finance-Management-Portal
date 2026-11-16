@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
@@ -59,7 +60,7 @@ export default function PrintBillPage() {
 
   useEffect(() => { setOrigin(window.location.origin); }, []);
   useEffect(() => {
-    if (status === "unauthenticated") { window.location.href = `/login?callbackUrl=${encodeURIComponent(`/bill/${id}/print`)}`; return; }
+    if (status === "unauthenticated") { window.location.href = withBase(`/login?callbackUrl=${encodeURIComponent(`/bill/${id}/print`)}`); return; }
     if (status !== "authenticated") return;
     api.get<Payload>(`/api/bills/${id}`).then(({ data, error: err }) => {
       if (err || !data?.bill) setError(err ?? "Bill not found."); else setPayload(data);
@@ -88,7 +89,7 @@ export default function PrintBillPage() {
       <style>{"@page { size: A4; margin: 12mm; } @media print { html, body { background: #fff; } }"}</style>
 
       <div className="mx-auto mb-4 flex max-w-[210mm] items-center justify-between px-2 print:hidden">
-        <button onClick={() => (history.length > 1 ? history.back() : window.location.assign(`/bill/${id}`))}
+        <button onClick={() => (history.length > 1 ? history.back() : window.location.assign(withBase(`/bill/${id}`)))}
           className="text-sm font-medium text-blue-700 hover:underline">← Back</button>
         <button onClick={() => window.print()}
           className="inline-flex h-9 items-center rounded-md bg-blue-700 px-4 text-sm font-medium text-white hover:bg-blue-800">
@@ -100,7 +101,7 @@ export default function PrintBillPage() {
         {/* Header */}
         <header className="flex items-start justify-between gap-4 border-b-2 border-slate-800 pb-3">
           <div className="flex items-center gap-3">
-            <Image src="/iit.png" alt="IIT Mandi" width={64} height={51} className="h-auto w-16" />
+            <Image src={withBase("/iit.png")} alt="IIT Mandi" width={64} height={51} className="h-auto w-16" />
             <div>
               <p className="text-base font-bold">Indian Institute of Technology Mandi</p>
               <p className="text-slate-600">Kamand, Mandi, Himachal Pradesh 175075</p>

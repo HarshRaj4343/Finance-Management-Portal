@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import { useEffect, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { FilterField, filterInput } from "./FilterBar";
@@ -99,7 +100,7 @@ export default function ExportButton({ endpoint, title, filters, values, fixed =
     // Every column ticked: ask for the whole file, which also keeps it complete if columns are added later.
     if (picked.length < (columns?.length ?? 0)) for (const c of picked) params.append("col", c);
     try {
-      const res = await fetch(`${endpoint}?${params}`, { cache: "no-store" });
+      const res = await fetch(withBase(`${endpoint}?${params}`), { cache: "no-store" });
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.error ?? (res.status === 401 ? "Your session has expired. Please sign in again." : `The server returned ${res.status}.`));

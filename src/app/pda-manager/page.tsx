@@ -1,6 +1,7 @@
 
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import { useEffect, useMemo, useState } from "react";
 import { api, money, when } from "@/lib/api";
 import Notice, { NoticeState } from "@/components/Notice";
@@ -59,14 +60,14 @@ export default function PdaManagerPage() {
 
     if (status === "unauthenticated") {
       if (typeof window !== "undefined") {
-        window.location.href = "/login";
+        window.location.href = withBase("/login");
       }
       return;
     }
 
     const role = normaliseRole(session?.user?.employee_type);
     if (session && role !== "PDA Manager" && role !== "Dean") {
-      window.location.href = "/";
+      window.location.href = withBase("/");
     }
   }, [status, session]);
 

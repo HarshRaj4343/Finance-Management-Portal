@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSession } from "next-auth/react";
 import { IconAlertCircle, IconCheck, IconClock, IconClockPause, IconInbox, IconListDetails, IconX } from "@tabler/icons-react";
@@ -82,9 +83,9 @@ export default function DeskQueue({ desk, title, description, hints, extraNav = 
   const sections = useMemo(() => SECTIONS.map((s) => (final && s.filter === "Approved" ? { ...s, label: "Released Bills" } : s)), [final]);
 
   useEffect(() => {
-    if (status === "unauthenticated") window.location.href = "/login";
+    if (status === "unauthenticated") window.location.href = withBase("/login");
     // Not this desk: back to the portal, which routes by role.
-    else if (status === "authenticated" && role !== desk) window.location.href = "/";
+    else if (status === "authenticated" && role !== desk) window.location.href = withBase("/");
   }, [status, role, desk]);
 
   const fetchBills = useCallback(async (silent = false) => {

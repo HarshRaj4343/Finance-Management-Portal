@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import Image from "next/image";
 import Link from "next/link";
 import React, { useEffect, useState, type ReactNode } from "react";
@@ -119,7 +120,7 @@ export default function AppShell({
   const panel = (
     <div className="flex h-full flex-col">
       <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-4">
-        <Image src="/iit.png" alt="" width={36} height={36} className="size-9 shrink-0" />
+        <Image src={withBase("/iit.png")} alt="" width={36} height={36} className="size-9 shrink-0" />
         <div className="min-w-0">
           <p className="truncate text-sm font-semibold text-slate-900">IIT Mandi Finance</p>
           <p className="truncate text-xs text-slate-500">{deskLabel(desk)}</p>
@@ -143,7 +144,7 @@ export default function AppShell({
             <p className="truncate text-xs text-slate-500">{role}</p>
           </div>
         )}
-        <button type="button" onClick={() => signOut({ callbackUrl: "/login" })}
+        <button type="button" onClick={() => signOut({ callbackUrl: withBase("/login") })}
           className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
           <IconLogout className="size-5 text-slate-500" />
           Sign out

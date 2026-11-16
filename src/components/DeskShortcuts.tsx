@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import type { Decision } from "./confirmBillDecision";
@@ -185,7 +186,7 @@ export function useDeskShortcuts({ enabled, ids, sections, section, onSection, o
         case "o": case "O": case "Enter":
           if (!current || (e.key === "Enter" && target.closest("button, a"))) return;
           e.preventDefault();
-          window.open(`/bill/${current}`, "_blank", "noopener");
+          window.open(withBase(`/bill/${current}`), "_blank", "noopener");
           return;
         case "/": {
           const search = document.querySelector<HTMLInputElement>("input[type='search']");

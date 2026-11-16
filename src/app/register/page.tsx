@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import React, { useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import {
@@ -64,8 +65,8 @@ export default function RegisterPage() {
   // RBAC: the Dean, Store and Purchase and bill filers; the API refuses everyone else too.
   const allowed = status === "authenticated" && canOpenPurchaseRegister(role);
   useEffect(() => {
-    if (status === "unauthenticated") window.location.href = "/login";
-    else if (status === "authenticated" && !canOpenPurchaseRegister(role)) window.location.replace(homeFor(role));
+    if (status === "unauthenticated") window.location.href = withBase("/login");
+    else if (status === "authenticated" && !canOpenPurchaseRegister(role)) window.location.replace(withBase(homeFor(role)));
   }, [status, role]);
 
   useEffect(() => {
@@ -306,7 +307,7 @@ export default function RegisterPage() {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap">
                         <a
-                          href={`/bill/${e.bill_id}`}
+                          href={withBase(`/bill/${e.bill_id}`)}
                           className="text-blue-600 hover:underline"
                           title={`Entered ${when(e.recorded_at)}`}
                         >

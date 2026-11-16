@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import { deskLabel } from "@/lib/roles";
 import React, { useEffect, useState } from "react";
 import { api, money, when, dateOnly } from "@/lib/api";
@@ -367,7 +368,7 @@ export default function UserPage() {
             size="lg"
             footer={<>
               <button onClick={() => setSelectedBill(null)} className={btn.secondary}>Close</button>
-              <a href={`/bill/${selectedBill.id}`} className={btn.primary}>Open full bill page</a>
+              <a href={withBase(`/bill/${selectedBill.id}`)} className={btn.primary}>Open full bill page</a>
             </>}
           >
             <dl className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">

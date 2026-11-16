@@ -1,5 +1,6 @@
 "use client";
 
+import { withBase } from "@/lib/base-path";
 import React, { useEffect, useState } from "react";
 import { api, money, dateOnly } from "@/lib/api";
 import { EmptyState, LoadingState, PageHeader, StatusBadge } from "@/components/ui/page";
@@ -92,7 +93,7 @@ const ApprovedBills: React.FC<ApprovedBillsProps> = ({ department }) => {
             {bills.map((bill) => (
               <tr key={bill.id} className="align-top hover:bg-slate-50">
                 <td className="px-4 py-3">
-                  <a href={`/bill/${bill.id}`} className="whitespace-nowrap font-mono text-xs font-medium text-blue-700 hover:underline">{bill.bill_number ?? "—"}</a>
+                  <a href={withBase(`/bill/${bill.id}`)} className="whitespace-nowrap font-mono text-xs font-medium text-blue-700 hover:underline">{bill.bill_number ?? "—"}</a>
                   <p className="whitespace-nowrap font-medium text-slate-900">{bill.employee_name} <span className="text-xs font-normal text-slate-500">({bill.employee_id})</span></p>
                   <p className="max-w-xs truncate text-xs text-slate-500" title={bill.po_details ?? ""}>{bill.po_details ?? "—"}</p>
                 </td>

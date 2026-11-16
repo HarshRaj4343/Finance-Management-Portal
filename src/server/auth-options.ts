@@ -1,3 +1,4 @@
+import { withBase } from "@/lib/base-path";
 import "server-only";
 import type { AuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
@@ -237,7 +238,7 @@ export const authOptions: AuthOptions = {
     },
   },
 
-  pages: { signIn: "/login" },
+  pages: { signIn: withBase("/login") },
   secret: process.env.NEXTAUTH_SECRET,
   trustHost: true,
 } as AuthOptions;

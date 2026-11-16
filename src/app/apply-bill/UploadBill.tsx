@@ -10,6 +10,7 @@
  * form, derives flat display fields, and calculates the amount itself.
  */
 
+import { withBase } from "@/lib/base-path";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useSession } from "next-auth/react";
@@ -397,7 +398,7 @@ const UploadBill: React.FC<UploadBillProps> = ({ onBillSubmitted, department, in
           </dl>
           <div className="no-print mt-6 flex flex-wrap gap-3">
             <a
-              href={`/bill/${done.id}`}
+              href={withBase(`/bill/${done.id}`)}
               className="inline-flex h-10 items-center rounded-md bg-blue-700 px-4 text-sm font-medium text-white hover:bg-blue-800"
             >
               View Bill
